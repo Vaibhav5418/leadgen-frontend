@@ -40,27 +40,57 @@ export default function Contacts() {
   const filterHasEmail = searchParams.get('filterHasEmail') || '';
   const filterHasPhone = searchParams.get('filterHasPhone') || '';
   
-  const categories = [
-    'All',
-    'IND-IT & Service',
-    'Accounting & Book keeping',
-    'Web Design & Development',
-    'Enterprise Software',
-    'Finance Services - IND',
-    'E-commerce',
-    'CRM',
-    'Middle East',
-    'International',
-    'USA Chicago',
-    'IT Company - USA',
-    'IT Company - Chicago',
-    'Weam.ai Mumbai Data',
-    'ERP Software',
-    'ERP NEXT- Manufacturing-Automotive Components & Spares',
-    'Salon & Spa - Chicago',
-    'SPA & SALON AHMEDABAD',
-    'kology'
-  ];
+  const [categories, setCategories] = useState(['All']);
+
+  // Fetch categories from API
+  const fetchCategories = async () => {
+    try {
+      const response = await API.get('/categories');
+      const categoryList = response.data?.data || [];
+      setCategories(['All', ...categoryList]);
+    } catch (err) {
+      console.error('Error fetching categories:', err);
+      // Fallback to default categories
+      setCategories([
+        'All',
+        'IND-IT & Service',
+        'Accounting & Book keeping',
+        'Web Design & Development',
+        'Enterprise Software',
+        'Finance Services - IND',
+        'E-commerce',
+        'CRM',
+        'Middle East',
+        'International',
+        'USA Chicago',
+        'IT Company - USA',
+        'IT Company - Chicago',
+        'Weam.ai Mumbai Data',
+        'ERP Software',
+        'ERP NEXT- Manufacturing-Automotive Components & Spares',
+        'Salon & Spa - Chicago',
+        'SPA & SALON AHMEDABAD',
+        'kology'
+      ]);
+    }
+  };
+
+  useEffect(() => {
+    fetchCategories();
+  }, []);
+
+  // Refresh categories when page becomes visible (user returns from import page)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        fetchCategories();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
 
   // Removed auto-update URL effect - category changes are handled in dropdown onChange
   // This prevents filters from being cleared when they're applied

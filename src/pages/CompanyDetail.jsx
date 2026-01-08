@@ -286,10 +286,9 @@ export default function CompanyDetail() {
             )}
 
             {analysis && (
-              <div className="mt-6 animate-fade-in">
-                {/* Professional Horizontal Layout */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Company Overview */}
+              <>
+                <div className="mt-6 animate-fade-in space-y-6">
+                  {/* Card 1 - Full Width */}
                   <div className="group relative bg-gradient-to-br from-white to-blue-50/30 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-blue-100/20 rounded-full -mr-16 -mt-16 blur-2xl"></div>
                     <div className="relative p-6 h-full flex flex-col">
@@ -316,10 +315,10 @@ export default function CompanyDetail() {
                         </div>
                       </div>
                     </div>
-                  </div>
+                </div>
 
-                  {/* Core Offering */}
-                  <div className="group relative bg-gradient-to-br from-white to-emerald-50/30 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden">
+                {/* Card 2 - Full Width */}
+                <div className="group relative bg-gradient-to-br from-white to-emerald-50/30 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-100/20 rounded-full -mr-16 -mt-16 blur-2xl"></div>
                     <div className="relative p-6 h-full flex flex-col">
                       <div className="flex items-start gap-4 mb-4">
@@ -345,39 +344,39 @@ export default function CompanyDetail() {
                         </div>
                       </div>
                     </div>
-                  </div>
+                </div>
 
-                  {/* Business Considerations */}
-                  <div className="group relative bg-gradient-to-br from-white to-purple-50/30 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-purple-100/20 rounded-full -mr-16 -mt-16 blur-2xl"></div>
-                    <div className="relative p-6 h-full flex flex-col">
-                      <div className="flex items-start gap-4 mb-4">
-                        <div className="flex-shrink-0">
-                          <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
-                            <span className="text-xl font-bold text-white">3</span>
-                          </div>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-xs uppercase tracking-wider text-purple-600 font-bold mb-1">Business Considerations</p>
-                          <p className="text-base text-gray-900 font-semibold">Risks & Opportunities</p>
+                {/* Card 3 - Full Width */}
+                <div className="group relative bg-gradient-to-br from-white to-purple-50/30 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-purple-100/20 rounded-full -mr-16 -mt-16 blur-2xl"></div>
+                  <div className="relative p-6 h-full flex flex-col">
+                    <div className="flex items-start gap-4 mb-4">
+                      <div className="flex-shrink-0">
+                        <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+                          <span className="text-xl font-bold text-white">3</span>
                         </div>
                       </div>
-                      <div className="flex-1 text-sm text-gray-700 leading-relaxed whitespace-pre-line overflow-y-auto">
-                        {cleanMarkdown(analysis.analysis.businessConsiderations || analysis.fullText.split('3)')[1]?.trim() || 'Analysis not available')}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs uppercase tracking-wider text-purple-600 font-bold mb-1">Business Considerations</p>
+                        <p className="text-base text-gray-900 font-semibold">Risks & Opportunities</p>
                       </div>
-                      <div className="mt-4 pt-4 border-t border-slate-200">
-                        <div className="flex items-center gap-2 text-xs text-gray-500">
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                          </svg>
-                          <span>Strategic insights</span>
-                        </div>
+                    </div>
+                    <div className="flex-1 text-sm text-gray-700 leading-relaxed whitespace-pre-line overflow-y-auto">
+                      {cleanMarkdown(analysis.analysis.businessConsiderations || analysis.fullText.split('3)')[1]?.trim() || 'Analysis not available')}
+                    </div>
+                    <div className="mt-4 pt-4 border-t border-slate-200">
+                      <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                        </svg>
+                        <span>Strategic insights</span>
                       </div>
                     </div>
                   </div>
                 </div>
+                </div>
 
-                <div className="flex items-center justify-between pt-2">
+                <div className="flex items-center justify-between pt-2 mt-4">
                   {analysis.generatedAt && (
                     <div className="text-xs text-gray-500">
                       Generated on {new Date(analysis.generatedAt).toLocaleString()}
@@ -402,7 +401,7 @@ export default function CompanyDetail() {
                     </button>
                   </div>
                 </div>
-              </div>
+              </>
             )}
           </div>
         )}

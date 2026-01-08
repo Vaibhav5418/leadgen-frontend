@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import API from '../api/axios';
 
 export default function Import() {
@@ -7,28 +7,89 @@ export default function Import() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
-  const [category, setCategory] = useState('IND-IT & Service');
+  const [category, setCategory] = useState('');
+  const [categories, setCategories] = useState([]);
+  const [loadingCategories, setLoadingCategories] = useState(true);
+  const [showAddCategory, setShowAddCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [addingCategory, setAddingCategory] = useState(false);
 
-  const categories = [
-    'IND-IT & Service',
-    'Accounting & Book keeping',
-    'Web Design & Development',
-    'Enterprise Software',
-    'Finance Services - IND',
-    'E-commerce',
-    'CRM',
-    'Middle East',
-    'International',
-    'USA Chicago',
-    'IT Company - USA',
-    'IT Company - Chicago',
-    'Weam.ai Mumbai Data',
-    'ERP Software',
-    'ERP NEXT- Manufacturing-Automotive Components & Spares',
-    'Salon & Spa - Chicago',
-    'SPA & SALON AHMEDABAD',
-    'kology'
-  ];
+  // Fetch categories from API
+  useEffect(() => {
+    fetchCategories();
+  }, []);
+
+  const fetchCategories = async () => {
+    try {
+      setLoadingCategories(true);
+      const response = await API.get('/categories');
+      const categoryList = response.data?.data || [];
+      setCategories(categoryList);
+      if (categoryList.length > 0 && !category) {
+        setCategory(categoryList[0]);
+      }
+    } catch (err) {
+      console.error('Error fetching categories:', err);
+      // Fallback to default categories if API fails
+      const defaultCategories = [
+        'IND-IT & Service',
+        'Accounting & Book keeping',
+        'Web Design & Development',
+        'Enterprise Software',
+        'Finance Services - IND',
+        'E-commerce',
+        'CRM',
+        'Middle East',
+        'International',
+        'USA Chicago',
+        'IT Company - USA',
+        'IT Company - Chicago',
+        'Weam.ai Mumbai Data',
+        'ERP Software',
+        'ERP NEXT- Manufacturing-Automotive Components & Spares',
+        'Salon & Spa - Chicago',
+        'SPA & SALON AHMEDABAD',
+        'kology'
+      ];
+      setCategories(defaultCategories);
+      if (!category) {
+        setCategory(defaultCategories[0]);
+      }
+    } finally {
+      setLoadingCategories(false);
+    }
+  };
+
+  const handleAddCategory = async () => {
+    if (!newCategoryName.trim()) {
+      setError('Please enter a category name');
+      return;
+    }
+
+    try {
+      setAddingCategory(true);
+      setError('');
+      const response = await API.post('/categories', {
+        name: newCategoryName.trim()
+      });
+
+      if (response.data.success) {
+        // Refresh categories list
+        await fetchCategories();
+        // Set the new category as selected
+        setCategory(newCategoryName.trim());
+        // Reset form
+        setNewCategoryName('');
+        setShowAddCategory(false);
+        setMessage('Category added successfully!');
+        setTimeout(() => setMessage(''), 3000);
+      }
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to add category');
+    } finally {
+      setAddingCategory(false);
+    }
+  };
 
   const handleFileChange = (e) => {
     setFile(e.target.files?.[0] || null);
@@ -84,18 +145,69 @@ export default function Import() {
 
         <div className="bg-white shadow rounded-lg p-6">
           <div className="mb-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Select category to assign
-            </label>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 w-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {categories.map((c) => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium text-gray-700">
+                Select category to assign
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAddCategory(!showAddCategory);
+                  setError('');
+                  setMessage('');
+                }}
+                className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                {showAddCategory ? 'Cancel' : 'Add New'}
+              </button>
+            </div>
+            
+            {showAddCategory ? (
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    placeholder="Enter new category name"
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        handleAddCategory();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddCategory}
+                    disabled={addingCategory || !newCategoryName.trim()}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-sm font-medium"
+                  >
+                    {addingCategory ? 'Adding...' : 'Add'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                disabled={loadingCategories}
+                className="border border-gray-300 rounded-lg px-3 py-2 w-full text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+              >
+                {loadingCategories ? (
+                  <option>Loading categories...</option>
+                ) : categories.length === 0 ? (
+                  <option>No categories available</option>
+                ) : (
+                  categories.map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))
+                )}
+              </select>
+            )}
           </div>
 
           <label className="block text-sm font-medium text-gray-700 mb-2">
