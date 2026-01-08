@@ -93,11 +93,19 @@ export default function Login() {
         navigate('/dashboard');
       }
     } catch (err) {
-      setError(
-        err.response?.data?.error || 
-        err.message || 
-        (isLogin ? 'Login failed. Please check your credentials.' : 'Registration failed. Please try again.')
-      );
+      // Handle network errors (backend not running)
+      if (err.code === 'ERR_NETWORK' || err.message === 'Network Error' || !err.response) {
+        setError(
+          'Cannot connect to server. Please make sure the backend server is running on http://localhost:5000'
+        );
+      } else {
+        // Handle API errors
+        setError(
+          err.response?.data?.error || 
+          err.message || 
+          (isLogin ? 'Login failed. Please check your credentials.' : 'Registration failed. Please try again.')
+        );
+      }
     } finally {
       setLoading(false);
     }
