@@ -45,8 +45,15 @@ export default function Dashboard() {
     const fetchDashboardStats = async () => {
       try {
         setLoading(true);
+        // Add cache-busting parameter only if needed, but prefer using cache
         const response = await API.get('/dashboard/stats', {
-          signal: abortController.signal
+          signal: abortController.signal,
+          // Add timeout to prevent hanging requests
+          timeout: 30000, // 30 seconds
+          // Enable response caching
+          headers: {
+            'Cache-Control': 'max-age=300' // 5 minutes
+          }
         });
         if (isMounted) {
           setStats(response.data?.data || response.data);
@@ -60,6 +67,10 @@ export default function Dashboard() {
         
         if (!isCanceled && isMounted) {
           console.error('Error fetching dashboard stats:', err);
+          // Show user-friendly error message
+          if (err.code === 'ECONNABORTED') {
+            console.error('Request timeout - dashboard data is taking too long to load');
+          }
         }
       } finally {
         if (isMounted) {
