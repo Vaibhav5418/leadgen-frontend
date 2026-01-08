@@ -21,11 +21,13 @@ export default function Contacts() {
   const [expandedKeywords, setExpandedKeywords] = useState(new Set());
   const [viewMode, setViewMode] = useState('details'); // 'details' or 'company'
   const [expandedCompanies, setExpandedCompanies] = useState(new Set());
+  const [allCompaniesData, setAllCompaniesData] = useState([]);
+  const [loadingCompanies, setLoadingCompanies] = useState(false);
   const navigate = useNavigate();
   
   // Get category, page, and search from URL params or use default
   // Note: Database stores as "IND-IT&service", but UI shows "IND-IT & Service"
-  const category = searchParams.get('category') || 'IND-IT & Service';
+  const category = searchParams.get('category') || 'All';
   const currentPage = parseInt(searchParams.get('page') || '1', 10);
   const searchParam = searchParams.get('search') || '';
   
@@ -39,6 +41,7 @@ export default function Contacts() {
   const filterHasPhone = searchParams.get('filterHasPhone') || '';
   
   const categories = [
+    'All',
     'IND-IT & Service',
     'Accounting & Book keeping',
     'Web Design & Development',
@@ -75,6 +78,14 @@ export default function Contacts() {
     setSearchQuery(searchParam);
   }, [searchParam]);
 
+  // Fetch all companies when Company view is active or filters change
+  useEffect(() => {
+    if (viewMode === 'company') {
+      fetchAllCompanies();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode, category, searchParam, filterKeywords, filterCity, filterState, filterCountry, filterHasLinkedIn, filterHasEmail, filterHasPhone]);
+
   // Fetch contacts when filters or pagination change
   useEffect(() => {
     fetchContacts();
@@ -82,14 +93,51 @@ export default function Contacts() {
   }, [category, currentPage, searchParam, filterKeywords, filterCity, filterState, filterCountry, filterHasLinkedIn, filterHasEmail, filterHasPhone]);
 
 
+  const fetchAllCompanies = async () => {
+    try {
+      setLoadingCompanies(true);
+      const params = {};
+      // Only add category if it's not "All"
+      if (category && category !== 'All') {
+        params.category = category;
+      }
+      
+      // Add search param if provided
+      if (searchParam && searchParam.trim()) {
+        params.search = searchParam.trim();
+      }
+      
+      // Add filter params
+      if (filterKeywords) params.filterKeywords = filterKeywords;
+      if (filterCity) params.filterCity = filterCity;
+      if (filterState) params.filterState = filterState;
+      if (filterCountry) params.filterCountry = filterCountry;
+      if (filterHasLinkedIn) params.filterHasLinkedIn = filterHasLinkedIn;
+      if (filterHasEmail) params.filterHasEmail = filterHasEmail;
+      if (filterHasPhone) params.filterHasPhone = filterHasPhone;
+      
+      const response = await API.get('/contacts/companies', { params });
+      const companies = response?.data?.data || [];
+      setAllCompaniesData(companies);
+    } catch (err) {
+      console.error('Error fetching companies:', err);
+      setAllCompaniesData([]);
+    } finally {
+      setLoadingCompanies(false);
+    }
+  };
+
   const fetchContacts = async () => {
     try {
       setLoading(true);
       const params = { 
-        category,
         page: currentPage,
         limit: 50
       };
+      // Only add category param if it's not "All"
+      if (category && category !== 'All') {
+        params.category = category;
+      }
       // Only add search param if it's not empty
       if (searchParam && searchParam.trim()) {
         params.search = searchParam.trim();
@@ -132,7 +180,7 @@ export default function Contacts() {
   };
 
   const handleContactClick = (contactId) => {
-    const categoryParam = category ? `?category=${encodeURIComponent(category)}` : '';
+    const categoryParam = (category && category !== 'All') ? `?category=${encodeURIComponent(category)}` : '';
     navigate(`/contacts/${contactId}${categoryParam}`);
   };
 
@@ -171,22 +219,37 @@ export default function Contacts() {
   const handleSearch = (e) => {
     e.preventDefault();
     const trimmedQuery = searchQuery.trim();
-    const params = { category };
+    const params = { page: '1' };
+    
+    // Only add category if it's not "All"
+    if (category && category !== 'All') {
+      params.category = category;
+    }
     
     // If search query is empty, remove search param
     if (trimmedQuery) {
       params.search = trimmedQuery;
     }
     
-    // Always reset to page 1 when searching or clearing search
-    params.page = '1';
+    // Preserve active filters when searching
+    if (filterKeywords) params.filterKeywords = filterKeywords;
+    if (filterCity) params.filterCity = filterCity;
+    if (filterState) params.filterState = filterState;
+    if (filterCountry) params.filterCountry = filterCountry;
+    if (filterHasLinkedIn) params.filterHasLinkedIn = filterHasLinkedIn;
+    if (filterHasEmail) params.filterHasEmail = filterHasEmail;
+    if (filterHasPhone) params.filterHasPhone = filterHasPhone;
+    
     setSearchParams(params, { replace: true });
   };
 
-
   const handleClearSearch = () => {
     setSearchQuery('');
-    const params = { category, page: '1' };
+    const params = { page: '1' };
+    // Only add category if it's not "All"
+    if (category && category !== 'All') {
+      params.category = category;
+    }
     // Preserve active filters when clearing search
     if (filterKeywords) params.filterKeywords = filterKeywords;
     if (filterCity) params.filterCity = filterCity;
@@ -199,9 +262,11 @@ export default function Contacts() {
   };
 
   const handleApplyFilters = (filters) => {
-    const params = {};
-    params.category = category;
-    params.page = '1';
+    const params = { page: '1' };
+    // Only add category if it's not "All"
+    if (category && category !== 'All') {
+      params.category = category;
+    }
     
     if (searchParam && searchParam.trim()) {
       params.search = searchParam.trim();
@@ -234,8 +299,17 @@ export default function Contacts() {
     setSearchParams(params, { replace: true });
   };
 
+  const hasActiveFilters = () => {
+    return !!(filterKeywords || filterCity || filterState || filterCountry || 
+              filterHasLinkedIn || filterHasEmail || filterHasPhone);
+  };
+
   const handleClearFilters = () => {
-    const params = { category, page: '1' };
+    const params = { page: '1' };
+    // Only add category if it's not "All"
+    if (category && category !== 'All') {
+      params.category = category;
+    }
     if (searchParam) params.search = searchParam;
     setSearchParams(params, { replace: true });
   };
@@ -331,7 +405,7 @@ export default function Contacts() {
 
   const handleCompanyClick = (companyName) => {
     // Navigate to company detail page
-    const categoryParam = category ? `?category=${encodeURIComponent(category)}` : '';
+    const categoryParam = (category && category !== 'All') ? `?category=${encodeURIComponent(category)}` : '';
     const encodedCompanyName = encodeURIComponent(companyName);
     navigate(`/contacts/company/${encodedCompanyName}${categoryParam}`);
   };
@@ -365,21 +439,23 @@ export default function Contacts() {
                   <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
                     <button
                       onClick={() => setViewMode('details')}
-                      className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
                         viewMode === 'details'
                           ? 'bg-white text-gray-900 shadow-sm'
                           : 'text-gray-600 hover:text-gray-900'
                       }`}
+                      title="View individual contacts"
                     >
                       Details
                     </button>
                     <button
                       onClick={() => setViewMode('company')}
-                      className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                      className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
                         viewMode === 'company'
                           ? 'bg-white text-gray-900 shadow-sm'
                           : 'text-gray-600 hover:text-gray-900'
                       }`}
+                      title="View companies grouped by name"
                     >
                       Company
                     </button>
@@ -400,6 +476,19 @@ export default function Contacts() {
                       {category}
                     </span>
                   </div>
+                  {viewMode === 'company' && allCompaniesData.length > 0 && (
+                    <span className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm">
+                      {allCompaniesData.length} {allCompaniesData.length === 1 ? 'company' : 'companies'}
+                    </span>
+                  )}
+                  {hasActiveFilters() && (
+                    <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-yellow-50 text-yellow-700 border border-yellow-200 shadow-sm">
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+                      </svg>
+                      Filters Active
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -456,7 +545,11 @@ export default function Contacts() {
                     value={category}
                     onChange={(e) => {
                       const newCategory = e.target.value;
-                      const params = { category: newCategory, page: '1' };
+                      const params = { page: '1' };
+                      // Only add category if it's not "All"
+                      if (newCategory !== 'All') {
+                        params.category = newCategory;
+                      }
                       if (searchParam) params.search = searchParam;
                       // Preserve active filters when changing category
                       if (filterKeywords) params.filterKeywords = filterKeywords;
@@ -538,10 +631,18 @@ export default function Contacts() {
             </div>
             <h3 className="text-xl font-bold text-gray-900 mb-2">No contacts found</h3>
             <p className="text-gray-600 mb-2">
-              No contacts found for category: <span className="inline-flex items-center px-2 py-1 rounded-md text-sm font-semibold bg-blue-100 text-blue-800 border border-blue-200">{category}</span>
+              {category === 'All' ? (
+                'No contacts found in the database.'
+              ) : (
+                <>No contacts found for category: <span className="inline-flex items-center px-2 py-1 rounded-md text-sm font-semibold bg-blue-100 text-blue-800 border border-blue-200">{category}</span></>
+              )}
             </p>
             <p className="text-sm text-gray-500 mb-8">
-              Switch to a different category using the dropdown above, or import/add contacts for this category.
+              {category === 'All' ? (
+                'Try using the search or filters to find contacts, or import contacts to get started.'
+              ) : (
+                'Switch to a different category using the dropdown above, or import/add contacts for this category.'
+              )}
             </p>
             <div className="flex justify-center gap-3">
               <button
@@ -561,146 +662,122 @@ export default function Contacts() {
         ) : viewMode === 'company' ? (
           /* Company List View */
             <div className="bg-white border border-gray-200 rounded-lg overflow-hidden animate-fade-in">
-              <div 
-                className="overflow-y-auto" 
-                style={{ 
-                  maxHeight: 'calc(100vh - 300px)',
-                  overscrollBehavior: 'contain'
-                }}
-              >
-                <div className="divide-y divide-gray-200">
-                  {Object.entries(groupContactsByCompany()).map(([companyName, companyContacts]) => {
-                    const isExpanded = expandedCompanies.has(companyName);
-                    return (
-                      <div key={companyName} className="hover:bg-gray-50 transition-colors">
-                        {/* Company Header */}
-                        <div className="px-6 py-4">
-                          <div className="flex items-center justify-between">
-                            <div 
-                              className="flex items-center gap-4 flex-1 cursor-pointer"
-                              onClick={() => handleCompanyClick(companyName)}
-                            >
-                              <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                                <span className="text-lg font-bold text-blue-700">
-                                  {getCompanyInitials(companyName)}
-                                </span>
-                              </div>
-                              <div>
-                                <h3 className="text-lg font-semibold text-gray-900">{companyName}</h3>
-                                <p className="text-sm text-gray-500">
-                                  {companyContacts.length} {companyContacts.length === 1 ? 'person' : 'people'}
-                                </p>
-                              </div>
-                            </div>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleCompany(companyName);
-                              }}
-                              className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
-                            >
-                              <svg
-                                className={`w-5 h-5 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                              </svg>
-                            </button>
-                          </div>
-                        </div>
-                        
-                        {/* Company Contacts Preview */}
-                        {isExpanded && (
-                          <div className="bg-gray-50 border-t border-gray-200">
-                            <div className="px-6 py-4">
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                {companyContacts.slice(0, 6).map((contact) => (
-                                  <div
-                                    key={contact._id}
-                                    onClick={() => handleContactClick(contact._id)}
-                                    className="bg-white rounded-lg p-4 border border-gray-200 hover:border-blue-300 hover:shadow-md transition-all cursor-pointer"
-                                  >
-                                    <div className="flex items-start justify-between mb-2">
-                                      <div className="flex-1">
-                                        <h4 className="text-sm font-semibold text-gray-900 mb-1">
-                                          {contact.name || 'Unknown'}
-                                        </h4>
-                                        {contact.title && (
-                                          <p className="text-xs text-gray-600 mb-2">{contact.title}</p>
-                                        )}
-                                      </div>
-                                    </div>
-                                    <div className="space-y-1">
-                                      {contact.email && (
-                                        <div className="flex items-center gap-2 text-xs text-gray-600">
-                                          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                          </svg>
-                                          <a 
-                                            href={`mailto:${contact.email}`}
-                                            onClick={(e) => e.stopPropagation()}
-                                            className="hover:text-blue-600 hover:underline truncate"
-                                          >
-                                            {contact.email}
-                                          </a>
-                                        </div>
-                                      )}
-                                      {contact.firstPhone && (
-                                        <div className="flex items-center gap-2 text-xs text-gray-600">
-                                          <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                                          </svg>
-                                          <a 
-                                            href={`tel:${contact.firstPhone}`}
-                                            onClick={(e) => e.stopPropagation()}
-                                            className="hover:text-blue-600 hover:underline"
-                                          >
-                                            {contact.firstPhone}
-                                          </a>
-                                        </div>
-                                      )}
-                                      {(contact.personLinkedinUrl || contact.companyLinkedinUrl) && (
-                                        <div className="flex items-center gap-2 text-xs">
-                                          <a
-                                            href={contact.personLinkedinUrl || contact.companyLinkedinUrl}
-                                            onClick={(e) => e.stopPropagation()}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded text-xs"
-                                          >
-                                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-                                              <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
-                                            </svg>
-                                            LinkedIn
-                                          </a>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                              {companyContacts.length > 6 && (
-                                <div className="mt-4 text-center">
-                                  <button
-                                    onClick={() => handleCompanyClick(companyName)}
-                                    className="text-sm text-blue-600 hover:text-blue-700 font-medium"
-                                  >
-                                    View all {companyContacts.length} people →
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+              {loadingCompanies ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="text-center">
+                    <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
+                    <p className="text-gray-600">Loading companies...</p>
+                  </div>
                 </div>
-              </div>
+              ) : allCompaniesData.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gray-100 mb-4">
+                    <svg className="w-10 h-10 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                    </svg>
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-900 mb-2">No companies found</h3>
+                  <p className="text-gray-600 mb-2">
+                    {hasActiveFilters() ? (
+                      'No companies match the current filters. Try adjusting your search or filter criteria.'
+                    ) : category === 'All' ? (
+                      'No companies found in the database.'
+                    ) : (
+                      <>No companies found for category: <span className="inline-flex items-center px-2 py-1 rounded-md text-sm font-semibold bg-blue-100 text-blue-800 border border-blue-200">{category}</span></>
+                    )}
+                  </p>
+                  <p className="text-sm text-gray-500 mb-8">
+                    {hasActiveFilters() ? (
+                      'Clear filters or try a different search term.'
+                    ) : (
+                      'Try using the search or filters to find companies, or import contacts to get started.'
+                    )}
+                  </p>
+                  {hasActiveFilters() && (
+                    <button
+                      onClick={handleClearFilters}
+                      className="inline-flex items-center px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                    >
+                      Clear All Filters
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div 
+                  className="overflow-y-auto" 
+                  style={{ 
+                    maxHeight: 'calc(100vh - 300px)',
+                    overscrollBehavior: 'contain'
+                  }}
+                >
+                  <div className="divide-y divide-gray-200">
+                    {allCompaniesData.map((companyData) => {
+                      const companyName = companyData.name;
+                      const isExpanded = expandedCompanies.has(companyName);
+                      return (
+                        <div key={companyName} className="hover:bg-gray-50 transition-colors">
+                          {/* Company Header */}
+                          <div className="px-6 py-4">
+                            <div className="flex items-center justify-between">
+                              <div 
+                                className="flex items-center gap-4 flex-1 cursor-pointer"
+                                onClick={() => handleCompanyClick(companyName)}
+                              >
+                                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                  <span className="text-lg font-bold text-blue-700">
+                                    {getCompanyInitials(companyName)}
+                                  </span>
+                                </div>
+                                <div>
+                                  <h3 className="text-lg font-semibold text-gray-900">{companyName}</h3>
+                                  <p className="text-sm text-gray-500">
+                                    {companyData.count} {companyData.count === 1 ? 'person' : 'people'}
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleCompany(companyName);
+                                }}
+                                className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
+                              >
+                                <svg
+                                  className={`w-5 h-5 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                              </button>
+                            </div>
+                          </div>
+                          
+                          {/* Company Contacts Preview - Show message to click for details */}
+                          {isExpanded && (
+                            <div className="bg-gray-50 border-t border-gray-200">
+                              <div className="px-6 py-4 text-center">
+                                <p className="text-gray-600 mb-4">
+                                  Click on the company name above to view all {companyData.count} {companyData.count === 1 ? 'contact' : 'contacts'}
+                                </p>
+                                <button
+                                  onClick={() => handleCompanyClick(companyName)}
+                                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                                >
+                                  View All Contacts
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
-        ) : (
+          ) : (
           /* Details View */
           <div className="bg-white border border-gray-200 overflow-hidden animate-fade-in">
             <div 
@@ -889,7 +966,10 @@ export default function Contacts() {
                     onClick={() => {
                       if (currentPage > 1) {
                         const newPage = currentPage - 1;
-                        const params = { category, page: newPage.toString() };
+                        const params = { page: newPage.toString() };
+                        if (category && category !== 'All') {
+                          params.category = category;
+                        }
                         if (searchParam) params.search = searchParam;
                         setSearchParams(params, { replace: true });
                       }
@@ -916,7 +996,10 @@ export default function Contacts() {
                         <button
                           key={pageNum}
                           onClick={() => {
-                            const params = { category, page: pageNum.toString() };
+                            const params = { page: pageNum.toString() };
+                            if (category && category !== 'All') {
+                              params.category = category;
+                            }
                             if (searchParam) params.search = searchParam;
                             setSearchParams(params, { replace: true });
                           }}
@@ -935,7 +1018,10 @@ export default function Contacts() {
                     onClick={() => {
                       if (currentPage < pagination.totalPages) {
                         const newPage = currentPage + 1;
-                        const params = { category, page: newPage.toString() };
+                        const params = { page: newPage.toString() };
+                        if (category && category !== 'All') {
+                          params.category = category;
+                        }
                         if (searchParam) params.search = searchParam;
                         setSearchParams(params, { replace: true });
                       }

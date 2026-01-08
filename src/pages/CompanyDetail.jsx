@@ -57,6 +57,36 @@ export default function CompanyDetail() {
     return companyName.substring(0, 2).toUpperCase();
   };
 
+  // Clean markdown formatting from text
+  const cleanMarkdown = (text) => {
+    if (!text) return '';
+    
+    // Remove markdown headers (##, ###, etc.)
+    text = text.replace(/^#{1,6}\s+/gm, '');
+    
+    // Remove bold markers (**text** or __text__)
+    text = text.replace(/\*\*([^*]+)\*\*/g, '$1');
+    text = text.replace(/__([^_]+)__/g, '$1');
+    
+    // Remove italic markers (*text* or _text_)
+    text = text.replace(/\*([^*]+)\*/g, '$1');
+    text = text.replace(/_([^_]+)_/g, '$1');
+    
+    // Remove list markers (*, -, +) at the start of lines
+    text = text.replace(/^[\s]*[-*+]\s+/gm, '• ');
+    
+    // Remove numbered list markers (1., 2., etc.)
+    text = text.replace(/^\d+\.\s+/gm, '');
+    
+    // Clean up multiple newlines
+    text = text.replace(/\n{3,}/g, '\n\n');
+    
+    // Trim whitespace
+    text = text.trim();
+    
+    return text;
+  };
+
   const handleContactClick = (contactId) => {
     const categoryParam = category ? `?category=${encodeURIComponent(category)}` : '';
     navigate(`/contacts/${contactId}${categoryParam}`);
@@ -256,48 +286,94 @@ export default function CompanyDetail() {
             )}
 
             {analysis && (
-              <div className="mt-4 space-y-4 animate-fade-in">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="mt-6 animate-fade-in">
+                {/* Professional Horizontal Layout */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                   {/* Company Overview */}
-                  <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 hover:shadow-md transition duration-200">
-                    <div className="flex items-center gap-3 mb-3">
-                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-blue-50 text-blue-700 font-semibold">1</span>
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-gray-500">Company Overview</p>
-                        <p className="text-sm text-gray-900 font-semibold">Position & story</p>
+                  <div className="group relative bg-gradient-to-br from-white to-blue-50/30 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-100/20 rounded-full -mr-16 -mt-16 blur-2xl"></div>
+                    <div className="relative p-6 h-full flex flex-col">
+                      <div className="flex items-start gap-4 mb-4">
+                        <div className="flex-shrink-0">
+                          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
+                            <span className="text-xl font-bold text-white">1</span>
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs uppercase tracking-wider text-blue-600 font-bold mb-1">Company Overview</p>
+                          <p className="text-base text-gray-900 font-semibold">Position & Story</p>
+                        </div>
+                      </div>
+                      <div className="flex-1 text-sm text-gray-700 leading-relaxed whitespace-pre-line overflow-y-auto">
+                        {cleanMarkdown(analysis.analysis.companyOverview || analysis.fullText.split('1)')[1]?.split('2)')[0]?.trim() || 'Analysis not available')}
+                      </div>
+                      <div className="mt-4 pt-4 border-t border-slate-200">
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span>Strategic positioning</span>
+                        </div>
                       </div>
                     </div>
-                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
-                      {analysis.analysis.companyOverview || analysis.fullText.split('1)')[1]?.split('2)')[0]?.trim() || 'Analysis not available'}
-                    </p>
                   </div>
 
                   {/* Core Offering */}
-                  <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 hover:shadow-md transition duration-200">
-                    <div className="flex items-center gap-3 mb-3">
-                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 font-semibold">2</span>
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-gray-500">Core Offering</p>
-                        <p className="text-sm text-gray-900 font-semibold">Products & value</p>
+                  <div className="group relative bg-gradient-to-br from-white to-emerald-50/30 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-100/20 rounded-full -mr-16 -mt-16 blur-2xl"></div>
+                    <div className="relative p-6 h-full flex flex-col">
+                      <div className="flex items-start gap-4 mb-4">
+                        <div className="flex-shrink-0">
+                          <div className="w-12 h-12 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-lg">
+                            <span className="text-xl font-bold text-white">2</span>
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs uppercase tracking-wider text-emerald-600 font-bold mb-1">Core Offering</p>
+                          <p className="text-base text-gray-900 font-semibold">Products & Value</p>
+                        </div>
+                      </div>
+                      <div className="flex-1 text-sm text-gray-700 leading-relaxed whitespace-pre-line overflow-y-auto">
+                        {cleanMarkdown(analysis.analysis.coreOffering || analysis.fullText.split('2)')[1]?.split('3)')[0]?.trim() || 'Analysis not available')}
+                      </div>
+                      <div className="mt-4 pt-4 border-t border-slate-200">
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span>Value proposition</span>
+                        </div>
                       </div>
                     </div>
-                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
-                      {analysis.analysis.coreOffering || analysis.fullText.split('2)')[1]?.split('3)')[0]?.trim() || 'Analysis not available'}
-                    </p>
                   </div>
 
                   {/* Business Considerations */}
-                  <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 hover:shadow-md transition duration-200">
-                    <div className="flex items-center gap-3 mb-3">
-                      <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-purple-50 text-purple-700 font-semibold">3</span>
-                      <div>
-                        <p className="text-xs uppercase tracking-wide text-gray-500">Business Considerations</p>
-                        <p className="text-sm text-gray-900 font-semibold">Risks & opportunities</p>
+                  <div className="group relative bg-gradient-to-br from-white to-purple-50/30 rounded-2xl border border-slate-200 shadow-sm hover:shadow-xl transition-all duration-300 overflow-hidden">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-purple-100/20 rounded-full -mr-16 -mt-16 blur-2xl"></div>
+                    <div className="relative p-6 h-full flex flex-col">
+                      <div className="flex items-start gap-4 mb-4">
+                        <div className="flex-shrink-0">
+                          <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+                            <span className="text-xl font-bold text-white">3</span>
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs uppercase tracking-wider text-purple-600 font-bold mb-1">Business Considerations</p>
+                          <p className="text-base text-gray-900 font-semibold">Risks & Opportunities</p>
+                        </div>
+                      </div>
+                      <div className="flex-1 text-sm text-gray-700 leading-relaxed whitespace-pre-line overflow-y-auto">
+                        {cleanMarkdown(analysis.analysis.businessConsiderations || analysis.fullText.split('3)')[1]?.trim() || 'Analysis not available')}
+                      </div>
+                      <div className="mt-4 pt-4 border-t border-slate-200">
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                          </svg>
+                          <span>Strategic insights</span>
+                        </div>
                       </div>
                     </div>
-                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
-                      {analysis.analysis.businessConsiderations || analysis.fullText.split('3)')[1]?.trim() || 'Analysis not available'}
-                    </p>
                   </div>
                 </div>
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, memo, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import API from '../api/axios';
 import {
@@ -13,7 +13,12 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
-import { Line, Bar, Doughnut, Pie } from 'react-chartjs-2';
+
+// Lazy load chart components for better initial load performance
+const Line = lazy(() => import('react-chartjs-2').then(module => ({ default: module.Line })));
+const Bar = lazy(() => import('react-chartjs-2').then(module => ({ default: module.Bar })));
+const Doughnut = lazy(() => import('react-chartjs-2').then(module => ({ default: module.Doughnut })));
+const Pie = lazy(() => import('react-chartjs-2').then(module => ({ default: module.Pie })));
 
 ChartJS.register(
   CategoryScale,
@@ -34,20 +39,45 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    fetchDashboardStats();
-  }, []);
+    let isMounted = true;
+    const abortController = new AbortController();
 
-  const fetchDashboardStats = async () => {
-    try {
-      setLoading(true);
-      const response = await API.get('/dashboard/stats');
-      setStats(response.data?.data || response.data);
-    } catch (err) {
-      console.error('Error fetching dashboard stats:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    const fetchDashboardStats = async () => {
+      try {
+        setLoading(true);
+        const response = await API.get('/dashboard/stats', {
+          signal: abortController.signal
+        });
+        if (isMounted) {
+          setStats(response.data?.data || response.data);
+        }
+      } catch (err) {
+        // Only log errors that are not cancellations
+        const isCanceled = err.name === 'CanceledError' || 
+                          err.message === 'canceled' || 
+                          err.code === 'ERR_CANCELED' ||
+                          (err.config && err.config.signal && err.config.signal.aborted);
+        
+        if (!isCanceled && isMounted) {
+          console.error('Error fetching dashboard stats:', err);
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    fetchDashboardStats();
+
+    return () => {
+      isMounted = false;
+      // Only abort if the request is still pending
+      if (!abortController.signal.aborted) {
+        abortController.abort();
+      }
+    };
+  }, []);
 
   const tabs = [
     { id: 'overview', label: 'Overview', icon: 'grid' },
@@ -58,12 +88,91 @@ export default function Dashboard() {
     { id: 'ownership', label: 'Ownership & Team', icon: 'users' }
   ];
 
+  // Memoized calculations - must be at top level before any conditional returns
+  const dataHealthScores = useMemo(() => {
+    if (!stats) {
+      return { overallScore: 0, completeness: 0, deduplication: 100, freshness: 0 };
+    }
+    const totalContacts = stats.totalContacts || 0;
+    const overallScore = totalContacts > 0 ? Math.round(
+      ((stats.emailValidity?.valid || 0) / totalContacts * 0.3 +
+       (stats.outreachReady?.value || 0) / totalContacts * 0.3 +
+       (stats.enrichmentCoverage?.value || 0) / totalContacts * 0.2 +
+       (1 - (stats.duplicateRecords?.value || 0) / totalContacts) * 0.2) * 100
+    ) : 0;
+    const completeness = totalContacts > 0 ? Math.round(
+      ((stats.outreachReady?.value || 0) / totalContacts) * 100
+    ) : 0;
+    const deduplication = totalContacts > 0 ? Math.round(
+      (1 - (stats.duplicateRecords?.value || 0) / totalContacts) * 100
+    ) : 100;
+    const freshness = stats.enrichmentCoverage?.percent ? Math.round(stats.enrichmentCoverage.percent) : 0;
+    
+    return { overallScore, completeness, deduplication, freshness };
+  }, [stats?.totalContacts, stats?.emailValidity?.valid, stats?.outreachReady?.value, stats?.enrichmentCoverage?.value, stats?.duplicateRecords?.value, stats?.enrichmentCoverage?.percent]);
+
+  // Memoized pie chart data
+  const pieChartData = useMemo(() => {
+    if (!stats?.topIndustries || stats.topIndustries.length === 0) {
+      return null;
+    }
+    const top5 = stats.topIndustries.slice(0, 5);
+    const totalTop5 = top5.reduce((sum, item) => sum + (item.count || 0), 0);
+    const totalAll = stats.topIndustries.reduce((sum, item) => sum + (item.count || 0), 0);
+    const othersCount = totalAll - totalTop5;
+    
+    const pieData = top5.map(item => ({
+      label: item.name,
+      value: item.count || 0,
+      percentage: totalAll > 0 ? Math.round(((item.count || 0) / totalAll) * 100) : 0
+    }));
+    
+    if (othersCount > 0) {
+      pieData.push({
+        label: 'Others',
+        value: othersCount,
+        percentage: Math.round((othersCount / totalAll) * 100)
+      });
+    }
+    
+    const colors = [
+      'rgb(59, 130, 246)',   // Blue
+      'rgb(34, 197, 94)',    // Green
+      'rgb(249, 115, 22)',   // Orange
+      'rgb(239, 68, 68)',    // Red
+      'rgb(168, 85, 247)',   // Purple
+      'rgb(156, 163, 175)'   // Gray for Others
+    ];
+    
+    return {
+      labels: pieData.map(item => `${item.label}: ${item.percentage}%`),
+      data: pieData.map(item => item.value),
+      colors: colors.slice(0, pieData.length)
+    };
+  }, [stats?.topIndustries]);
+
+  // Skeleton loading component
+  const SkeletonCard = () => (
+    <div className="bg-white border border-gray-200 rounded-lg p-6 animate-pulse">
+      <div className="h-4 bg-gray-200 rounded w-1/3 mb-4"></div>
+      <div className="h-8 bg-gray-200 rounded w-1/2 mb-2"></div>
+      <div className="h-3 bg-gray-200 rounded w-1/4"></div>
+    </div>
+  );
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-200 border-t-gray-900 mx-auto"></div>
-          <p className="text-gray-600">Loading dashboard...</p>
+      <div className="min-h-screen bg-gray-50">
+        <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div className="h-8 bg-gray-200 rounded w-48 mb-4 animate-pulse"></div>
+            <div className="h-10 bg-gray-200 rounded w-full animate-pulse"></div>
+          </div>
+        </div>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {[...Array(6)].map((_, i) => <SkeletonCard key={i} />)}
+          </div>
         </div>
       </div>
     );
@@ -79,7 +188,8 @@ export default function Dashboard() {
     );
   }
 
-  const MetricCard = ({ title, value, trend, trendDirection, icon, subtitle, percent }) => (
+  // Memoized MetricCard component to prevent unnecessary re-renders
+  const MetricCard = memo(({ title, value, trend, trendDirection, icon, subtitle, percent }) => (
     <div className="bg-white border border-gray-200 rounded-lg p-6 hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between mb-4">
         <div className="flex-1">
@@ -154,9 +264,10 @@ export default function Dashboard() {
         </div>
       )}
     </div>
-  );
+  ));
 
-  const AlertCard = ({ type, title, description, action, actionLabel }) => {
+  // Memoized AlertCard component
+  const AlertCard = memo(({ type, title, description, action, actionLabel }) => {
     const colors = {
       success: { bg: 'bg-green-50', border: 'border-green-200', icon: 'text-green-600', text: 'text-green-800' },
       warning: { bg: 'bg-yellow-50', border: 'border-yellow-200', icon: 'text-yellow-600', text: 'text-yellow-800' },
@@ -202,7 +313,7 @@ export default function Dashboard() {
         </div>
       </div>
     );
-  };
+  });
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -359,7 +470,8 @@ export default function Dashboard() {
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Contact & Account Growth</h3>
                 {stats.monthlyGrowth && Array.isArray(stats.monthlyGrowth) && stats.monthlyGrowth.length > 0 ? (
                   <div className="h-64">
-                    <Line
+                    <Suspense fallback={<div className="h-64 flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-200 border-t-blue-600"></div></div>}>
+                      <Line
                       data={{
                         labels: stats.monthlyGrowth.map(item => item.month || ''),
                         datasets: [
@@ -399,6 +511,7 @@ export default function Dashboard() {
                         },
                       }}
                     />
+                    </Suspense>
                   </div>
                 ) : (
                   <div className="h-64 flex items-center justify-center text-gray-500">
@@ -412,7 +525,8 @@ export default function Dashboard() {
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Enrichment Status Distribution</h3>
                 {stats.enrichmentStatus ? (
                   <div className="h-64">
-                    <Doughnut
+                    <Suspense fallback={<div className="h-64 flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-200 border-t-blue-600"></div></div>}>
+                      <Doughnut
                       data={{
                         labels: ['Fully Enriched', 'Partially Enriched', 'Not Enriched'],
                         datasets: [
@@ -440,6 +554,7 @@ export default function Dashboard() {
                         },
                       }}
                     />
+                    </Suspense>
                   </div>
                 ) : (
                   <div className="h-64 flex items-center justify-center text-gray-500">
@@ -585,36 +700,19 @@ export default function Dashboard() {
               <h3 className="text-lg font-semibold text-gray-900 mb-6">Data Health Score</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
                 <div className="text-center">
-                  <div className="text-4xl font-bold text-blue-600 mb-2">
-                    {stats.totalContacts > 0 ? Math.round(
-                      ((stats.emailValidity?.valid || 0) / stats.totalContacts * 0.3 +
-                       (stats.outreachReady?.value || 0) / stats.totalContacts * 0.3 +
-                       (stats.enrichmentCoverage?.value || 0) / stats.totalContacts * 0.2 +
-                       (1 - (stats.duplicateRecords?.value || 0) / stats.totalContacts) * 0.2) * 100
-                    ) : 0}
-                  </div>
+                  <div className="text-4xl font-bold text-blue-600 mb-2">{dataHealthScores.overallScore}</div>
                   <p className="text-sm text-gray-600">Overall Score</p>
                 </div>
                 <div className="text-center">
-                  <div className="text-4xl font-bold text-green-600 mb-2">
-                    {stats.totalContacts > 0 ? Math.round(
-                      ((stats.outreachReady?.value || 0) / stats.totalContacts) * 100
-                    ) : 0}
-                  </div>
+                  <div className="text-4xl font-bold text-green-600 mb-2">{dataHealthScores.completeness}</div>
                   <p className="text-sm text-gray-600">Completeness</p>
                 </div>
                 <div className="text-center">
-                  <div className="text-4xl font-bold text-green-600 mb-2">
-                    {stats.totalContacts > 0 ? Math.round(
-                      (1 - (stats.duplicateRecords?.value || 0) / stats.totalContacts) * 100
-                    ) : 100}
-                  </div>
+                  <div className="text-4xl font-bold text-green-600 mb-2">{dataHealthScores.deduplication}</div>
                   <p className="text-sm text-gray-600">Deduplication</p>
                 </div>
                 <div className="text-center">
-                  <div className="text-4xl font-bold text-orange-600 mb-2">
-                    {stats.enrichmentCoverage?.percent ? Math.round(stats.enrichmentCoverage.percent) : 0}
-                  </div>
+                  <div className="text-4xl font-bold text-orange-600 mb-2">{dataHealthScores.freshness}</div>
                   <p className="text-sm text-gray-600">Freshness</p>
                 </div>
               </div>
@@ -631,7 +729,8 @@ export default function Dashboard() {
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Industry Distribution</h3>
                 {stats.topIndustries && stats.topIndustries.length > 0 ? (
                   <div className="h-80">
-                    <Bar
+                    <Suspense fallback={<div className="h-80 flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-200 border-t-blue-600"></div></div>}>
+                      <Bar
                       data={{
                         labels: stats.topIndustries.map(item => item.name),
                         datasets: [
@@ -674,6 +773,7 @@ export default function Dashboard() {
                         },
                       }}
                     />
+                    </Suspense>
                   </div>
                 ) : (
                   <div className="h-80 flex items-center justify-center text-gray-500">
@@ -685,93 +785,63 @@ export default function Dashboard() {
               {/* Top 5 Industries by Contact Volume - Pie Chart */}
               <div className="bg-white border border-gray-200 rounded-lg p-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Top 5 Industries by Contact Volume</h3>
-                {stats.topIndustries && stats.topIndustries.length > 0 ? (
+                {pieChartData ? (
                   <div className="h-80">
-                    {(() => {
-                      const top5 = stats.topIndustries.slice(0, 5);
-                      const totalTop5 = top5.reduce((sum, item) => sum + (item.count || 0), 0);
-                      const totalAll = stats.topIndustries.reduce((sum, item) => sum + (item.count || 0), 0);
-                      const othersCount = totalAll - totalTop5;
-                      
-                      const pieData = top5.map(item => ({
-                        label: item.name,
-                        value: item.count || 0,
-                        percentage: totalAll > 0 ? Math.round(((item.count || 0) / totalAll) * 100) : 0
-                      }));
-                      
-                      if (othersCount > 0) {
-                        pieData.push({
-                          label: 'Others',
-                          value: othersCount,
-                          percentage: Math.round((othersCount / totalAll) * 100)
-                        });
-                      }
-                      
-                      const colors = [
-                        'rgb(59, 130, 246)',   // Blue
-                        'rgb(34, 197, 94)',    // Green
-                        'rgb(249, 115, 22)',   // Orange
-                        'rgb(239, 68, 68)',    // Red
-                        'rgb(168, 85, 247)',   // Purple
-                        'rgb(156, 163, 175)'   // Gray for Others
-                      ];
-                      
-                      return (
-                        <Pie
-                          data={{
-                            labels: pieData.map(item => `${item.label}: ${item.percentage}%`),
-                            datasets: [
-                              {
-                                data: pieData.map(item => item.value),
-                                backgroundColor: colors.slice(0, pieData.length),
-                                borderWidth: 0,
-                              },
-                            ],
-                          }}
-                          options={{
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            plugins: {
-                              legend: {
-                                position: 'right',
-                                labels: {
-                                  usePointStyle: true,
-                                  padding: 15,
-                                  font: {
-                                    size: 12,
-                                  },
-                                  generateLabels: function(chart) {
-                                    const data = chart.data;
-                                    if (data.labels.length && data.datasets.length) {
-                                      return data.labels.map((label, i) => {
-                                        const value = data.datasets[0].data[i];
-                                        const color = data.datasets[0].backgroundColor[i];
-                                        return {
-                                          text: label,
-                                          fillStyle: color,
-                                          hidden: false,
-                                          index: i
-                                        };
-                                      });
-                                    }
-                                    return [];
+                    <Suspense fallback={<div className="h-80 flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-200 border-t-blue-600"></div></div>}>
+                      <Pie
+                        data={{
+                          labels: pieChartData.labels,
+                          datasets: [
+                            {
+                              data: pieChartData.data,
+                              backgroundColor: pieChartData.colors,
+                              borderWidth: 0,
+                            },
+                          ],
+                        }}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          plugins: {
+                            legend: {
+                              position: 'right',
+                              labels: {
+                                usePointStyle: true,
+                                padding: 15,
+                                font: {
+                                  size: 12,
+                                },
+                                generateLabels: function(chart) {
+                                  const data = chart.data;
+                                  if (data.labels.length && data.datasets.length) {
+                                    return data.labels.map((label, i) => {
+                                      const value = data.datasets[0].data[i];
+                                      const color = data.datasets[0].backgroundColor[i];
+                                      return {
+                                        text: label,
+                                        fillStyle: color,
+                                        hidden: false,
+                                        index: i
+                                      };
+                                    });
                                   }
+                                  return [];
                                 }
-                              },
-                              tooltip: {
-                                callbacks: {
-                                  label: function(context) {
-                                    const label = context.label || '';
-                                    const value = context.parsed || 0;
-                                    return `${label} - ${value.toLocaleString()} contacts`;
-                                  }
+                              }
+                            },
+                            tooltip: {
+                              callbacks: {
+                                label: function(context) {
+                                  const label = context.label || '';
+                                  const value = context.parsed || 0;
+                                  return `${label} - ${value.toLocaleString()} contacts`;
                                 }
                               }
                             }
-                          }}
-                        />
-                      );
-                    })()}
+                          }
+                        }}
+                      />
+                    </Suspense>
                   </div>
                 ) : (
                   <div className="h-80 flex items-center justify-center text-gray-500">
@@ -839,7 +909,8 @@ export default function Dashboard() {
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Geographic Distribution</h3>
               {stats.topStates && stats.topStates.length > 0 ? (
                 <div className="h-96">
-                  <Bar
+                  <Suspense fallback={<div className="h-96 flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-200 border-t-blue-600"></div></div>}>
+                    <Bar
                     data={{
                       labels: stats.topStates.map(item => item.name),
                       datasets: [
@@ -891,6 +962,7 @@ export default function Dashboard() {
                       },
                     }}
                   />
+                  </Suspense>
                 </div>
               ) : (
                 <div className="h-96 flex items-center justify-center text-gray-500">
@@ -907,7 +979,8 @@ export default function Dashboard() {
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Data Quality Metrics</h3>
               {stats.dataQualityMetrics ? (
                 <div className="h-80">
-                  <Bar
+                  <Suspense fallback={<div className="h-80 flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-200 border-t-blue-600"></div></div>}>
+                    <Bar
                     data={{
                       labels: ['Email Valid', 'Phone Valid', 'Complete Profile', 'LinkedIn Connected', 'Recent Activity'],
                       datasets: [
@@ -939,6 +1012,7 @@ export default function Dashboard() {
                       },
                     }}
                   />
+                  </Suspense>
                 </div>
               ) : (
                 <div className="h-80 flex items-center justify-center text-gray-500">

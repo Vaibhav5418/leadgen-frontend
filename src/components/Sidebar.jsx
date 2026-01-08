@@ -130,6 +130,47 @@ export default function Sidebar() {
 
         </div>
       </nav>
+
+      {/* User Info & Logout */}
+      <div className="px-4 py-4 border-t border-gray-200">
+        <div className="flex items-center gap-3 mb-3">
+          <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
+            <span className="text-sm font-semibold text-blue-700">
+              {(() => {
+                const user = JSON.parse(localStorage.getItem('user') || '{}');
+                return user.name ? user.name.charAt(0).toUpperCase() : 'U';
+              })()}
+            </span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-gray-900 truncate">
+              {(() => {
+                const user = JSON.parse(localStorage.getItem('user') || '{}');
+                return user.name || user.email || 'User';
+              })()}
+            </p>
+            <p className="text-xs text-gray-500 truncate">
+              {(() => {
+                const user = JSON.parse(localStorage.getItem('user') || '{}');
+                return user.email || '';
+              })()}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            navigate('/login');
+          }}
+          className="w-full flex items-center gap-2 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          </svg>
+          Logout
+        </button>
+      </div>
     </div>
   );
 }

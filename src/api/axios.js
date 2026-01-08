@@ -30,23 +30,35 @@ API.interceptors.request.use((req) => {
 API.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Enhanced error logging
+    // Ignore canceled requests - these are expected when components unmount or requests are aborted
+    // Check multiple ways axios might indicate a canceled request
+    const isCanceled = 
+      (axios.isCancel && axios.isCancel(error)) ||
+      error.name === 'CanceledError' || 
+      error.message === 'canceled' || 
+      error.code === 'ERR_CANCELED' ||
+      (error.config && error.config.signal && error.config.signal.aborted);
+    
+    if (isCanceled) {
+      // Silently handle canceled requests - don't log as errors
+      return Promise.reject(error);
+    }
+    
+    // Enhanced error logging with detailed information
     if (error.response) {
       // Server responded with error status
-      console.error('API Error Response:', {
-        status: error.response.status,
-        data: error.response.data,
-        url: error.config?.url
-      });
+      console.error('API Error Response:', error.response.status, error.response.statusText);
+      console.error('Error Details:', JSON.stringify(error.response.data, null, 2));
+      console.error('Request URL:', error.config?.baseURL + error.config?.url);
+      console.error('Request Method:', error.config?.method?.toUpperCase());
     } else if (error.request) {
       // Request made but no response received
-      console.error('API Network Error:', {
-        message: error.message,
-        url: error.config?.baseURL + error.config?.url,
-        code: error.code
-      });
+      console.error('API Network Error - No response received');
+      console.error('Error Message:', error.message);
+      console.error('Error Code:', error.code);
+      console.error('Request URL:', error.config?.baseURL + error.config?.url);
     } else {
-      // Error setting up request
+      // Error setting up request (only log if not a cancellation)
       console.error('API Request Setup Error:', error.message);
     }
     return Promise.reject(error);
