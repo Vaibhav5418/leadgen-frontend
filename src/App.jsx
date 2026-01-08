@@ -7,6 +7,9 @@ import ContactDetail from './pages/ContactDetail';
 import CompanyDetail from './pages/CompanyDetail';
 import Import from './pages/Import';
 import AddContact from './pages/AddContact';
+import Projects from './pages/Projects';
+import CreateProject from './pages/CreateProject';
+import ProjectDetail from './pages/ProjectDetail';
 
 // Private Route Component
 const PrivateRoute = ({ children }) => {
@@ -82,6 +85,42 @@ export default function App() {
             element={
               <PrivateRoute>
                 <Import />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/projects"
+            element={
+              <PrivateRoute>
+                <Projects />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/projects/new"
+            element={
+              <PrivateRoute>
+                <CreateProject />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/projects/:id/edit"
+            element={
+              <PrivateRoute>
+                <CreateProject />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/projects/:id"
+            element={
+              <PrivateRoute>
+                <ProjectDetail />
               </PrivateRoute>
             }
           />

@@ -7,6 +7,7 @@ export default function ContactDetail() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const categoryFromUrl = searchParams.get('category');
+  const returnTo = searchParams.get('returnTo');
   const [contact, setContact] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fetchingLinkedIn, setFetchingLinkedIn] = useState(false);
@@ -120,15 +121,20 @@ export default function ContactDetail() {
             <p className="text-gray-600 mb-6">The contact you're looking for doesn't exist or has been removed.</p>
             <button
               onClick={() => {
-                const categoryParam = categoryFromUrl ? `?category=${encodeURIComponent(categoryFromUrl)}` : '';
-                navigate(`/contacts${categoryParam}`);
+                // If returnTo is provided, navigate there, otherwise go to contacts
+                if (returnTo) {
+                  navigate(returnTo);
+                } else {
+                  const categoryParam = categoryFromUrl ? `?category=${encodeURIComponent(categoryFromUrl)}` : '';
+                  navigate(`/contacts${categoryParam}`);
+                }
               }}
               className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-all duration-200 shadow-sm hover:shadow-md"
             >
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
-              Back to Contacts
+              {returnTo ? 'Back' : 'Back to Contacts'}
             </button>
           </div>
         </div>
@@ -152,16 +158,21 @@ export default function ContactDetail() {
             <div className="flex items-center gap-2 text-xs sm:text-sm text-gray-600 overflow-x-auto">
               <button
                 onClick={() => {
-                  const categoryToUse = categoryFromUrl || contact?.category || '';
-                  const categoryParam = categoryToUse ? `?category=${encodeURIComponent(categoryToUse)}` : '';
-                  navigate(`/contacts${categoryParam}`);
+                  // If returnTo is provided, navigate there, otherwise go to contacts
+                  if (returnTo) {
+                    navigate(returnTo);
+                  } else {
+                    const categoryToUse = categoryFromUrl || contact?.category || '';
+                    const categoryParam = categoryToUse ? `?category=${encodeURIComponent(categoryToUse)}` : '';
+                    navigate(`/contacts${categoryParam}`);
+                  }
                 }}
                 className="hover:text-gray-900 transition-colors duration-200 flex items-center gap-1 whitespace-nowrap"
               >
                 <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
-                <span className="hidden sm:inline">Contacts</span>
+                <span className="hidden sm:inline">{returnTo ? 'Back' : 'Contacts'}</span>
                 <span className="sm:hidden">Back</span>
               </button>
               <svg className="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
