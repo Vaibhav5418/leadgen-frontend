@@ -13,6 +13,7 @@ export default function ContactActivityHistory() {
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'call', 'email', 'linkedin'
   const [activityModal, setActivityModal] = useState({
     isOpen: false,
     type: null,
@@ -156,6 +157,17 @@ export default function ContactActivityHistory() {
       default: return 'Activity';
     }
   };
+
+  // Filter activities based on active filter
+  const filteredActivities = activities.filter(activity => {
+    if (activeFilter === 'all') return true;
+    return activity.type === activeFilter;
+  });
+
+  // Group activities by type for stats
+  const callActivities = activities.filter(a => a.type === 'call');
+  const emailActivities = activities.filter(a => a.type === 'email');
+  const linkedInActivities = activities.filter(a => a.type === 'linkedin');
 
   const getOutcomeBadge = (outcome) => {
     const outcomeConfig = {
@@ -340,48 +352,126 @@ export default function ContactActivityHistory() {
         {/* Stats Summary */}
         {activities.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
-            <div className="bg-gradient-to-br from-white to-blue-50 rounded-2xl border border-blue-100 shadow-lg p-6 hover:shadow-xl transition-shadow duration-200">
+            <div 
+              onClick={() => setActiveFilter('all')}
+              className={`bg-gradient-to-br rounded-2xl border shadow-lg p-6 hover:shadow-xl transition-all duration-200 cursor-pointer transform hover:scale-105 ${
+                activeFilter === 'all' 
+                  ? 'from-blue-500 to-blue-600 border-blue-400 text-white' 
+                  : 'from-white to-blue-50 border-blue-100'
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600 font-semibold uppercase tracking-wide mb-1">Total Activities</p>
-                  <p className="text-3xl font-bold text-gray-900">{activities.length}</p>
-                  <p className="text-xs text-gray-500 mt-1">All interactions</p>
+                  <p className={`text-sm font-semibold uppercase tracking-wide mb-1 ${
+                    activeFilter === 'all' ? 'text-blue-100' : 'text-gray-600'
+                  }`}>Total Activities</p>
+                  <p className={`text-3xl font-bold ${
+                    activeFilter === 'all' ? 'text-white' : 'text-gray-900'
+                  }`}>{activities.length}</p>
+                  <p className={`text-xs mt-1 ${
+                    activeFilter === 'all' ? 'text-blue-100' : 'text-gray-500'
+                  }`}>All interactions</p>
                 </div>
-                <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg">
-                  <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className={`w-14 h-14 rounded-xl flex items-center justify-center shadow-lg ${
+                  activeFilter === 'all' 
+                    ? 'bg-white bg-opacity-20' 
+                    : 'bg-gradient-to-br from-blue-500 to-blue-600'
+                }`}>
+                  <svg className={`w-7 h-7 ${activeFilter === 'all' ? 'text-white' : 'text-white'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                   </svg>
                 </div>
               </div>
             </div>
-            <div className="bg-gradient-to-br from-white to-green-50 rounded-2xl border border-green-100 shadow-lg p-6 hover:shadow-xl transition-shadow duration-200">
+            <div 
+              onClick={() => setActiveFilter('call')}
+              className={`bg-gradient-to-br rounded-2xl border shadow-lg p-6 hover:shadow-xl transition-all duration-200 cursor-pointer transform hover:scale-105 ${
+                activeFilter === 'call' 
+                  ? 'from-green-500 to-green-600 border-green-400 text-white' 
+                  : 'from-white to-green-50 border-green-100'
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600 font-semibold uppercase tracking-wide mb-1">Calls</p>
-                  <p className="text-3xl font-bold text-gray-900">
-                    {activities.filter(a => a.type === 'call').length}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">Phone interactions</p>
+                  <p className={`text-sm font-semibold uppercase tracking-wide mb-1 ${
+                    activeFilter === 'call' ? 'text-green-100' : 'text-gray-600'
+                  }`}>Calls</p>
+                  <p className={`text-3xl font-bold ${
+                    activeFilter === 'call' ? 'text-white' : 'text-gray-900'
+                  }`}>{callActivities.length}</p>
+                  <p className={`text-xs mt-1 ${
+                    activeFilter === 'call' ? 'text-green-100' : 'text-gray-500'
+                  }`}>Phone interactions</p>
                 </div>
-                <div className="w-14 h-14 bg-gradient-to-br from-green-500 to-green-600 rounded-xl flex items-center justify-center shadow-lg">
+                <div className={`w-14 h-14 rounded-xl flex items-center justify-center shadow-lg ${
+                  activeFilter === 'call' 
+                    ? 'bg-white bg-opacity-20' 
+                    : 'bg-gradient-to-br from-green-500 to-green-600'
+                }`}>
                   <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                   </svg>
                 </div>
               </div>
             </div>
-            <div className="bg-gradient-to-br from-white to-purple-50 rounded-2xl border border-purple-100 shadow-lg p-6 hover:shadow-xl transition-shadow duration-200">
+            <div 
+              onClick={() => setActiveFilter('email')}
+              className={`bg-gradient-to-br rounded-2xl border shadow-lg p-6 hover:shadow-xl transition-all duration-200 cursor-pointer transform hover:scale-105 ${
+                activeFilter === 'email' 
+                  ? 'from-blue-500 to-blue-600 border-blue-400 text-white' 
+                  : 'from-white to-blue-50 border-blue-100'
+              }`}
+            >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600 font-semibold uppercase tracking-wide mb-1">Emails & LinkedIn</p>
-                  <p className="text-3xl font-bold text-gray-900">
-                    {activities.filter(a => a.type === 'email' || a.type === 'linkedin').length}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">Digital outreach</p>
+                  <p className={`text-sm font-semibold uppercase tracking-wide mb-1 ${
+                    activeFilter === 'email' ? 'text-blue-100' : 'text-gray-600'
+                  }`}>Emails</p>
+                  <p className={`text-3xl font-bold ${
+                    activeFilter === 'email' ? 'text-white' : 'text-gray-900'
+                  }`}>{emailActivities.length}</p>
+                  <p className={`text-xs mt-1 ${
+                    activeFilter === 'email' ? 'text-blue-100' : 'text-gray-500'
+                  }`}>Email outreach</p>
                 </div>
-                <div className="w-14 h-14 bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+                <div className={`w-14 h-14 rounded-xl flex items-center justify-center shadow-lg ${
+                  activeFilter === 'email' 
+                    ? 'bg-white bg-opacity-20' 
+                    : 'bg-gradient-to-br from-blue-500 to-blue-600'
+                }`}>
                   <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+            <div 
+              onClick={() => setActiveFilter('linkedin')}
+              className={`bg-gradient-to-br rounded-2xl border shadow-lg p-6 hover:shadow-xl transition-all duration-200 cursor-pointer transform hover:scale-105 ${
+                activeFilter === 'linkedin' 
+                  ? 'from-indigo-500 to-indigo-600 border-indigo-400 text-white' 
+                  : 'from-white to-indigo-50 border-indigo-100'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className={`text-sm font-semibold uppercase tracking-wide mb-1 ${
+                    activeFilter === 'linkedin' ? 'text-indigo-100' : 'text-gray-600'
+                  }`}>LinkedIn</p>
+                  <p className={`text-3xl font-bold ${
+                    activeFilter === 'linkedin' ? 'text-white' : 'text-gray-900'
+                  }`}>{linkedInActivities.length}</p>
+                  <p className={`text-xs mt-1 ${
+                    activeFilter === 'linkedin' ? 'text-indigo-100' : 'text-gray-500'
+                  }`}>LinkedIn activities</p>
+                </div>
+                <div className={`w-14 h-14 rounded-xl flex items-center justify-center shadow-lg ${
+                  activeFilter === 'linkedin' 
+                    ? 'bg-white bg-opacity-20' 
+                    : 'bg-gradient-to-br from-indigo-500 to-indigo-600'
+                }`}>
+                  <svg className="w-7 h-7 text-white" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
                   </svg>
                 </div>
               </div>
@@ -472,6 +562,66 @@ export default function ContactActivityHistory() {
           </div>
         )}
 
+        {/* Activity Type Filter Tabs */}
+        {activities.length > 0 && (
+          <div className="mb-6 bg-white rounded-2xl border border-gray-200 shadow-lg p-2">
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setActiveFilter('all')}
+                className={`px-6 py-3 rounded-xl font-semibold text-sm transition-all duration-200 flex items-center gap-2 ${
+                  activeFilter === 'all'
+                    ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg transform scale-105'
+                    : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+                All ({activities.length})
+              </button>
+              <button
+                onClick={() => setActiveFilter('call')}
+                className={`px-6 py-3 rounded-xl font-semibold text-sm transition-all duration-200 flex items-center gap-2 ${
+                  activeFilter === 'call'
+                    ? 'bg-gradient-to-r from-green-600 to-green-700 text-white shadow-lg transform scale-105'
+                    : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                </svg>
+                Calls ({callActivities.length})
+              </button>
+              <button
+                onClick={() => setActiveFilter('email')}
+                className={`px-6 py-3 rounded-xl font-semibold text-sm transition-all duration-200 flex items-center gap-2 ${
+                  activeFilter === 'email'
+                    ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg transform scale-105'
+                    : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                Emails ({emailActivities.length})
+              </button>
+              <button
+                onClick={() => setActiveFilter('linkedin')}
+                className={`px-6 py-3 rounded-xl font-semibold text-sm transition-all duration-200 flex items-center gap-2 ${
+                  activeFilter === 'linkedin'
+                    ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-lg transform scale-105'
+                    : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
+                }`}
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                </svg>
+                LinkedIn ({linkedInActivities.length})
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Activities List */}
         {activities.length === 0 ? (
           <div className="text-center py-20 bg-gradient-to-br from-white to-gray-50 rounded-2xl shadow-lg border border-gray-200 animate-fade-in">
@@ -513,7 +663,30 @@ export default function ContactActivityHistory() {
               </div>
             </div>
             <div className="divide-y divide-gray-100">
-              {activities.map((activity, index) => (
+              {filteredActivities.length === 0 ? (
+                <div className="text-center py-16">
+                  <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gray-100 mb-4">
+                    <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-xl font-bold text-gray-900 mb-2">No {activeFilter === 'all' ? '' : activeFilter} activities found</h3>
+                  <p className="text-gray-600 mb-6">Try selecting a different filter or log a new activity.</p>
+                  <button
+                    onClick={() => {
+                      const typeMap = { call: 'call', email: 'email', linkedin: 'linkedin' };
+                      handleOpenActivityModal(typeMap[activeFilter] || 'call');
+                    }}
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-lg hover:shadow-xl transform hover:scale-105"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                    </svg>
+                    Log {activeFilter === 'all' ? 'Activity' : activeFilter.charAt(0).toUpperCase() + activeFilter.slice(1)}
+                  </button>
+                </div>
+              ) : (
+                filteredActivities.map((activity, index) => (
                 <div key={activity._id || index} className="p-6 lg:p-8 hover:bg-gradient-to-r hover:from-gray-50 hover:to-white transition-all duration-200 group">
                   <div className="flex gap-5 lg:gap-6">
                     {/* Icon with Timeline */}
@@ -654,6 +827,50 @@ export default function ContactActivityHistory() {
                         </div>
                       )}
 
+                      {/* Ln Request Sent and Connected (Only for LinkedIn activities) */}
+                      {activity.type === 'linkedin' && (activity.lnRequestSent || activity.connected) && (
+                        <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {activity.lnRequestSent && (
+                            <div className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 rounded-xl border border-purple-100 shadow-sm">
+                              <div className="flex items-center gap-2 mb-2">
+                                <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <p className="text-xs font-semibold text-purple-900 uppercase tracking-wide">Ln Request Sent</p>
+                              </div>
+                              <span className={`inline-block px-3 py-1 text-xs font-medium rounded-full ${
+                                activity.lnRequestSent === 'Yes' ? 'bg-green-100 text-green-800' :
+                                activity.lnRequestSent === 'No' ? 'bg-red-100 text-red-800' :
+                                activity.lnRequestSent === 'Existing Connect' ? 'bg-blue-100 text-blue-800' :
+                                activity.lnRequestSent === 'Inactive Profile' ? 'bg-gray-100 text-gray-800' :
+                                activity.lnRequestSent === 'Irrelevant Profile' ? 'bg-orange-100 text-orange-800' :
+                                activity.lnRequestSent === 'Open to Work' ? 'bg-purple-100 text-purple-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {activity.lnRequestSent}
+                              </span>
+                            </div>
+                          )}
+                          {activity.connected && (
+                            <div className="p-4 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border border-green-100 shadow-sm">
+                              <div className="flex items-center gap-2 mb-2">
+                                <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <p className="text-xs font-semibold text-green-900 uppercase tracking-wide">Connected</p>
+                              </div>
+                              <span className={`inline-block px-3 py-1 text-xs font-medium rounded-full ${
+                                activity.connected === 'Yes' ? 'bg-green-100 text-green-800' :
+                                activity.connected === 'No' ? 'bg-red-100 text-red-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {activity.connected}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
                       {/* Conversation Notes */}
                       <div className="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
                         <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
@@ -686,7 +903,8 @@ export default function ContactActivityHistory() {
                     </div>
                   </div>
                 </div>
-              ))}
+                ))
+              )}
             </div>
           </div>
         )}

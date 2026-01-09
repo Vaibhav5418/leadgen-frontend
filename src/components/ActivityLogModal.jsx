@@ -13,6 +13,8 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
     linkedInUrl: '',
     status: '',
     linkedInAccountName: '',
+    lnRequestSent: '',
+    connected: '',
     callNumber: '',
     callStatus: '',
     callDate: ''
@@ -194,6 +196,8 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
         linkedInUrl: formData.linkedInUrl || linkedInProfileUrl || null,
         status: formData.status || null,
         linkedInAccountName: formData.linkedInAccountName || null,
+        lnRequestSent: formData.lnRequestSent || null,
+        connected: formData.connected || null,
         callNumber: formData.callNumber || null,
         callStatus: formData.callStatus || null,
         callDate: formData.callDate || null
@@ -224,6 +228,8 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
           linkedInUrl: linkedInProfileUrl || '',
           status: '',
           linkedInAccountName: '',
+          lnRequestSent: '',
+          connected: '',
           callNumber: '',
           callStatus: '',
           callDate: ''
@@ -252,11 +258,13 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
       email: '',
       linkedInUrl: '',
       status: '',
-      linkedInAccountName: '',
-      callNumber: '',
-      callStatus: ''
-    });
-    setErrors({});
+          linkedInAccountName: '',
+          lnRequestSent: '',
+          connected: '',
+          callNumber: '',
+          callStatus: ''
+        });
+        setErrors({});
     setSavedValues({ phone: null, email: null, linkedin: null });
     setSavingField({ phone: false, email: false, linkedin: false });
     setShowVariations(false);
@@ -646,6 +654,56 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                   </svg>
                   Name of the LinkedIn account that sent the connection request
                 </p>
+              </div>
+            )}
+
+            {/* Ln Request Sent and Connected Fields (Only for LinkedIn Activity) */}
+            {type === 'linkedin' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200">
+                  <label className="block text-xs font-semibold text-gray-700 mb-2">
+                    Ln Request Sent <span className="text-gray-400 text-xs font-normal">(Optional)</span>
+                  </label>
+                  <select
+                    value={formData.lnRequestSent}
+                    onChange={(e) => handleChange('lnRequestSent', e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white hover:border-gray-400"
+                  >
+                    <option value="">Select an option</option>
+                    <option value="Yes">Yes</option>
+                    <option value="No">No</option>
+                    <option value="Existing Connect">Existing Connect</option>
+                    <option value="Inactive Profile">Inactive Profile</option>
+                    <option value="Irrelevant Profile">Irrelevant Profile</option>
+                    <option value="Open to Work">Open to Work</option>
+                  </select>
+                  <p className="mt-2 text-xs text-gray-500 flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Status of the LinkedIn connection request
+                  </p>
+                </div>
+                <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200">
+                  <label className="block text-xs font-semibold text-gray-700 mb-2">
+                    Connected <span className="text-gray-400 text-xs font-normal">(Optional)</span>
+                  </label>
+                  <select
+                    value={formData.connected}
+                    onChange={(e) => handleChange('connected', e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white hover:border-gray-400"
+                  >
+                    <option value="">Select an option</option>
+                    <option value="Yes">Yes</option>
+                    <option value="No">No</option>
+                  </select>
+                  <p className="mt-2 text-xs text-gray-500 flex items-center gap-1">
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Whether the connection was established
+                  </p>
+                </div>
               </div>
             )}
 
