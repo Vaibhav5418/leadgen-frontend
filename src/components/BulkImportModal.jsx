@@ -157,16 +157,39 @@ export default function BulkImportModal({ isOpen, onClose, projectId, onImportSu
               </div>
               <div className="flex-1">
                 <p className="text-sm font-medium text-gray-900 mb-2">
-                  Upload a CSV, XLSX, or XLS file with the following required columns:
+                  Upload a CSV, XLSX, or XLS file with the following columns:
                 </p>
-                <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
-                  <li><span className="font-semibold">Name</span> (required)</li>
-                  <li><span className="font-semibold">Email</span> (required)</li>
-                  <li><span className="font-semibold">Company</span> (required)</li>
-                  <li><span className="font-semibold">Phone</span> (optional)</li>
-                  <li><span className="font-semibold">Title</span> (optional)</li>
-                  <li><span className="font-semibold">LinkedIn URL</span> (optional)</li>
-                </ul>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                    <li><span className="font-semibold">Name</span> (required)</li>
+                    <li><span className="font-semibold">Title</span> (optional)</li>
+                    <li><span className="font-semibold">Company</span> (required)</li>
+                    <li><span className="font-semibold">Email</span> (required)</li>
+                    <li><span className="font-semibold">First Phone</span> (optional)</li>
+                    <li><span className="font-semibold">Employees</span> (optional)</li>
+                    <li><span className="font-semibold">Category</span> (optional)</li>
+                    <li><span className="font-semibold">Industry</span> (optional)</li>
+                    <li><span className="font-semibold">Keywords</span> (optional)</li>
+                    <li><span className="font-semibold">Person Linkedin Url</span> (optional)</li>
+                    <li><span className="font-semibold">Website</span> (optional)</li>
+                    <li><span className="font-semibold">Company Linkedin Url</span> (optional)</li>
+                    <li><span className="font-semibold">Facebook Url</span> (optional)</li>
+                  </ul>
+                  <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
+                    <li><span className="font-semibold">Twitter Url</span> (optional)</li>
+                    <li><span className="font-semibold">City</span> (optional)</li>
+                    <li><span className="font-semibold">State</span> (optional)</li>
+                    <li><span className="font-semibold">Country</span> (optional)</li>
+                    <li><span className="font-semibold">Company Address</span> (optional)</li>
+                    <li><span className="font-semibold">Company City</span> (optional)</li>
+                    <li><span className="font-semibold">Company State</span> (optional)</li>
+                    <li><span className="font-semibold">Company Country</span> (optional)</li>
+                    <li><span className="font-semibold">Company Phone</span> (optional)</li>
+                    <li><span className="font-semibold">SEO Description</span> (optional)</li>
+                    <li><span className="font-semibold">Technologies</span> (optional)</li>
+                    <li><span className="font-semibold">Annual Revenue</span> (optional)</li>
+                  </ul>
+                </div>
               </div>
             </div>
           </div>

@@ -197,23 +197,43 @@ export default function ProjectDetail() {
     
     try {
       setLoadingActivities(prev => ({ ...prev, [contactId]: true }));
-      // Fetch activities for the project, then filter by contact email/name if available
-      const response = await API.get(`/activities/project/${id}`);
-      if (response.data.success) {
-        let activities = response.data.data || [];
-        // Filter activities by contact email or name in conversation notes
-        if (contactEmail || contactName) {
-          const emailLower = contactEmail?.toLowerCase() || '';
-          const nameLower = contactName?.toLowerCase() || '';
-          activities = activities.filter(activity => {
-            const notesLower = activity.conversationNotes?.toLowerCase() || '';
-            return notesLower.includes(emailLower) || notesLower.includes(nameLower);
-          });
+      // Use contactId to fetch activities directly - ensures data isolation
+      const contactIdStr = contactId?.toString ? contactId.toString() : contactId;
+      if (contactIdStr) {
+        // Fetch activities directly by contactId for proper data isolation
+        const response = await API.get(`/activities/contact/${contactIdStr}`);
+        if (response.data.success) {
+          const activities = response.data.data || [];
+          setContactActivities(prev => ({
+            ...prev,
+            [contactId]: activities
+          }));
         }
-        setContactActivities(prev => ({
-          ...prev,
-          [contactId]: activities
-        }));
+      } else {
+        // Fallback: if no contactId, use project activities and filter by contactId in notes (less reliable)
+        const response = await API.get(`/activities/project/${id}`);
+        if (response.data.success) {
+          let activities = response.data.data || [];
+          // Only filter by email/name if contactId is not available (should be rare)
+          if (contactEmail || contactName) {
+            const emailLower = contactEmail?.toLowerCase() || '';
+            const nameLower = contactName?.toLowerCase() || '';
+            activities = activities.filter(activity => {
+              // First check if contactId matches (most reliable)
+              if (activity.contactId) {
+                const activityContactIdStr = activity.contactId.toString ? activity.contactId.toString() : activity.contactId;
+                if (activityContactIdStr === contactIdStr) return true;
+              }
+              // Fallback to notes matching only if contactId doesn't match
+              const notesLower = activity.conversationNotes?.toLowerCase() || '';
+              return notesLower.includes(emailLower) || notesLower.includes(nameLower);
+            });
+          }
+          setContactActivities(prev => ({
+            ...prev,
+            [contactId]: activities
+          }));
+        }
       }
     } catch (err) {
       console.error('Error fetching activities:', err);
@@ -649,11 +669,21 @@ export default function ProjectDetail() {
       tomorrow.setDate(tomorrow.getDate() + 1);
       
       const contactId = contact._id || contact.name;
+      const contactIdStr = contact._id?.toString ? contact._id.toString() : contact._id;
       const contactActivities = allProjectActivities.filter(a => {
-        const notesLower = a.conversationNotes?.toLowerCase() || '';
-        const contactNameLower = contact.name?.toLowerCase() || '';
-        const contactEmailLower = contact.email?.toLowerCase() || '';
-        return notesLower.includes(contactNameLower) || notesLower.includes(contactEmailLower);
+        // Prioritize contactId matching for data isolation
+        if (contactIdStr && a.contactId) {
+          const activityContactIdStr = a.contactId.toString ? a.contactId.toString() : a.contactId;
+          if (activityContactIdStr === contactIdStr) return true;
+        }
+        // Fallback to notes matching only if contactId is not available
+        if (!contactIdStr || !a.contactId) {
+          const notesLower = a.conversationNotes?.toLowerCase() || '';
+          const contactNameLower = contact.name?.toLowerCase() || '';
+          const contactEmailLower = contact.email?.toLowerCase() || '';
+          return notesLower.includes(contactNameLower) || notesLower.includes(contactEmailLower);
+        }
+        return false;
       });
       
       const hasDueToday = contactActivities.some(activity => {
@@ -768,11 +798,21 @@ export default function ProjectDetail() {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       return contacts.filter(contact => {
+        const contactIdStr = contact._id?.toString ? contact._id.toString() : contact._id;
         const contactActivities = allProjectActivities.filter(a => {
-          const notesLower = a.conversationNotes?.toLowerCase() || '';
-          const contactNameLower = contact.name?.toLowerCase() || '';
-          const contactEmailLower = contact.email?.toLowerCase() || '';
-          return notesLower.includes(contactNameLower) || notesLower.includes(contactEmailLower);
+          // Prioritize contactId matching for data isolation
+          if (contactIdStr && a.contactId) {
+            const activityContactIdStr = a.contactId.toString ? a.contactId.toString() : a.contactId;
+            if (activityContactIdStr === contactIdStr) return true;
+          }
+          // Fallback to notes matching only if contactId is not available
+          if (!contactIdStr || !a.contactId) {
+            const notesLower = a.conversationNotes?.toLowerCase() || '';
+            const contactNameLower = contact.name?.toLowerCase() || '';
+            const contactEmailLower = contact.email?.toLowerCase() || '';
+            return notesLower.includes(contactNameLower) || notesLower.includes(contactEmailLower);
+          }
+          return false;
         });
         return contactActivities.some(activity => {
           if (!activity.nextActionDate) return false;
@@ -787,11 +827,21 @@ export default function ProjectDetail() {
       const weekEnd = new Date(today);
       weekEnd.setDate(weekEnd.getDate() + 7);
       return contacts.filter(contact => {
+        const contactIdStr = contact._id?.toString ? contact._id.toString() : contact._id;
         const contactActivities = allProjectActivities.filter(a => {
-          const notesLower = a.conversationNotes?.toLowerCase() || '';
-          const contactNameLower = contact.name?.toLowerCase() || '';
-          const contactEmailLower = contact.email?.toLowerCase() || '';
-          return notesLower.includes(contactNameLower) || notesLower.includes(contactEmailLower);
+          // Prioritize contactId matching for data isolation
+          if (contactIdStr && a.contactId) {
+            const activityContactIdStr = a.contactId.toString ? a.contactId.toString() : a.contactId;
+            if (activityContactIdStr === contactIdStr) return true;
+          }
+          // Fallback to notes matching only if contactId is not available
+          if (!contactIdStr || !a.contactId) {
+            const notesLower = a.conversationNotes?.toLowerCase() || '';
+            const contactNameLower = contact.name?.toLowerCase() || '';
+            const contactEmailLower = contact.email?.toLowerCase() || '';
+            return notesLower.includes(contactNameLower) || notesLower.includes(contactEmailLower);
+          }
+          return false;
         });
         return contactActivities.some(activity => {
           if (!activity.nextActionDate) return false;
@@ -1591,14 +1641,17 @@ export default function ProjectDetail() {
                     latestLinkedInStatus = activityLookups.latestLinkedInStatusByContactId.get(contactIdValue.toString()) || null;
                   }
                   
-                  // Fallback to name/email matching only if contactId lookup failed
-                  if (!contactLastActivity || !nextActionActivity) {
+                  // Fallback to name/email matching only if contactId lookup failed AND contactId is not available
+                  // This ensures data isolation - only use fallback when absolutely necessary
+                  if ((!contactLastActivity || !nextActionActivity) && !contactIdValue) {
                     const contactNameLower = contact.name?.toLowerCase() || '';
                     const contactEmailLower = contact.email?.toLowerCase() || '';
                     
                     if (!contactLastActivity && (contactNameLower || contactEmailLower)) {
                       contactLastActivity = allProjectActivities
                         .filter(a => {
+                          // Only use notes matching if contactId is not set in activity
+                          if (a.contactId) return false; // Skip if activity has contactId (should be matched by contactId)
                           const notesLower = a.conversationNotes?.toLowerCase() || '';
                           return notesLower.includes(contactNameLower) || notesLower.includes(contactEmailLower);
                         })
@@ -1610,6 +1663,8 @@ export default function ProjectDetail() {
                       nextActionActivity = allProjectActivities
                         .filter(a => {
                           if (!a.nextActionDate || new Date(a.nextActionDate) < now) return false;
+                          // Only use notes matching if contactId is not set in activity
+                          if (a.contactId) return false; // Skip if activity has contactId (should be matched by contactId)
                           const notesLower = a.conversationNotes?.toLowerCase() || '';
                           return notesLower.includes(contactNameLower) || notesLower.includes(contactEmailLower);
                         })

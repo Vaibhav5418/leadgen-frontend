@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import API from '../api/axios';
 
-export default function ActivityLogModal({ isOpen, onClose, type, contactName, companyName, projectId, contactId, phoneNumber, email, linkedInProfileUrl }) {
+export default function ActivityLogModal({ isOpen, onClose, type, contactName, companyName, projectId, contactId, phoneNumber, email, linkedInProfileUrl, activityId, editMode = false }) {
   const [formData, setFormData] = useState({
     template: '',
     outcome: '',
@@ -26,26 +26,66 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
   const [savedValues, setSavedValues] = useState({ phone: null, email: null, linkedin: null });
   const [showVariations, setShowVariations] = useState(false);
 
+  const fetchActivityData = async () => {
+    try {
+      const response = await API.get(`/activities/${activityId}`);
+      if (response.data.success) {
+        const activity = response.data.data;
+        setFormData({
+          template: activity.template || '',
+          outcome: activity.outcome || '',
+          conversationNotes: activity.conversationNotes || '',
+          nextAction: activity.nextAction || '',
+          nextActionDate: activity.nextActionDate ? new Date(activity.nextActionDate).toISOString().split('T')[0] : '',
+          phoneNumber: activity.phoneNumber || phoneNumber || '',
+          email: activity.email || email || '',
+          linkedInUrl: activity.linkedInUrl || linkedInProfileUrl || '',
+          status: activity.status || '',
+          linkedInAccountName: activity.linkedInAccountName || '',
+          lnRequestSent: activity.lnRequestSent || '',
+          connected: activity.connected || '',
+          callNumber: activity.callNumber || '',
+          callStatus: activity.callStatus || '',
+          callDate: activity.callDate ? new Date(activity.callDate).toISOString().split('T')[0] : ''
+        });
+        setSavedValues({
+          phone: activity.phoneNumber || phoneNumber || null,
+          email: activity.email || email || null,
+          linkedin: activity.linkedInUrl || linkedInProfileUrl || null
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching activity data:', error);
+      setErrors({ submit: 'Failed to load activity data' });
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
       // Trigger animation after modal is mounted
       setTimeout(() => setIsVisible(true), 10);
-      // Initialize form data with props from database (if they exist)
-      setFormData(prev => ({
-        ...prev,
-        phoneNumber: phoneNumber || '',
-        email: email || '',
-        linkedInUrl: linkedInProfileUrl || ''
-      }));
-      setSavedValues({
-        phone: phoneNumber || null,
-        email: email || null,
-        linkedin: linkedInProfileUrl || null
-      });
+      
+      // If edit mode, fetch the activity data
+      if (editMode && activityId) {
+        fetchActivityData();
+      } else {
+        // Initialize form data with props from database (if they exist)
+        setFormData(prev => ({
+          ...prev,
+          phoneNumber: phoneNumber || '',
+          email: email || '',
+          linkedInUrl: linkedInProfileUrl || ''
+        }));
+        setSavedValues({
+          phone: phoneNumber || null,
+          email: email || null,
+          linkedin: linkedInProfileUrl || null
+        });
+      }
     } else {
       setIsVisible(false);
     }
-  }, [isOpen, phoneNumber, email, linkedInProfileUrl]);
+  }, [isOpen, phoneNumber, email, linkedInProfileUrl, editMode, activityId]);
 
   if (!isOpen) return null;
 
@@ -82,6 +122,18 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
   };
 
   const getTitle = () => {
+    if (editMode) {
+      switch (type) {
+        case 'call':
+          return 'Edit Call Activity';
+        case 'email':
+          return 'Edit Email Activity';
+        case 'linkedin':
+          return 'Edit LinkedIn Activity';
+        default:
+          return 'Edit Activity';
+      }
+    }
     switch (type) {
       case 'call':
         return 'Log Call Activity';
@@ -182,26 +234,49 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
           ? `[${contactInfo.join(' | ')}]`
           : '');
       
-      const response = await API.post('/activities', {
+      let response;
+      
+      if (editMode && activityId) {
+        // Update existing activity
+        response = await API.put(`/activities/${activityId}`, {
+          template: formData.template,
+          conversationNotes: notesWithContact,
+          nextAction: formData.nextAction,
+          nextActionDate: formData.nextActionDate,
+          phoneNumber: formData.phoneNumber || phoneNumber || null,
+          email: formData.email || email || null,
+          linkedInUrl: formData.linkedInUrl || linkedInProfileUrl || null,
+          status: formData.status || null,
+          linkedInAccountName: formData.linkedInAccountName || null,
+          lnRequestSent: formData.lnRequestSent || null,
+          connected: formData.connected || null,
+          callNumber: formData.callNumber || null,
+          callStatus: formData.callStatus || null,
+          callDate: formData.callDate || null
+        });
+      } else {
+        // Create new activity
+        response = await API.post('/activities', {
         projectId,
-        contactId: contactId || null,
+          contactId: contactId || null,
         type,
         template: formData.template,
-        outcome: null, // Outcome is not used for any activity types
+          outcome: null, // Outcome is not used for any activity types
         conversationNotes: notesWithContact,
         nextAction: formData.nextAction,
-        nextActionDate: formData.nextActionDate,
-        phoneNumber: formData.phoneNumber || phoneNumber || null,
-        email: formData.email || email || null,
-        linkedInUrl: formData.linkedInUrl || linkedInProfileUrl || null,
-        status: formData.status || null,
-        linkedInAccountName: formData.linkedInAccountName || null,
-        lnRequestSent: formData.lnRequestSent || null,
-        connected: formData.connected || null,
-        callNumber: formData.callNumber || null,
-        callStatus: formData.callStatus || null,
-        callDate: formData.callDate || null
-      });
+          nextActionDate: formData.nextActionDate,
+          phoneNumber: formData.phoneNumber || phoneNumber || null,
+          email: formData.email || email || null,
+          linkedInUrl: formData.linkedInUrl || linkedInProfileUrl || null,
+          status: formData.status || null,
+          linkedInAccountName: formData.linkedInAccountName || null,
+          lnRequestSent: formData.lnRequestSent || null,
+          connected: formData.connected || null,
+          callNumber: formData.callNumber || null,
+          callStatus: formData.callStatus || null,
+          callDate: formData.callDate || null
+        });
+      }
 
       // If status is provided and contactId exists, update the contact's status in ProjectContact
       if (response.data.success && formData.status && contactId && projectId) {
@@ -706,7 +781,7 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                       </svg>
                           Saving...
                         </>
-                      ) : (
+                  ) : (
                         <>
                           <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -734,11 +809,11 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
 
             {/* Select Template - Only for Email and LinkedIn Activities */}
             {type !== 'call' && (
-              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200">
+            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200">
                 <div className="flex items-center justify-between mb-2">
                   <label className="block text-xs font-semibold text-gray-700">
-                  Select Template (Optional)
-                </label>
+                Select Template (Optional)
+              </label>
                   {(type === 'linkedin' || type === 'email') && (
                     <button
                       type="button"
@@ -752,34 +827,34 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                     </button>
                   )}
                 </div>
-                <select
-                  value={formData.template}
-                  onChange={(e) => handleChange('template', e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white hover:border-gray-400"
-                >
-                  <option value="">Select an option</option>
-                  <option value="no-template">No Template</option>
+              <select
+                value={formData.template}
+                onChange={(e) => handleChange('template', e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white hover:border-gray-400"
+              >
+                <option value="">Select an option</option>
+                <option value="no-template">No Template</option>
                   {type === 'email' ? (
-                    <>
-                      <option value="introduction-email">Introduction Email</option>
-                      <option value="follow-up-email">Follow-up Email</option>
-                      <option value="value-proposition-email">Value Proposition Email</option>
-                    </>
-                  ) : type === 'linkedin' ? (
-                    <>
-                      <option value="connection-request-message">Connection Request Message</option>
-                      <option value="introduction-message">Introduction Message</option>
-                      <option value="follow-up-message">Follow-up Message</option>
-                    </>
-                  ) : null}
-                </select>
-                <p className="mt-2 text-xs text-gray-500 flex items-center gap-1">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Use a pre-defined template for consistency
-                </p>
-              </div>
+                  <>
+                    <option value="introduction-email">Introduction Email</option>
+                    <option value="follow-up-email">Follow-up Email</option>
+                    <option value="value-proposition-email">Value Proposition Email</option>
+                  </>
+                ) : type === 'linkedin' ? (
+                  <>
+                    <option value="connection-request-message">Connection Request Message</option>
+                    <option value="introduction-message">Introduction Message</option>
+                    <option value="follow-up-message">Follow-up Message</option>
+                  </>
+                ) : null}
+              </select>
+              <p className="mt-2 text-xs text-gray-500 flex items-center gap-1">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Use a pre-defined template for consistency
+              </p>
+            </div>
             )}
 
             {/* LinkedIn Account Name Field (Only for LinkedIn Activity) */}
@@ -872,11 +947,11 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                   onChange={(e) => handleChange('status', e.target.value)}
                 className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white hover:border-gray-400 ${
                     errors.status ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                  }`}
-                >
+                }`}
+              >
                   <option value="">Select status</option>
                   {type === 'email' ? (
-                    <>
+                  <>
                       <option value="No Reply">No Reply</option>
                       <option value="Not Interested">Not Interested</option>
                       <option value="Out of Office">Out of Office</option>

@@ -5,7 +5,15 @@ export default function Funnel() {
   const navigate = useNavigate();
 
   const handleButtonClick = (type) => {
-    navigate(`/projects/${id}?funnel=${type}`);
+    if (type === 'linkedin') {
+      navigate(`/projects/${id}/linkedin-funnel`);
+    } else if (type === 'cold-calling') {
+      navigate(`/projects/${id}/cold-calling-funnel`);
+    } else if (type === 'email') {
+      navigate(`/projects/${id}/email-funnel`);
+    } else {
+      navigate(`/projects/${id}?funnel=${type}`);
+    }
   };
 
   const channels = [

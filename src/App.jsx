@@ -12,6 +12,9 @@ import Projects from './pages/Projects';
 import CreateProject from './pages/CreateProject';
 import ProjectDetail from './pages/ProjectDetail';
 import Funnel from './pages/Funnel';
+import LinkedInFunnelReport from './pages/LinkedInFunnelReport';
+import ColdCallingFunnelReport from './pages/ColdCallingFunnelReport';
+import EmailFunnelReport from './pages/EmailFunnelReport';
 
 // Private Route Component
 const PrivateRoute = ({ children }) => {
@@ -141,6 +144,33 @@ export default function App() {
             element={
               <PrivateRoute>
                 <Funnel />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/projects/:id/linkedin-funnel"
+            element={
+              <PrivateRoute>
+                <LinkedInFunnelReport />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/projects/:id/cold-calling-funnel"
+            element={
+              <PrivateRoute>
+                <ColdCallingFunnelReport />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/projects/:id/email-funnel"
+            element={
+              <PrivateRoute>
+                <EmailFunnelReport />
               </PrivateRoute>
             }
           />
