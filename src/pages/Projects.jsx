@@ -307,8 +307,8 @@ export default function Projects() {
                         {formatDate(project.createdAt)}
                       </div>
                       {project.createdBy && (
-                        <div className="text-xs text-gray-500 mt-1">
-                          Created by: {project.createdBy.name || project.createdBy.email || 'Unknown'}
+                        <div className="text-xs text-gray-500 mt-1 font-medium">
+                          Created by: <span className="text-gray-700">{project.createdBy.name || project.createdBy.email || 'Unknown'}</span>
                         </div>
                       )}
                       {!project.createdBy && (

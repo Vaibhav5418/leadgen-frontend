@@ -41,10 +41,7 @@ export default function BulkImportModal({ isOpen, onClose, projectId, onImportSu
         return;
       }
       
-      if (selectedFile.size > 10 * 1024 * 1024) {
-        setError('File size must be less than 10MB');
-        return;
-      }
+      // No file size limit - allow any size
       setFile(selectedFile);
       setError('');
     }
