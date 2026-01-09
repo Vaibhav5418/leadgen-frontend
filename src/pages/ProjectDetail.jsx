@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, startTransition } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import API from '../api/axios';
 import ActivityLogModal from '../components/ActivityLogModal';
 import BulkImportModal from '../components/BulkImportModal';
+import BulkActivityLogModal from '../components/BulkActivityLogModal';
 
 export default function ProjectDetail() {
   const { id } = useParams();
@@ -16,6 +17,8 @@ export default function ProjectDetail() {
   const [filterStage, setFilterStage] = useState('');
   const [filterTeamMember, setFilterTeamMember] = useState('');
   const [filterPriority, setFilterPriority] = useState('');
+  const [filterMatchType, setFilterMatchType] = useState('');
+  const [matchStats, setMatchStats] = useState(null);
   const [expandedContacts, setExpandedContacts] = useState(new Set());
   const [contactActivities, setContactActivities] = useState({});
   const [loadingActivities, setLoadingActivities] = useState({});
@@ -25,20 +28,36 @@ export default function ProjectDetail() {
     contactName: '',
     companyName: '',
     projectId: null,
+    contactId: null,
     phoneNumber: null,
     email: null,
     linkedInProfileUrl: null
   });
   const [bulkImportModal, setBulkImportModal] = useState(false);
   const [allProjectActivities, setAllProjectActivities] = useState([]);
-  const [showDoneConfirmation, setShowDoneConfirmation] = useState(false);
-  const [markingDone, setMarkingDone] = useState(false);
+  const [selectedContacts, setSelectedContacts] = useState(new Set());
+  const [showProspectSuggestions, setShowProspectSuggestions] = useState(false);
+  const [bulkActivityModal, setBulkActivityModal] = useState({
+    isOpen: false,
+    type: null
+  });
+  const [editingContactInfo, setEditingContactInfo] = useState({});
+  const [savingContactInfo, setSavingContactInfo] = useState({});
 
   useEffect(() => {
     if (id) {
-      fetchProject();
-      fetchSimilarContacts();
-      fetchAllProjectActivities();
+      // Fetch project first, then contacts and activities in parallel
+      fetchProject().then(() => {
+        // Only fetch imported contacts initially (not suggestions)
+        // Fetch activities
+        fetchAllProjectActivities().catch(err => {
+          console.error('Error fetching activities:', err);
+        });
+        // Fetch only imported contacts (not suggestions from databank)
+        fetchImportedContacts().catch(err => {
+          console.error('Error fetching imported contacts:', err);
+        });
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -58,20 +77,50 @@ export default function ProjectDetail() {
     }
   };
 
+  // Fetch only imported contacts (contacts already linked to project)
+  const fetchImportedContacts = async () => {
+    try {
+      const response = await API.get(`/projects/${id}/project-contacts`);
+      if (response.data.success) {
+        setContacts(response.data.data || []);
+      }
+    } catch (err) {
+      console.error('Error fetching imported contacts:', err);
+    }
+  };
+
+  // Fetch similar contacts from databank (including suggestions)
   const fetchSimilarContacts = async () => {
     try {
       const response = await API.get(`/projects/${id}/similar-contacts`);
       if (response.data.success) {
         setContacts(response.data.data || []);
+        if (response.data.matchStats) {
+          setMatchStats(response.data.matchStats);
+        }
       }
     } catch (err) {
       console.error('Error fetching similar contacts:', err);
     }
   };
 
+  // Toggle prospect suggestions
+  const handleToggleProspectSuggestions = async () => {
+    const newState = !showProspectSuggestions;
+    setShowProspectSuggestions(newState);
+    
+    if (newState) {
+      // Fetch suggestions from databank
+      await fetchSimilarContacts();
+    } else {
+      // Show only imported contacts
+      await fetchImportedContacts();
+    }
+  };
+
   const fetchAllProjectActivities = async () => {
     try {
-      const response = await API.get(`/activities/project/${id}`);
+      const response = await API.get(`/activities/project/${id}?limit=1000`); // Limit activities
       if (response.data.success) {
         setAllProjectActivities(response.data.data || []);
       }
@@ -126,12 +175,14 @@ export default function ProjectDetail() {
   };
 
   const handleOpenActivityModal = (type, contact) => {
+    const contactIdValue = contact._id?.toString ? contact._id.toString() : contact._id;
     setActivityModal({
       isOpen: true,
       type,
       contactName: contact.name || 'N/A',
       companyName: contact.company || '',
       projectId: id,
+      contactId: contactIdValue || null,
       phoneNumber: contact.firstPhone || null,
       email: contact.email || null,
       linkedInProfileUrl: contact.personLinkedinUrl || contact.companyLinkedinUrl || null
@@ -145,12 +196,19 @@ export default function ProjectDetail() {
       contactName: '',
       companyName: '',
       projectId: null,
+      contactId: null,
       phoneNumber: null,
       email: null,
       linkedInProfileUrl: null
     });
-    // Refresh all project activities
+    // Refresh all project activities (this will update the stage display automatically)
     fetchAllProjectActivities();
+    // Refresh contacts to get updated stage from ProjectContact
+    if (showProspectSuggestions) {
+      fetchSimilarContacts();
+    } else {
+      fetchImportedContacts();
+    }
     // Refresh activities for expanded contacts
     expandedContacts.forEach(contactId => {
       const contact = contacts.find(c => (c._id || c.name) === contactId);
@@ -160,29 +218,30 @@ export default function ProjectDetail() {
     });
   };
 
-  const handleMarkProjectDone = async () => {
-    try {
-      setMarkingDone(true);
-      const response = await API.put(`/projects/${id}`, {
-        status: 'completed'
-      });
-
-      if (response.data.success) {
-        // Update local project state
-        setProject(prev => prev ? { ...prev, status: 'completed' } : null);
-        setShowDoneConfirmation(false);
-        // Optionally show success message or navigate
-        alert('Project marked as completed successfully!');
-      } else {
-        alert('Failed to mark project as done. Please try again.');
-      }
-    } catch (err) {
-      console.error('Error marking project as done:', err);
-      alert(err.response?.data?.error || 'Failed to mark project as done. Please try again.');
-    } finally {
-      setMarkingDone(false);
+  const handleCloseBulkActivityModal = () => {
+    setBulkActivityModal({
+      isOpen: false,
+      type: null
+    });
+    // Clear selection after bulk logging
+    setSelectedContacts(new Set());
+    // Refresh all project activities (this will update the stage display automatically)
+    fetchAllProjectActivities();
+    // Refresh contacts to get updated stage from ProjectContact
+    if (showProspectSuggestions) {
+      fetchSimilarContacts();
+    } else {
+      fetchImportedContacts();
     }
+    // Refresh activities for expanded contacts
+    expandedContacts.forEach(contactId => {
+      const contact = contacts.find(c => (c._id || c.name) === contactId);
+      if (contact) {
+        fetchActivitiesForContact(contactId, contact.email, contact.name);
+      }
+    });
   };
+
 
   const getInitials = (name) => {
     if (!name) return '?';
@@ -206,15 +265,29 @@ export default function ProjectDetail() {
 
   const getStageBadge = (stage) => {
     const stageConfig = {
+      'CIP': { bg: 'bg-blue-100', text: 'text-blue-800' },
+      'No Reply': { bg: 'bg-gray-100', text: 'text-gray-800' },
+      'Not Interested': { bg: 'bg-red-100', text: 'text-red-800' },
+      'Meeting Proposed': { bg: 'bg-yellow-100', text: 'text-yellow-800' },
+      'Meeting Scheduled': { bg: 'bg-cyan-100', text: 'text-cyan-800' },
+      'In-Person Meeting': { bg: 'bg-indigo-100', text: 'text-indigo-800' },
+      'Meeting Completed': { bg: 'bg-green-100', text: 'text-green-800' },
+      'SQL': { bg: 'bg-emerald-100', text: 'text-emerald-800' },
+      'Tech Discussion': { bg: 'bg-purple-100', text: 'text-purple-800' },
+      'WON': { bg: 'bg-green-200', text: 'text-green-900', border: 'border-2 border-green-400' },
+      'Lost': { bg: 'bg-red-200', text: 'text-red-900', border: 'border-2 border-red-400' },
+      'Low Potential - Open': { bg: 'bg-orange-100', text: 'text-orange-800' },
+      'Potential Future': { bg: 'bg-teal-100', text: 'text-teal-800' },
+      // Legacy stages for backward compatibility
+      'New': { bg: 'bg-blue-100', text: 'text-blue-800' },
+      'Contacted': { bg: 'bg-purple-100', text: 'text-purple-800' },
       'Qualified': { bg: 'bg-green-100', text: 'text-green-800' },
       'Proposal': { bg: 'bg-yellow-100', text: 'text-yellow-800' },
-      'New': { bg: 'bg-blue-100', text: 'text-blue-800' },
-      'Negotiation': { bg: 'bg-orange-100', text: 'text-orange-800' },
-      'Contacted': { bg: 'bg-purple-100', text: 'text-purple-800' }
+      'Negotiation': { bg: 'bg-orange-100', text: 'text-orange-800' }
     };
     const config = stageConfig[stage] || { bg: 'bg-gray-100', text: 'text-gray-800' };
     return (
-      <span className={`px-3 py-1 text-xs font-medium rounded-full ${config.bg} ${config.text}`}>
+      <span className={`px-3 py-1 text-xs font-medium rounded-full ${config.bg} ${config.text} ${config.border || ''}`}>
         {stage || 'New'}
       </span>
     );
@@ -421,8 +494,55 @@ export default function ProjectDetail() {
     );
   };
 
-  // Filter contacts based on search and filters
-  const filteredContacts = contacts.filter(contact => {
+  // Pre-compute activity lookups for better performance
+  const activityLookups = useMemo(() => {
+    const lookups = {
+      byContactId: new Map(),
+      lastActivityByContactId: new Map(),
+      nextActionByContactId: new Map(),
+      latestLinkedInStatusByContactId: new Map()
+    };
+    
+    const now = new Date();
+    allProjectActivities.forEach(activity => {
+      // Index by contactId
+      if (activity.contactId) {
+        const contactIdStr = activity.contactId.toString();
+        if (!lookups.byContactId.has(contactIdStr)) {
+          lookups.byContactId.set(contactIdStr, []);
+        }
+        lookups.byContactId.get(contactIdStr).push(activity);
+        
+        // Track last activity
+        const existing = lookups.lastActivityByContactId.get(contactIdStr);
+        if (!existing || new Date(activity.createdAt) > new Date(existing.createdAt)) {
+          lookups.lastActivityByContactId.set(contactIdStr, activity);
+        }
+        
+        // Track next action
+        if (activity.nextActionDate && new Date(activity.nextActionDate) >= now) {
+          const existing = lookups.nextActionByContactId.get(contactIdStr);
+          if (!existing || new Date(activity.nextActionDate) < new Date(existing.nextActionDate)) {
+            lookups.nextActionByContactId.set(contactIdStr, activity);
+          }
+        }
+        
+        // Track latest LinkedIn activity status (for automatic stage display)
+        if (activity.type === 'linkedin' && activity.status) {
+          const existing = lookups.latestLinkedInStatusByContactId.get(contactIdStr);
+          if (!existing || new Date(activity.createdAt) > new Date(existing.createdAt)) {
+            lookups.latestLinkedInStatusByContactId.set(contactIdStr, activity.status);
+          }
+        }
+      }
+    });
+    
+    return lookups;
+  }, [allProjectActivities]);
+
+  // Memoize filtered contacts to avoid recalculating on every render
+  const filteredContacts = useMemo(() => {
+    return contacts.filter(contact => {
     // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -434,9 +554,11 @@ export default function ProjectDetail() {
       if (!matchesSearch) return false;
     }
 
-    // Stage filter
+    // Stage filter - check both LinkedIn status and contact.stage
     if (filterStage) {
-      const contactStage = contact.stage || 'New';
+      const contactIdStr = (contact._id?.toString ? contact._id.toString() : contact._id) || '';
+      const latestLinkedInStatus = contactIdStr ? activityLookups.latestLinkedInStatusByContactId.get(contactIdStr) : null;
+      const contactStage = latestLinkedInStatus || contact.stage || 'New';
       if (contactStage !== filterStage) return false;
     }
 
@@ -480,12 +602,63 @@ export default function ProjectDetail() {
       
       if (!hasDueToday) return false;
     } else if (quickFilter === 'new-prospects') {
-      const contactStage = contact.stage || 'New';
+      const contactIdStr = (contact._id?.toString ? contact._id.toString() : contact._id) || '';
+      const latestLinkedInStatus = contactIdStr ? activityLookups.latestLinkedInStatusByContactId.get(contactIdStr) : null;
+      const contactStage = latestLinkedInStatus || contact.stage || 'New';
       if (contactStage !== 'New') return false;
     }
 
-    return true;
-  });
+      return true;
+    });
+  }, [contacts, searchQuery, quickFilter, filterStage, filterTeamMember, filterPriority, filterMatchType, allProjectActivities, project]);
+
+  // Memoize select all checked state
+  const isAllSelected = useMemo(() => {
+    if (filteredContacts.length === 0) return false;
+    return filteredContacts.every(c => selectedContacts.has((c._id || c.name).toString()));
+  }, [filteredContacts, selectedContacts]);
+
+  // Optimized select all handler - uses functional update to avoid closure issues
+  const handleSelectAll = useCallback((e) => {
+    const shouldSelect = e.target.checked;
+    startTransition(() => {
+      setSelectedContacts(prev => {
+        const newSet = new Set(prev);
+        // Get current filtered contact IDs once
+        filteredContacts.forEach(c => {
+          const contactId = (c._id || c.name).toString();
+          if (shouldSelect) {
+            newSet.add(contactId);
+          } else {
+            newSet.delete(contactId);
+          }
+        });
+        return newSet;
+      });
+    });
+  }, [filteredContacts]);
+
+  // Optimized individual checkbox handler
+  const handleContactSelect = useCallback((contactId, checked) => {
+    startTransition(() => {
+      setSelectedContacts(prev => {
+        const newSet = new Set(prev);
+        if (checked) {
+          newSet.add(contactId.toString());
+        } else {
+          newSet.delete(contactId.toString());
+        }
+        return newSet;
+      });
+    });
+  }, []);
+
+  // Optimized clear selection handler
+  const handleClearSelection = useCallback(() => {
+    startTransition(() => {
+      setSelectedContacts(new Set());
+    });
+  }, []);
 
   // Calculate stats based on all contacts (not filtered)
   const stats = {
@@ -570,22 +743,24 @@ export default function ProjectDetail() {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          {project?.status !== 'completed' && (
-            <button 
-              onClick={() => setShowDoneConfirmation(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              Done
-            </button>
-          )}
           <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm text-gray-700">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
             Export
+          </button>
+          <button 
+            onClick={handleToggleProspectSuggestions}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-medium text-sm ${
+              showProspectSuggestions
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            Prospect Suggestion
           </button>
           <button 
             onClick={() => setBulkImportModal(true)}
@@ -766,12 +941,20 @@ export default function ProjectDetail() {
               }}
               className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white hover:border-gray-400 transition-colors cursor-pointer"
             >
-              <option value="">Filter by stage</option>
-              <option value="New">New</option>
-              <option value="Contacted">Contacted</option>
-              <option value="Qualified">Qualified</option>
-              <option value="Proposal">Proposal</option>
-              <option value="Negotiation">Negotiation</option>
+              <option value="">Filter by status</option>
+              <option value="CIP">CIP</option>
+              <option value="No Reply">No Reply</option>
+              <option value="Not Interested">Not Interested</option>
+              <option value="Meeting Proposed">Meeting Proposed</option>
+              <option value="Meeting Scheduled">Meeting Scheduled</option>
+              <option value="In-Person Meeting">In-Person Meeting</option>
+              <option value="Meeting Completed">Meeting Completed</option>
+              <option value="SQL">SQL</option>
+              <option value="Tech Discussion">Tech Discussion</option>
+              <option value="WON">WON</option>
+              <option value="Lost">Lost</option>
+              <option value="Low Potential - Open">Low Potential - Open</option>
+              <option value="Potential Future">Potential Future</option>
             </select>
             <select
               value={filterTeamMember}
@@ -906,6 +1089,19 @@ export default function ProjectDetail() {
                 </button>
               </span>
             )}
+            {filterMatchType && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded border border-blue-200">
+                Match: {filterMatchType === 'exact' ? 'Exact' : filterMatchType === 'good' ? 'Good' : filterMatchType === 'similar' ? 'Similar' : filterMatchType === 'loose' ? 'Loose' : 'Imported'}
+                <button
+                  onClick={() => setFilterMatchType('')}
+                  className="hover:text-blue-900"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </span>
+            )}
             <button
               onClick={() => {
                 setSearchQuery('');
@@ -913,6 +1109,7 @@ export default function ProjectDetail() {
                 setFilterStage('');
                 setFilterTeamMember('');
                 setFilterPriority('');
+                setFilterMatchType('');
               }}
               className="text-xs text-gray-600 hover:text-gray-900 font-medium ml-2"
             >
@@ -922,28 +1119,156 @@ export default function ProjectDetail() {
         )}
       </div>
 
-      {/* Results Count */}
-      <div className="mb-3 flex items-center justify-between">
-        <p className="text-sm text-gray-600">
-          Showing <span className="font-semibold text-gray-900">{filteredContacts.length}</span> of <span className="font-semibold text-gray-900">{contacts.length}</span> prospects
-          {(searchQuery || quickFilter || filterStage || filterTeamMember || filterPriority) && (
-            <span className="ml-2 text-gray-500">
-              (filtered)
-            </span>
+      {/* Results Count and Match Stats */}
+      <div className="mb-3 flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-4 flex-wrap">
+          <p className="text-sm text-gray-600">
+            Showing <span className="font-semibold text-gray-900">{filteredContacts.length}</span> of <span className="font-semibold text-gray-900">{contacts.length}</span> prospects
+            {(searchQuery || quickFilter || filterStage || filterTeamMember || filterPriority || filterMatchType) && (
+              <span className="ml-2 text-gray-500">
+                (filtered)
+              </span>
+            )}
+          </p>
+          {matchStats && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {matchStats.imported > 0 && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 text-purple-700 text-xs font-semibold rounded-md border border-purple-200">
+                  <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
+                  {matchStats.imported} Imported
+                </span>
+              )}
+              {matchStats.exact > 0 && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-700 text-xs font-semibold rounded-md border border-green-200">
+                  <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                  {matchStats.exact} Exact
+                </span>
+              )}
+              {matchStats.good > 0 && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 text-xs font-semibold rounded-md border border-blue-200">
+                  <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                  {matchStats.good} Good
+                </span>
+              )}
+              {matchStats.similar > 0 && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-semibold rounded-md border border-yellow-200">
+                  <span className="w-2 h-2 bg-yellow-500 rounded-full"></span>
+                  {matchStats.similar} Similar
+                </span>
+              )}
+            </div>
           )}
-        </p>
+        </div>
       </div>
+
+      {/* Bulk Actions Bar - Shows when prospects are selected */}
+      {selectedContacts.size > 0 && (
+        <div className="mb-4 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-2 border-blue-200 rounded-2xl p-5 shadow-xl animate-slide-down backdrop-blur-sm relative overflow-hidden">
+          {/* Animated background pattern */}
+          <div className="absolute inset-0 opacity-5">
+            <div className="absolute inset-0 bg-gradient-to-r from-blue-400 via-purple-400 to-pink-400 animate-pulse"></div>
+          </div>
+          
+          {/* Content */}
+          <div className="relative flex items-center justify-between flex-wrap gap-4">
+            {/* Left Section - Selection Info */}
+            <div className="flex items-center gap-4">
+              {/* Animated Badge */}
+              <div className="relative">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-700 rounded-2xl flex items-center justify-center shadow-lg transform hover:scale-110 transition-transform duration-300 ring-4 ring-blue-200 ring-opacity-50 animate-bounce-subtle">
+                  <span className="text-white font-bold text-lg">{selectedContacts.size}</span>
+                </div>
+                {/* Pulse effect */}
+                <div className="absolute inset-0 bg-blue-600 rounded-2xl animate-ping opacity-20"></div>
+              </div>
+              
+              {/* Text Content */}
+              <div className="flex flex-col">
+                <p className="text-base font-bold text-gray-900 tracking-tight">
+                  {selectedContacts.size} {selectedContacts.size === 1 ? 'prospect' : 'prospects'} selected
+                </p>
+                <p className="text-xs text-gray-600 font-medium mt-0.5">
+                  Choose an activity type to log for all selected prospects
+                </p>
+              </div>
+            </div>
+
+            {/* Right Section - Action Buttons */}
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Log Call Button */}
+              <button
+                onClick={() => setBulkActivityModal({ isOpen: true, type: 'call' })}
+                className="group relative inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 text-white text-sm font-bold rounded-xl hover:from-green-600 hover:via-green-700 hover:to-emerald-700 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95 overflow-hidden"
+              >
+                {/* Shine effect on hover */}
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 group-hover:opacity-20 group-hover:animate-shimmer"></div>
+                <svg className="w-5 h-5 relative z-10 transform group-hover:rotate-12 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                </svg>
+                <span className="relative z-10">Log Call</span>
+              </button>
+
+              {/* Log Email Button */}
+              <button
+                onClick={() => setBulkActivityModal({ isOpen: true, type: 'email' })}
+                className="group relative inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 via-blue-600 to-cyan-600 text-white text-sm font-bold rounded-xl hover:from-blue-600 hover:via-blue-700 hover:to-cyan-700 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95 overflow-hidden"
+              >
+                {/* Shine effect on hover */}
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 group-hover:opacity-20 group-hover:animate-shimmer"></div>
+                <svg className="w-5 h-5 relative z-10 transform group-hover:scale-110 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                <span className="relative z-10">Log Email</span>
+              </button>
+
+              {/* Log LinkedIn Button */}
+              <button
+                onClick={() => setBulkActivityModal({ isOpen: true, type: 'linkedin' })}
+                className="group relative inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-700 text-white text-sm font-bold rounded-xl hover:from-blue-800 hover:via-indigo-800 hover:to-purple-800 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95 overflow-hidden"
+              >
+                {/* Shine effect on hover */}
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 group-hover:opacity-20 group-hover:animate-shimmer"></div>
+                <svg className="w-5 h-5 relative z-10 transform group-hover:scale-110 transition-transform duration-300" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                </svg>
+                <span className="relative z-10">Log LinkedIn</span>
+              </button>
+
+              {/* Clear Button */}
+              <button
+                onClick={handleClearSelection}
+                className="group relative inline-flex items-center justify-center gap-2 px-5 py-3 bg-white border-2 border-gray-300 text-gray-700 text-sm font-bold rounded-xl hover:bg-gray-50 hover:border-gray-400 hover:text-gray-900 transition-all duration-300 shadow-md hover:shadow-lg transform hover:scale-105 active:scale-95"
+              >
+                <svg className="w-4 h-4 transform group-hover:rotate-90 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+                <span>Clear</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Prospects Table */}
       {filteredContacts.length > 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 border-b border-gray-200">
+            <table className="w-full table-fixed">
+              <thead className="bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-200">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-12">
+                  <th className="px-4 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-12">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      onChange={handleSelectAll}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                      title="Select all"
+                    />
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-4 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-12">
+                    {/* Expand button column */}
+                  </th>
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-[20%]">
                     <div className="flex items-center gap-2">
                       Contact
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -951,10 +1276,10 @@ export default function ProjectDetail() {
                       </svg>
                     </div>
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-[18%]">
                     Contact Info
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-[12%]">
                     <div className="flex items-center gap-2">
                       Stage
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -962,16 +1287,16 @@ export default function ProjectDetail() {
                       </svg>
                     </div>
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-[15%]">
                     Last Interaction
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-[18%]">
                     Next Action
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-[13%]">
                     Assigned To
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-[12%]">
                     Actions
                   </th>
                 </tr>
@@ -983,24 +1308,54 @@ export default function ProjectDetail() {
                   const activities = contactActivities[contactId] || [];
                   const isLoadingActivities = loadingActivities[contactId];
                   
-                  // Get last interaction for this contact (from project activities)
-                  const contactLastActivity = allProjectActivities
-                    .filter(a => a.conversationNotes?.toLowerCase().includes(contact.name?.toLowerCase() || '') || 
-                                 a.conversationNotes?.toLowerCase().includes(contact.email?.toLowerCase() || ''))
-                    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+                  // Get contact ID for filtering
+                  const contactIdValue = contact._id?.toString ? contact._id.toString() : contact._id;
                   
-                  // Get next action from the most recent activity
-                  const nextActionActivity = allProjectActivities
-                    .filter(a => a.nextActionDate && new Date(a.nextActionDate) >= new Date())
-                    .sort((a, b) => new Date(a.nextActionDate) - new Date(b.nextActionDate))[0];
+                  // Get last interaction and next action using pre-computed lookups (much faster)
+                  let contactLastActivity = null;
+                  let nextActionActivity = null;
+                  let latestLinkedInStatus = null;
                   
-                  // Use stage and assignedTo from project contact if available, otherwise use defaults
-                  const stage = contact.stage || 'New';
+                  if (contactIdValue) {
+                    // Fast lookup by contactId
+                    contactLastActivity = activityLookups.lastActivityByContactId.get(contactIdValue.toString()) || null;
+                    nextActionActivity = activityLookups.nextActionByContactId.get(contactIdValue.toString()) || null;
+                    latestLinkedInStatus = activityLookups.latestLinkedInStatusByContactId.get(contactIdValue.toString()) || null;
+                  }
+                  
+                  // Fallback to name/email matching only if contactId lookup failed
+                  if (!contactLastActivity || !nextActionActivity) {
+                    const contactNameLower = contact.name?.toLowerCase() || '';
+                    const contactEmailLower = contact.email?.toLowerCase() || '';
+                    
+                    if (!contactLastActivity && (contactNameLower || contactEmailLower)) {
+                      contactLastActivity = allProjectActivities
+                        .filter(a => {
+                          const notesLower = a.conversationNotes?.toLowerCase() || '';
+                          return notesLower.includes(contactNameLower) || notesLower.includes(contactEmailLower);
+                        })
+                        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+                    }
+                    
+                    if (!nextActionActivity && (contactNameLower || contactEmailLower)) {
+                      const now = new Date();
+                      nextActionActivity = allProjectActivities
+                        .filter(a => {
+                          if (!a.nextActionDate || new Date(a.nextActionDate) < now) return false;
+                          const notesLower = a.conversationNotes?.toLowerCase() || '';
+                          return notesLower.includes(contactNameLower) || notesLower.includes(contactEmailLower);
+                        })
+                        .sort((a, b) => new Date(a.nextActionDate) - new Date(b.nextActionDate))[0];
+                    }
+                  }
+                  
+                  // Determine the stage to display - automatically fetch from latest LinkedIn activity status
+                  // If no LinkedIn status exists, fall back to contact.stage from database, then default to 'New'
+                  const displayStage = latestLinkedInStatus || contact.stage || 'New';
                   const assignedTo = contact.assignedTo || project?.assignedTo || '-';
 
                   // Check if contact is from databank (has _id - MongoDB ObjectId)
                   // Contacts from databank will have _id, imported contacts might have it too if they exist in DB
-                  const contactIdValue = contact._id?.toString ? contact._id.toString() : contact._id;
                   const isFromDatabank = contactIdValue && (
                     (typeof contactIdValue === 'string' && contactIdValue.length === 24) ||
                     (typeof contact._id === 'object' && contact._id !== null)
@@ -1018,8 +1373,8 @@ export default function ProjectDetail() {
                     
                     // Only navigate if contact is from databank and has a valid ID
                     if (isFromDatabank && contactIdValue) {
-                      // Pass return path so we can navigate back to this project detail page
-                      navigate(`/contacts/${contactIdValue}?returnTo=/projects/${id}`);
+                      // Navigate to contact activity history page
+                      navigate(`/contacts/${contactIdValue}/activities?projectId=${id}&returnTo=/projects/${id}`);
                     }
                   };
 
@@ -1027,12 +1382,20 @@ export default function ProjectDetail() {
                     <React.Fragment key={contactId}>
                       <tr 
                         onClick={handleContactRowClick}
-                        className={`transition-colors ${
+                        className={`transition-all duration-150 ${
                           isFromDatabank 
-                            ? 'hover:bg-gray-50 cursor-pointer' 
+                            ? 'hover:bg-blue-50 cursor-pointer' 
                             : 'hover:bg-gray-50'
-                        }`}
+                        } ${isExpanded ? 'bg-blue-50' : ''}`}
                       >
+                        <td className="px-4 py-4" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={selectedContacts.has(contactId.toString())}
+                            onChange={(e) => handleContactSelect(contactId, e.target.checked)}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                          />
+                        </td>
                         <td className="px-4 py-4">
                           <button
                             onClick={(e) => {
@@ -1054,7 +1417,7 @@ export default function ProjectDetail() {
                         </td>
                         <td className="px-6 py-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+                            <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-md">
                               <span className="text-sm font-semibold text-white">
                                 {getInitials(contact.name)}
                               </span>
@@ -1063,44 +1426,72 @@ export default function ProjectDetail() {
                               <div className={`text-sm font-semibold ${isFromDatabank ? 'text-gray-900 hover:text-blue-600' : 'text-gray-900'}`}>
                                 {contact.name || 'N/A'}
                               </div>
-                              <div className="text-xs text-gray-500">{contact.company || 'N/A'}</div>
+                              <div className="text-xs text-gray-500 mt-0.5">{contact.company || 'N/A'}</div>
                             </div>
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="text-sm text-gray-900">
-                            {contact.email || 'N/A'}
+                          <div className="space-y-1">
+                            {contact.email ? (
+                              <div className="text-sm text-gray-900 font-medium flex items-center gap-1">
+                                <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                </svg>
+                                {contact.email}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-gray-400">No email</div>
+                            )}
+                            {contact.firstPhone ? (
+                              <div className="text-xs text-gray-500 flex items-center gap-1">
+                                <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                                </svg>
+                                {contact.firstPhone}
+                              </div>
+                            ) : (
+                              <div className="text-xs text-gray-400">No phone</div>
+                            )}
+                            {contact.personLinkedinUrl || contact.companyLinkedinUrl ? (
+                              <div className="text-xs text-blue-600 flex items-center gap-1">
+                                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                                  <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                                </svg>
+                                <a href={contact.personLinkedinUrl || contact.companyLinkedinUrl} target="_blank" rel="noopener noreferrer" className="hover:underline truncate" onClick={(e) => e.stopPropagation()}>
+                                  LinkedIn
+                                </a>
+                              </div>
+                            ) : (
+                              <div className="text-xs text-gray-400">No LinkedIn</div>
+                            )}
                           </div>
-                          {contact.firstPhone ? (
-                            <div className="text-xs text-gray-500">{contact.firstPhone}</div>
-                          ) : (
-                            <div className="text-xs text-gray-400">-</div>
+                        </td>
+                        <td className="px-6 py-4">
+                          {getStageBadge(displayStage)}
+                          {latestLinkedInStatus && (
+                            <div className="text-xs text-gray-400 mt-1">
+                              From LinkedIn activity
+                            </div>
                           )}
                         </td>
                         <td className="px-6 py-4">
-                          {getStageBadge(stage)}
-                        </td>
-                        <td className="px-6 py-4">
                           {contactLastActivity ? (
-                            <>
-                              <div className="text-sm text-gray-900">{formatDate(contactLastActivity.createdAt)}</div>
-                              <div className="text-xs text-gray-500">
+                            <div>
+                              <div className="text-sm text-gray-900 font-medium">{formatDate(contactLastActivity.createdAt)}</div>
+                              <div className="text-xs text-gray-500 mt-1">
                                 {contactLastActivity.type === 'call' ? 'Call' : 
                                  contactLastActivity.type === 'email' ? 'Email' : 
                                  contactLastActivity.type === 'linkedin' ? 'LinkedIn' : 'Activity'}
                               </div>
-                            </>
+                            </div>
                           ) : (
-                            <>
-                              <div className="text-sm text-gray-900">-</div>
-                              <div className="text-xs text-gray-500">-</div>
-                            </>
+                            <div className="text-sm text-gray-400">-</div>
                           )}
                         </td>
                         <td className="px-6 py-4">
                           {nextActionActivity ? (
                             <div className="flex items-center gap-2">
-                              <svg className={`w-4 h-4 ${
+                              <svg className={`w-4 h-4 flex-shrink-0 ${
                                 new Date(nextActionActivity.nextActionDate) < new Date() ? 'text-red-600' :
                                 new Date(nextActionActivity.nextActionDate) <= new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) ? 'text-orange-500' :
                                 'text-gray-400'
@@ -1109,28 +1500,20 @@ export default function ProjectDetail() {
                               </svg>
                               <div>
                                 <div className="text-sm font-semibold text-gray-900">{nextActionActivity.nextAction}</div>
-                                <div className={`text-xs font-medium ${
+                                <div className={`text-xs font-medium mt-0.5 ${
                                   new Date(nextActionActivity.nextActionDate) < new Date() ? 'text-red-600' :
                                   new Date(nextActionActivity.nextActionDate) <= new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) ? 'text-orange-600' :
-                                  'text-gray-400'
+                                  'text-gray-500'
                                 }`}>
                                   {formatDate(nextActionActivity.nextActionDate)}
                                 </div>
                               </div>
                             </div>
                           ) : (
-                            <div className="flex items-center gap-2">
-                              <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                              </svg>
-                              <div>
-                                <div className="text-sm font-semibold text-gray-900">-</div>
-                                <div className="text-xs text-gray-400">-</div>
-                              </div>
-                            </div>
+                            <div className="text-sm text-gray-400">-</div>
                           )}
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-500">
+                        <td className="px-6 py-4 text-sm text-gray-600 font-medium">
                           {assignedTo || '-'}
                         </td>
                         <td className="px-6 py-4">
@@ -1140,8 +1523,8 @@ export default function ProjectDetail() {
                                 e.stopPropagation();
                                 handleOpenActivityModal('call', contact);
                               }}
-                              className="p-1.5 text-black hover:opacity-70 transition-opacity" 
-                              title="Call"
+                              className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors" 
+                              title="Log Call"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
@@ -1152,8 +1535,8 @@ export default function ProjectDetail() {
                                 e.stopPropagation();
                                 handleOpenActivityModal('email', contact);
                               }}
-                              className="p-1.5 text-black hover:opacity-70 transition-opacity" 
-                              title="Email"
+                              className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" 
+                              title="Log Email"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -1164,8 +1547,8 @@ export default function ProjectDetail() {
                                 e.stopPropagation();
                                 handleOpenActivityModal('linkedin', contact);
                               }}
-                              className="p-1.5 text-black hover:opacity-70 transition-opacity" 
-                              title="LinkedIn"
+                              className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" 
+                              title="Log LinkedIn"
                             >
                               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                                 <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
@@ -1176,7 +1559,7 @@ export default function ProjectDetail() {
                       </tr>
                       {isExpanded && (
                         <tr>
-                          <td colSpan="8" className="px-6 py-4 bg-gray-50">
+                          <td colSpan="8" className="px-6 py-4 bg-blue-50 border-t-2 border-blue-200">
                             {isLoadingActivities ? (
                               <div className="flex items-center justify-center py-8">
                                 <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
@@ -1216,6 +1599,7 @@ export default function ProjectDetail() {
         contactName={activityModal.contactName}
         companyName={activityModal.companyName}
         projectId={activityModal.projectId}
+        contactId={activityModal.contactId}
         phoneNumber={activityModal.phoneNumber}
         email={activityModal.email}
         linkedInProfileUrl={activityModal.linkedInProfileUrl}
@@ -1227,67 +1611,23 @@ export default function ProjectDetail() {
         onClose={() => setBulkImportModal(false)}
         projectId={id}
         onImportSuccess={() => {
-          fetchSimilarContacts();
+          if (showProspectSuggestions) {
+            fetchSimilarContacts();
+          } else {
+            fetchImportedContacts();
+          }
           fetchAllProjectActivities();
         }}
       />
 
-      {/* Done Confirmation Modal */}
-      {showDoneConfirmation && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 animate-fade-in">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md mx-4 animate-fade-in">
-            <div className="p-6">
-              <div className="flex items-center gap-4 mb-4">
-                <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-gray-900">Mark Project as Done?</h3>
-                  <p className="text-sm text-gray-600 mt-1">Are you sure you want to mark this project as completed?</p>
-                </div>
-              </div>
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-                <p className="text-sm text-yellow-800">
-                  This action will mark the project as completed. You can still view and edit the project later.
-                </p>
-              </div>
-              <div className="flex items-center justify-end gap-3">
-                <button
-                  onClick={() => setShowDoneConfirmation(false)}
-                  disabled={markingDone}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleMarkProjectDone}
-                  disabled={markingDone}
-                  className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {markingDone ? (
-                    <>
-                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Marking...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                      Done
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <BulkActivityLogModal
+        isOpen={bulkActivityModal.isOpen}
+        onClose={handleCloseBulkActivityModal}
+        type={bulkActivityModal.type}
+        selectedContacts={selectedContacts}
+        projectId={id}
+        contacts={contacts}
+      />
     </div>
   );
 }

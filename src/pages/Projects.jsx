@@ -306,6 +306,16 @@ export default function Projects() {
                       <div className="text-sm text-gray-900">
                         {formatDate(project.createdAt)}
                       </div>
+                      {project.createdBy && (
+                        <div className="text-xs text-gray-500 mt-1">
+                          Created by: {project.createdBy.name || project.createdBy.email || 'Unknown'}
+                        </div>
+                      )}
+                      {!project.createdBy && (
+                        <div className="text-xs text-gray-500 mt-1">
+                          Created by: Unknown
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-500">
                       {project.assignedTo || '-'}

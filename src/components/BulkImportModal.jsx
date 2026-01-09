@@ -120,7 +120,7 @@ export default function BulkImportModal({ isOpen, onClose, projectId, onImportSu
   const handleClose = () => {
     setFile(null);
     setAssignTo('');
-    setDefaultStage('New');
+    setDefaultStage('CIP');
     setError('');
     setSuccess('');
     setIsDragging(false);

@@ -4,6 +4,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Contacts from './pages/Contacts';
 import ContactDetail from './pages/ContactDetail';
+import ContactActivityHistory from './pages/ContactActivityHistory';
 import CompanyDetail from './pages/CompanyDetail';
 import Import from './pages/Import';
 import AddContact from './pages/AddContact';
@@ -58,6 +59,15 @@ export default function App() {
             element={
               <PrivateRoute>
                 <CompanyDetail />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/contacts/:id/activities"
+            element={
+              <PrivateRoute>
+                <ContactActivityHistory />
               </PrivateRoute>
             }
           />
