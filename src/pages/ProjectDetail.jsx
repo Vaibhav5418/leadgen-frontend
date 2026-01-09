@@ -100,20 +100,81 @@ export default function ProjectDetail() {
         if (response.data.matchStats) {
           setMatchStats(response.data.matchStats);
         }
+        // If no ICP is defined, show message and disable suggestions
+        if (response.data.hasICP === false) {
+          setShowProspectSuggestions(false);
+          // Show message if user tried to enable suggestions
+          if (showProspectSuggestions) {
+            alert(response.data.message || 'No ICP defined for this project. Please add an ICP definition to get suggestions.');
+          }
+          return false; // Return false to indicate ICP is not available
+        }
+        return true;
       }
     } catch (err) {
       console.error('Error fetching similar contacts:', err);
+      return false;
     }
   };
 
+  // Check if project has ICP defined (must have at least one meaningful criteria)
+  // Exclude default company size values (0-1000) as they're not meaningful
+  const hasMeaningfulCompanySize = project?.icpDefinition?.companySizeMin !== undefined && 
+                                   project?.icpDefinition?.companySizeMax !== undefined &&
+                                   !(project.icpDefinition.companySizeMin === 0 && project.icpDefinition.companySizeMax === 1000);
+  
+  // Check if at least one ICP criteria is defined and non-empty
+  const hasTargetIndustries = project?.icpDefinition?.targetIndustries && 
+                              Array.isArray(project.icpDefinition.targetIndustries) && 
+                              project.icpDefinition.targetIndustries.length > 0;
+  
+  const hasTargetJobTitles = project?.icpDefinition?.targetJobTitles && 
+                             Array.isArray(project.icpDefinition.targetJobTitles) && 
+                             project.icpDefinition.targetJobTitles.length > 0;
+  
+  const hasGeographies = project?.icpDefinition?.geographies && 
+                         Array.isArray(project.icpDefinition.geographies) && 
+                         project.icpDefinition.geographies.length > 0;
+  
+  const hasKeywords = project?.icpDefinition?.keywords && 
+                      Array.isArray(project.icpDefinition.keywords) && 
+                      project.icpDefinition.keywords.length > 0;
+  
+  // hasICP is true only if at least one meaningful criteria exists
+  const hasICP = hasTargetIndustries || hasTargetJobTitles || hasGeographies || hasKeywords || hasMeaningfulCompanySize;
+
+  // Disable suggestions if ICP is removed while suggestions are enabled
+  useEffect(() => {
+    if (showProspectSuggestions && !hasICP) {
+      setShowProspectSuggestions(false);
+      fetchImportedContacts().catch(err => {
+        console.error('Error fetching imported contacts:', err);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasICP, showProspectSuggestions]);
+
   // Toggle prospect suggestions
   const handleToggleProspectSuggestions = async () => {
+    // Don't allow toggling if no ICP is defined
+    if (!hasICP) {
+      alert('No ICP (Ideal Customer Profile) is defined for this project. Please add an ICP definition in project settings to get suggestions.');
+      return;
+    }
+
     const newState = !showProspectSuggestions;
     setShowProspectSuggestions(newState);
     
     if (newState) {
       // Fetch suggestions from databank
-      await fetchSimilarContacts();
+      const success = await fetchSimilarContacts();
+      if (!success || !hasICP) {
+        // If fetch failed or no ICP, revert the state and show message
+        setShowProspectSuggestions(false);
+        if (!hasICP) {
+          alert('No ICP (Ideal Customer Profile) is defined for this project. Please add an ICP definition in project settings to get suggestions.');
+        }
+      }
     } else {
       // Show only imported contacts
       await fetchImportedContacts();
@@ -786,17 +847,36 @@ export default function ProjectDetail() {
             Export
           </button>
           <button 
+            onClick={() => navigate(`/projects/${id}/funnel`)}
+            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm text-gray-700"
+            title="View Sales Funnel"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
+            </svg>
+            Funnel
+          </button>
+          <button 
             onClick={handleToggleProspectSuggestions}
+            disabled={!hasICP}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors font-medium text-sm ${
-              showProspectSuggestions
-                ? 'bg-blue-600 text-white hover:bg-blue-700'
-                : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
+              !hasICP
+                ? 'bg-gray-100 border border-gray-300 text-gray-400 cursor-not-allowed'
+                : showProspectSuggestions
+                  ? 'bg-blue-600 text-white hover:bg-blue-700'
+                  : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-50'
             }`}
+            title={!hasICP ? 'No ICP defined. Add an ICP definition to get suggestions.' : 'Show prospect suggestions based on ICP'}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
             </svg>
             Prospect Suggestion
+            {!hasICP && (
+              <svg className="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            )}
           </button>
           <button 
             onClick={() => setBulkImportModal(true)}
@@ -1197,6 +1277,95 @@ export default function ProjectDetail() {
         </div>
       </div>
 
+      {/* ICP Recommendations Summary - Shows when suggestions are enabled */}
+      {showProspectSuggestions && hasICP && project?.icpDefinition && (
+        <div className="mb-4 bg-gradient-to-br from-indigo-50 via-purple-50 to-pink-50 border-2 border-indigo-200 rounded-2xl p-5 shadow-lg">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-10 h-10 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-xl flex items-center justify-center shadow-lg">
+                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">ICP-Based Recommendations</h3>
+                  <p className="text-sm text-gray-600 mt-0.5">Showing prospects from databank that match your project's Ideal Customer Profile</p>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
+                {project.icpDefinition.targetIndustries && project.icpDefinition.targetIndustries.length > 0 && (
+                  <div className="bg-white rounded-lg p-3 border border-indigo-100">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Target Industries</div>
+                    <div className="text-sm font-medium text-gray-900">
+                      {project.icpDefinition.targetIndustries.slice(0, 2).join(', ')}
+                      {project.icpDefinition.targetIndustries.length > 2 && ` +${project.icpDefinition.targetIndustries.length - 2} more`}
+                    </div>
+                  </div>
+                )}
+                {project.icpDefinition.targetJobTitles && project.icpDefinition.targetJobTitles.length > 0 && (
+                  <div className="bg-white rounded-lg p-3 border border-indigo-100">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Target Job Titles</div>
+                    <div className="text-sm font-medium text-gray-900">
+                      {project.icpDefinition.targetJobTitles.slice(0, 2).join(', ')}
+                      {project.icpDefinition.targetJobTitles.length > 2 && ` +${project.icpDefinition.targetJobTitles.length - 2} more`}
+                    </div>
+                  </div>
+                )}
+                {project.icpDefinition.companySizeMin !== undefined && project.icpDefinition.companySizeMax !== undefined && (
+                  <div className="bg-white rounded-lg p-3 border border-indigo-100">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Company Size</div>
+                    <div className="text-sm font-medium text-gray-900">
+                      {project.icpDefinition.companySizeMin.toLocaleString()} - {project.icpDefinition.companySizeMax.toLocaleString()} employees
+                    </div>
+                  </div>
+                )}
+                {project.icpDefinition.geographies && project.icpDefinition.geographies.length > 0 && (
+                  <div className="bg-white rounded-lg p-3 border border-indigo-100">
+                    <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Geographies</div>
+                    <div className="text-sm font-medium text-gray-900">
+                      {project.icpDefinition.geographies.slice(0, 2).join(', ')}
+                      {project.icpDefinition.geographies.length > 2 && ` +${project.icpDefinition.geographies.length - 2} more`}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {matchStats && (
+                <div className="mt-4 flex items-center gap-4 flex-wrap">
+                  <div className="text-xs text-gray-600 font-medium">
+                    Recommendations: 
+                    <span className="ml-2 inline-flex items-center gap-2">
+                      {matchStats.exact > 0 && (
+                        <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full font-semibold">
+                          {matchStats.exact} Exact
+                        </span>
+                      )}
+                      {matchStats.good > 0 && (
+                        <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full font-semibold">
+                          {matchStats.good} Good
+                        </span>
+                      )}
+                      {matchStats.similar > 0 && (
+                        <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full font-semibold">
+                          {matchStats.similar} Similar
+                        </span>
+                      )}
+                      {matchStats.loose > 0 && (
+                        <span className="px-2 py-1 bg-gray-100 text-gray-800 rounded-full font-semibold">
+                          {matchStats.loose} Loose
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Bulk Actions Bar - Shows when prospects are selected */}
       {selectedContacts.size > 0 && (
         <div className="mb-4 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 border-2 border-blue-200 rounded-2xl p-5 shadow-xl animate-slide-down backdrop-blur-sm relative overflow-hidden">
@@ -1521,9 +1690,58 @@ export default function ProjectDetail() {
                                 {getInitials(contact.name)}
                               </span>
                             </div>
-                            <div>
-                              <div className={`text-sm font-semibold ${isFromDatabank ? 'text-gray-900 hover:text-blue-600' : 'text-gray-900'}`}>
-                                {contact.name || 'N/A'}
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <div className={`text-sm font-semibold ${isFromDatabank ? 'text-gray-900 hover:text-blue-600' : 'text-gray-900'}`}>
+                                  {contact.name || 'N/A'}
+                                </div>
+                                {/* Recommendation Badge - Show only for suggestions (not imported) */}
+                                {!contact.isImported && contact.recommendationReasons && contact.recommendationReasons.length > 0 && (
+                                  <div className="group relative">
+                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                                      contact.matchType === 'exact' ? 'bg-green-100 text-green-800' :
+                                      contact.matchType === 'good' ? 'bg-blue-100 text-blue-800' :
+                                      contact.matchType === 'similar' ? 'bg-yellow-100 text-yellow-800' :
+                                      'bg-gray-100 text-gray-800'
+                                    }`}>
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                                      </svg>
+                                      {contact.matchScore}% Match
+                                    </span>
+                                    {/* Recommendation Tooltip */}
+                                    <div className="absolute left-0 top-full mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-200 p-4 z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 pointer-events-none">
+                                      <div className="absolute -top-2 left-4 w-4 h-4 bg-white border-l border-t border-gray-200 transform rotate-45"></div>
+                                      <div className="relative">
+                                        <h4 className="text-xs font-bold text-gray-900 mb-2 flex items-center gap-2">
+                                          <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                                          </svg>
+                                          Recommended Based on ICP
+                                        </h4>
+                                        <div className="space-y-2">
+                                          {contact.recommendationReasons.map((reason, idx) => (
+                                            <div key={idx} className="text-xs text-gray-700 bg-gray-50 rounded p-2 border-l-2 border-blue-500">
+                                              <div className="font-semibold text-gray-900 mb-1 capitalize">
+                                                {reason.type === 'industry' && '🏭 Industry Match'}
+                                                {reason.type === 'jobTitle' && '💼 Job Title Match'}
+                                                {reason.type === 'companySize' && '📊 Company Size Match'}
+                                                {reason.type === 'geography' && '🌍 Location Match'}
+                                                {reason.type === 'keywords' && '🔑 Keywords Match'}
+                                              </div>
+                                              <div className="text-gray-600">{reason.message}</div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                        <div className="mt-3 pt-2 border-t border-gray-200">
+                                          <div className="text-xs text-gray-500">
+                                            <span className="font-semibold">Match Score:</span> {contact.matchScore}% ({contact.matchType})
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
                               <div className="text-xs text-gray-500 mt-0.5">{contact.company || 'N/A'}</div>
                             </div>

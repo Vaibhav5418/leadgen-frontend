@@ -11,6 +11,7 @@ import AddContact from './pages/AddContact';
 import Projects from './pages/Projects';
 import CreateProject from './pages/CreateProject';
 import ProjectDetail from './pages/ProjectDetail';
+import Funnel from './pages/Funnel';
 
 // Private Route Component
 const PrivateRoute = ({ children }) => {
@@ -131,6 +132,15 @@ export default function App() {
             element={
               <PrivateRoute>
                 <ProjectDetail />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/projects/:id/funnel"
+            element={
+              <PrivateRoute>
+                <Funnel />
               </PrivateRoute>
             }
           />

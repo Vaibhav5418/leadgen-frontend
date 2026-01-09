@@ -117,24 +117,24 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
   const validate = () => {
     const newErrors = {};
 
-    if (!formData.outcome) {
-      newErrors.outcome = 'Outcome is required';
+    // Status is required for Email and LinkedIn activities
+    if (type === 'email' && !formData.status) {
+      newErrors.status = 'Status is required';
     }
 
-    // Status is required for LinkedIn activities
     if (type === 'linkedin' && !formData.status) {
       newErrors.status = 'Status is required';
     }
 
     // Conversation Notes is now optional - no validation needed
 
-    if (!formData.nextAction) {
-      newErrors.nextAction = 'Next action is required';
+    // Next action is now optional - no validation needed
+    // But if nextAction is provided, nextActionDate should also be provided
+    if (formData.nextAction && !formData.nextActionDate) {
+      newErrors.nextActionDate = 'Next action date is required when next action is specified';
     }
 
-    if (!formData.nextActionDate) {
-      newErrors.nextActionDate = 'Next action date is required';
-    } else {
+    if (formData.nextActionDate) {
       // Validate that next action date is within 7 days
       const selectedDate = new Date(formData.nextActionDate);
       const today = new Date();
@@ -187,7 +187,7 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
         contactId: contactId || null,
         type,
         template: formData.template,
-        outcome: formData.outcome,
+        outcome: null, // Outcome is not used for any activity types
         conversationNotes: notesWithContact,
         nextAction: formData.nextAction,
         nextActionDate: formData.nextActionDate,
@@ -263,8 +263,8 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
           connected: '',
           callNumber: '',
           callStatus: ''
-        });
-        setErrors({});
+    });
+    setErrors({});
     setSavedValues({ phone: null, email: null, linkedin: null });
     setSavingField({ phone: false, email: false, linkedin: false });
     setShowVariations(false);
@@ -329,10 +329,12 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
               </div>
               <div>
                 <h2 className="text-lg font-bold text-gray-900 mb-0.5">
-                  {showVariations ? 'LinkedIn Message Variations' : getTitle()}
+                  {showVariations && type === 'linkedin' ? 'LinkedIn Message Variations' : 
+                   showVariations && type === 'email' ? 'Email Variations' : 
+                   getTitle()}
                 </h2>
                 {!showVariations && (
-                  <p className="text-xs text-gray-600 font-medium">{contactName} - {companyName}</p>
+                <p className="text-xs text-gray-600 font-medium">{contactName} - {companyName}</p>
                 )}
               </div>
             </div>
@@ -391,9 +393,164 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
               </div>
             </div>
           </div>
+        ) : showVariations && type === 'email' ? (
+          <div className="p-4 bg-gray-50 overflow-y-auto flex-1">
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-yellow-100">
+                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-900 border border-gray-300 w-[15%]">Email</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-900 border border-gray-300">Variation 1</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-900 border border-gray-300">Variation 2</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-900 border border-gray-300">Variation 3</th>
+                      <th className="px-4 py-3 text-left text-xs font-bold text-gray-900 border border-gray-300">Variation 4</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td className="px-4 py-3 text-xs font-semibold text-gray-900 bg-yellow-50 border border-gray-300 align-top">1st Email</td>
+                      <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
+                        <div className="space-y-2">
+                          <p>Hi {{Name}},</p>
+                          <p>I work closely with people involved in residential projects and leasing, and I enjoy staying connected with those who are close to the day-to-day side of property work.</p>
+                          <p>At Terabits, we focus on making everyday property operations a little easier by keeping rentals, billing, and maintenance in one place.</p>
+                          <p>Happy to connect.</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
+                        <div className="space-y-2">
+                          <p>Hi {{Name}},</p>
+                          <p>I usually stay in touch with people working close to residential projects and leasing. I've found those conversations tend to be the most honest and practical.</p>
+                          <p>I'm part of the Terabits team, where we focus on making everyday property operations easier to manage.</p>
+                          <p>Nice to connect.</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
+                        <div className="space-y-2">
+                          <p className="font-semibold">Subject: Exchanging notes on leasing & residential work</p>
+                          <p>Hi {{Name}},</p>
+                          <p>I usually stay in touch with people working on residential projects and leasing. I've found these conversations to be the most practical.</p>
+                          <p>When it comes to daily management, where do you usually find the most friction or "extra work" in your current process?</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
+                        <div className="space-y-2">
+                          <p>Hi {{Name}},</p>
+                          <p>I tend to reach out to people in residential leasing because the conversations are usually more practical.</p>
+                          <p>I'm curious—when it comes to your daily management, where do things usually get stuck or feel like a "headache" for your team?</p>
+                          <p>Nice to connect,</p>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-3 text-xs font-semibold text-gray-900 bg-yellow-50 border border-gray-300 align-top">2nd Email</td>
+                      <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
+                        <div className="space-y-2">
+                          <p>Hi {{Name}},</p>
+                          <p>Just wanted to follow up on my last note.</p>
+                          <p>We usually speak with property teams who want a bit more clarity in their daily workflows without changing how they already operate.</p>
+                          <p>Always good to stay in touch.</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
+                        <div className="space-y-2">
+                          <p>Hi {{Name}},</p>
+                          <p>Just sharing a short follow-up.</p>
+                          <p>Most of our discussions with property teams revolve around simplifying rentals, maintenance, and billing without adding extra complexity to daily work.</p>
+                          <p>Happy to stay in touch.</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
+                        <div className="space-y-2">
+                          <p>Hi {{Name}},</p>
+                          <p>Most of our discussions with property teams revolve around simplifying rentals, maintenance, and billing.</p>
+                          <p>This is where Terabits usually steps in—we focus on making those everyday operations feel less like a chore so you can focus on the bigger picture.</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
+                        <div className="space-y-2">
+                          <p>Hi {{Name}},</p>
+                          <p>That's usually where we come in. At Terabits, we focus on making those messy parts—like rentals, maintenance, and billing—feel a lot more manageable.</p>
+                          <p>We try to keep the tech simple so it actually helps the team instead of adding more work to their day.</p>
+                          <p>Happy to stay in touch,</p>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-3 text-xs font-semibold text-gray-900 bg-yellow-50 border border-gray-300 align-top">3rd Email</td>
+                      <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
+                        <div className="space-y-2">
+                          <p>Hi {{Name}},</p>
+                          <p>One thing we often notice is that small improvements in visibility can make day-to-day property work feel much more manageable.</p>
+                          <p>Thought I'd share that with you.</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
+                        <div className="space-y-2">
+                          <p>Hi {{Name}},</p>
+                          <p>One thing I often hear is that even small clarity in systems can make a big difference in day-to-day property operations.</p>
+                          <p>Thought I'd share that with you.</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
+                        <div className="space-y-2">
+                          <p>Hi {{Name}},</p>
+                          <p>One thing I often hear is that small clarity in systems makes a big difference.</p>
+                          <p>Specifically, we help by automating the repetitive stuff—like tracking maintenance requests or streamlining billing workflows—without adding extra complexity to your day-to-day work.</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
+                        <div className="space-y-2">
+                          <p>Hi {{Name}},</p>
+                          <p>One thing I've noticed is that just adding a bit of clarity to maintenance tracking or billing can save a lot of hours.</p>
+                          <p>We mostly help by automating those repetitive tasks so they just happen in the background. It's a small change that usually makes the day-to-day much smoother.</p>
+                          <p>Thought I'd share that.</p>
+                        </div>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-3 text-xs font-semibold text-gray-900 bg-yellow-50 border border-gray-300 align-top">4th Email</td>
+                      <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
+                        <div className="space-y-2">
+                          <p>Hi {{Name}},</p>
+                          <p>I'll leave it here for now.</p>
+                          <p>If at any point it feels useful to exchange notes around property operations or workflows, I'm always happy to connect.</p>
+                          <p>Wishing you a great week ahead.</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
+                        <div className="space-y-2">
+                          <p>Hi {{Name}},</p>
+                          <p>I won't take more of your time.</p>
+                          <p>If at any point it feels useful to exchange notes around property operations or workflows, I'm always happy to connect.</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
+                        <div className="space-y-2">
+                          <p>Hi {{Name}},</p>
+                          <p>I won't take more of your time.</p>
+                          <p>If at any point it feels useful to exchange notes around property operations or workflows, I'm always happy to connect.</p>
+                          <p>Take care.</p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
+                        <div className="space-y-2">
+                          <p>Hi {{Name}},</p>
+                          <p>I'll leave it here as I don't want to crowd your inbox.</p>
+                          <p>If you ever want to swap notes on how to make property workflows easier, I'm always happy to chat.</p>
+                          <p>Wishing you the best,</p>
+                        </div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         ) : (
-          <form onSubmit={handleSubmit} className="p-4 bg-gray-50 overflow-y-auto flex-1">
-            <div className="space-y-4">
+        <form onSubmit={handleSubmit} className="p-4 bg-gray-50 overflow-y-auto flex-1">
+          <div className="space-y-4">
             {/* Phone Number Input (Only for Call Activity) */}
             {type === 'call' && (
               <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200">
@@ -403,10 +560,10 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                 <div className="flex items-center gap-2">
                   <div className="relative flex-1">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                      </svg>
-                    </div>
+                  <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                  </svg>
+                </div>
                     <input
                       type="tel"
                       value={formData.phoneNumber}
@@ -462,10 +619,10 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                 <div className="flex items-center gap-2">
                   <div className="relative flex-1">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                      </svg>
-                    </div>
+                  <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                </div>
                     <input
                       type="email"
                       value={formData.email}
@@ -521,9 +678,9 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                 <div className="flex items-center gap-2">
                   <div className="relative flex-1">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
-                      </svg>
+                  <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                  </svg>
                     </div>
                     <input
                       type="url"
@@ -546,7 +703,7 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                           <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                          </svg>
+                      </svg>
                           Saving...
                         </>
                       ) : (
@@ -575,63 +732,60 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
               </div>
             )}
 
-            {/* Select Template */}
-            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200">
-              <div className="flex items-center justify-between mb-2">
-                <label className="block text-xs font-semibold text-gray-700">
+            {/* Select Template - Only for Email and LinkedIn Activities */}
+            {type !== 'call' && (
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-semibold text-gray-700">
                   Select Template (Optional)
                 </label>
-                {type === 'linkedin' && (
-                  <button
-                    type="button"
-                    onClick={() => setShowVariations(true)}
-                    className="px-3 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-all duration-200 flex items-center gap-1.5"
-                  >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    View Message Variations
-                  </button>
-                )}
+                  {(type === 'linkedin' || type === 'email') && (
+                    <button
+                      type="button"
+                      onClick={() => setShowVariations(true)}
+                      className="px-3 py-1.5 text-xs font-semibold text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-all duration-200 flex items-center gap-1.5"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      {type === 'email' ? 'View Email Variations' : 'View Message Variations'}
+                    </button>
+                  )}
+                </div>
+                <select
+                  value={formData.template}
+                  onChange={(e) => handleChange('template', e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white hover:border-gray-400"
+                >
+                  <option value="">Select an option</option>
+                  <option value="no-template">No Template</option>
+                  {type === 'email' ? (
+                    <>
+                      <option value="introduction-email">Introduction Email</option>
+                      <option value="follow-up-email">Follow-up Email</option>
+                      <option value="value-proposition-email">Value Proposition Email</option>
+                    </>
+                  ) : type === 'linkedin' ? (
+                    <>
+                      <option value="connection-request-message">Connection Request Message</option>
+                      <option value="introduction-message">Introduction Message</option>
+                      <option value="follow-up-message">Follow-up Message</option>
+                    </>
+                  ) : null}
+                </select>
+                <p className="mt-2 text-xs text-gray-500 flex items-center gap-1">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Use a pre-defined template for consistency
+                </p>
               </div>
-              <select
-                value={formData.template}
-                onChange={(e) => handleChange('template', e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white hover:border-gray-400"
-              >
-                <option value="">Select an option</option>
-                <option value="no-template">No Template</option>
-                {type === 'call' ? (
-                  <>
-                    <option value="introduction-call-script">Introduction Call Script</option>
-                    <option value="follow-up-call-script">Follow-up Call Script</option>
-                  </>
-                ) : type === 'email' ? (
-                  <>
-                    <option value="introduction-email">Introduction Email</option>
-                    <option value="follow-up-email">Follow-up Email</option>
-                    <option value="value-proposition-email">Value Proposition Email</option>
-                  </>
-                ) : type === 'linkedin' ? (
-                  <>
-                    <option value="connection-request-message">Connection Request Message</option>
-                    <option value="introduction-message">Introduction Message</option>
-                    <option value="follow-up-message">Follow-up Message</option>
-                  </>
-                ) : null}
-              </select>
-              <p className="mt-2 text-xs text-gray-500 flex items-center gap-1">
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Use a pre-defined template for consistency
-              </p>
-            </div>
+            )}
 
             {/* LinkedIn Account Name Field (Only for LinkedIn Activity) */}
             {type === 'linkedin' && (
-              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200">
-                <label className="block text-xs font-semibold text-gray-700 mb-2">
+            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200">
+              <label className="block text-xs font-semibold text-gray-700 mb-2">
                   LinkedIn Account Used <span className="text-gray-400 text-xs font-normal">(Optional)</span>
                 </label>
                 <div className="relative">
@@ -663,8 +817,8 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                 <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200">
                   <label className="block text-xs font-semibold text-gray-700 mb-2">
                     Ln Request Sent <span className="text-gray-400 text-xs font-normal">(Optional)</span>
-                  </label>
-                  <select
+              </label>
+              <select
                     value={formData.lnRequestSent}
                     onChange={(e) => handleChange('lnRequestSent', e.target.value)}
                     className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white hover:border-gray-400"
@@ -707,64 +861,8 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
               </div>
             )}
 
-            {/* Outcome - For LinkedIn, appears before Status */}
-            <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200">
-              <label className="block text-xs font-semibold text-gray-700 mb-2">
-                Outcome <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={formData.outcome}
-                onChange={(e) => handleChange('outcome', e.target.value)}
-                className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white hover:border-gray-400 ${
-                  errors.outcome ? 'border-red-300 bg-red-50' : 'border-gray-300'
-                }`}
-              >
-                <option value="">Select an option</option>
-                {type === 'call' ? (
-                  <>
-                    <option value="connected-had-conversation">Connected - Had Conversation</option>
-                    <option value="left-voicemail">Left Voicemail</option>
-                    <option value="no-answer">No Answer</option>
-                    <option value="wrong-number">Wrong Number</option>
-                    <option value="not-interested">Not Interested</option>
-                  </>
-                ) : type === 'email' ? (
-                  <>
-                    <option value="email-sent-successfully">Email Sent Successfully</option>
-                    <option value="email-bounced">Email Bounced</option>
-                    <option value="received-reply">Received Reply</option>
-                    <option value="out-of-office-response">Out of Office Response</option>
-                  </>
-                ) : type === 'linkedin' ? (
-                  <>
-                    <option value="connection-request-sent">Connection Request Sent</option>
-                    <option value="message-sent">Message Sent</option>
-                    <option value="connection-accepted">Connection Accepted</option>
-                    <option value="received-reply">Received Reply</option>
-                  </>
-                ) : (
-                  <>
-                    <option value="interested">Interested</option>
-                    <option value="not-interested">Not Interested</option>
-                    <option value="follow-up">Follow-up Required</option>
-                    <option value="no-response">No Response</option>
-                    <option value="meeting-scheduled">Meeting Scheduled</option>
-                  </>
-                )}
-              </select>
-              {errors.outcome && (
-                <p className="mt-2 text-xs text-red-600 flex items-center gap-1 animate-shake">
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  {errors.outcome}
-                </p>
-              )}
-              <p className="mt-2 text-xs text-gray-500">What was the result of this interaction?</p>
-            </div>
-
-            {/* Status Field (Only for LinkedIn Activity) - AFTER Outcome */}
-            {type === 'linkedin' && (
+            {/* Status Field (For Email and LinkedIn Activities) */}
+            {(type === 'email' || type === 'linkedin') && (
               <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200">
                 <label className="block text-xs font-semibold text-gray-700 mb-2">
                   Status <span className="text-red-500">*</span>
@@ -772,40 +870,57 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                 <select
                   value={formData.status}
                   onChange={(e) => handleChange('status', e.target.value)}
-                  className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white hover:border-gray-400 ${
+                className={`w-full px-3 py-2 text-sm border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white hover:border-gray-400 ${
                     errors.status ? 'border-red-300 bg-red-50' : 'border-gray-300'
                   }`}
                 >
                   <option value="">Select status</option>
-                  <option value="CIP">CIP</option>
-                  <option value="No Reply">No Reply</option>
-                  <option value="Not Interested">Not Interested</option>
-                  <option value="Meeting Proposed">Meeting Proposed</option>
-                  <option value="Meeting Scheduled">Meeting Scheduled</option>
-                  <option value="In-Person Meeting">In-Person Meeting</option>
-                  <option value="Meeting Completed">Meeting Completed</option>
-                  <option value="SQL">SQL</option>
-                  <option value="Tech Discussion">Tech Discussion</option>
-                  <option value="WON">WON</option>
-                  <option value="Lost">Lost</option>
-                  <option value="Low Potential - Open">Low Potential - Open</option>
-                  <option value="Potential Future">Potential Future</option>
-                </select>
-                {errors.status && (
-                  <p className="mt-2 text-xs text-red-600 flex items-center gap-1 animate-shake">
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    {errors.status}
-                  </p>
+                  {type === 'email' ? (
+                    <>
+                      <option value="No Reply">No Reply</option>
+                      <option value="Not Interested">Not Interested</option>
+                      <option value="Out of Office">Out of Office</option>
+                      <option value="Meeting Proposed">Meeting Proposed</option>
+                      <option value="Meeting Scheduled">Meeting Scheduled</option>
+                      <option value="Interested">Interested</option>
+                      <option value="Wrong Person">Wrong Person</option>
+                      <option value="Bounce">Bounce</option>
+                      <option value="Opt-Out">Opt-Out</option>
+                      <option value="Meeting Completed">Meeting Completed</option>
+                  </>
+                ) : (
+                  <>
+                      <option value="CIP">CIP</option>
+                      <option value="No Reply">No Reply</option>
+                      <option value="Not Interested">Not Interested</option>
+                      <option value="Meeting Proposed">Meeting Proposed</option>
+                      <option value="Meeting Scheduled">Meeting Scheduled</option>
+                      <option value="In-Person Meeting">In-Person Meeting</option>
+                      <option value="Meeting Completed">Meeting Completed</option>
+                      <option value="SQL">SQL</option>
+                      <option value="Tech Discussion">Tech Discussion</option>
+                      <option value="WON">WON</option>
+                      <option value="Lost">Lost</option>
+                      <option value="Low Potential - Open">Low Potential - Open</option>
+                      <option value="Potential Future">Potential Future</option>
+                  </>
                 )}
+              </select>
+                {errors.status && (
+                <p className="mt-2 text-xs text-red-600 flex items-center gap-1 animate-shake">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                    {errors.status}
+                </p>
+              )}
                 <p className="mt-2 text-xs text-gray-500 flex items-center gap-1">
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  Update the contact status based on this interaction
+                  {type === 'email' ? 'Update the contact status based on this email interaction' : 'Update the contact status based on this interaction'}
                 </p>
-              </div>
+            </div>
             )}
 
             {/* Call Number Field (Only for Call Activity) - BEFORE Outcome */}
@@ -905,7 +1020,7 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200">
                 <label className="block text-xs font-semibold text-gray-700 mb-2">
-                  Next Action <span className="text-red-500">*</span>
+                  Next Action <span className="text-gray-400 text-xs font-normal">(Optional)</span>
                 </label>
                 <select
                   value={formData.nextAction}
@@ -933,7 +1048,9 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
               </div>
               <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200">
                 <label className="block text-xs font-semibold text-gray-700 mb-2">
-                  Next Action Date <span className="text-red-500">*</span>
+                  Next Action Date <span className={formData.nextAction ? 'text-red-500' : 'text-gray-400 text-xs font-normal'}>
+                    {formData.nextAction ? '*' : '(Optional)'}
+                  </span>
                 </label>
                 <div className="relative">
                   <input
@@ -981,7 +1098,7 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="text-blue-500 mt-0.5">•</span>
-                      <span>Outcome, Next Action, and Next Action Date are required</span>
+                      <span>Next Action and Next Action Date are optional</span>
                     </li>
                   </ul>
                 </div>
@@ -1000,40 +1117,40 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
               </div>
             )}
 
-              {/* Footer Buttons */}
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-200">
-                <button
-                  type="button"
-                  onClick={handleClose}
-                  className="px-4 py-2 text-xs font-semibold text-gray-700 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 shadow-sm hover:shadow-md"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:hover:scale-100"
-                >
-                  {loading ? (
-                    <>
-                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Saving...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                      </svg>
-                      Save Activity
-                    </>
-                  )}
-                </button>
-              </div>
+            {/* Footer Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-200">
+              <button
+                type="button"
+                onClick={handleClose}
+                className="px-4 py-2 text-xs font-semibold text-gray-700 bg-white border-2 border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-all duration-200 shadow-sm hover:shadow-md"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-blue-600 to-blue-700 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-lg hover:shadow-xl transform hover:scale-105 disabled:hover:scale-100"
+              >
+                {loading ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    Save Activity
+                  </>
+                )}
+              </button>
             </div>
-          </form>
+          </div>
+        </form>
         )}
       </div>
     </div>
