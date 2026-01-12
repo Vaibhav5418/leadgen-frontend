@@ -27,7 +27,7 @@ ChartJS.register(
   Filler
 );
 
-export default function LinkedInFunnelReport() {
+export default function EmailReport() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [project, setProject] = useState(null);
@@ -44,7 +44,7 @@ export default function LinkedInFunnelReport() {
     }
   }, [id]);
 
-  // Refresh data when component comes into focus (user returns to tab)
+  // Refresh data when component comes into focus
   useEffect(() => {
     const handleFocus = () => {
       if (id && !loading) {
@@ -65,12 +65,12 @@ export default function LinkedInFunnelReport() {
         setProject(projectResponse.data.data);
       }
 
-      // Fetch all LinkedIn activities for the project (no limit to get all activities)
+      // Fetch all email activities for the project
       const activitiesResponse = await API.get(`/activities/project/${id}?limit=10000`);
       if (activitiesResponse.data.success) {
         const allActivities = activitiesResponse.data.data || [];
-        const linkedInActivities = allActivities.filter(a => a.type === 'linkedin');
-        setActivities(linkedInActivities);
+        const emailActivities = allActivities.filter(a => a.type === 'email');
+        setActivities(emailActivities);
       }
 
       // Fetch project contacts
@@ -108,21 +108,18 @@ export default function LinkedInFunnelReport() {
   const getMonths = () => {
     const months = new Set();
     
-    // Add months from activities
     activities.forEach(activity => {
       if (activity.createdAt) {
         months.add(getMonthKey(activity.createdAt));
       }
     });
 
-    // Add months from contacts
     contacts.forEach(contact => {
       if (contact.createdAt) {
-        months.add(getMonthKey(contact.createdAt));
+        months.add(getMonthKey(new Date(contact.createdAt)));
       }
     });
 
-    // Sort months chronologically
     const sortedMonths = Array.from(months).sort((a, b) => {
       const [monthA, yearA] = a.split(" '");
       const [monthB, yearB] = b.split(" '");
@@ -142,22 +139,20 @@ export default function LinkedInFunnelReport() {
   const getYears = () => {
     const years = new Set();
     
-    // Add years from activities
     activities.forEach(activity => {
       if (activity.createdAt) {
         years.add(getYearKey(activity.createdAt));
       }
     });
 
-    // Add years from contacts
     contacts.forEach(contact => {
       if (contact.createdAt) {
-        years.add(getYearKey(contact.createdAt));
+        years.add(getYearKey(new Date(contact.createdAt)));
       }
     });
 
-    // Sort years chronologically
-    return Array.from(years).sort((a, b) => parseInt(a) - parseInt(b));
+    const sortedYears = Array.from(years).sort((a, b) => parseInt(a) - parseInt(b));
+    return sortedYears;
   };
 
   const calculateReportData = () => {
@@ -166,109 +161,111 @@ export default function LinkedInFunnelReport() {
 
     periods.forEach(period => {
       data[period] = {
-        dataResearch: 0,
-        connectionRequestSent: 0,
-        connectionAccepted: 0,
-        firstMessageSent: 0,
-        followupMessagesSent: 0,
-        existingConnection: 0,
-        conversationsInProgress: 0,
+        emailsSent: 0,
+        noReply: 0,
+        notInterested: 0,
+        outOfOffice: 0,
         meetingProposed: 0,
         meetingScheduled: 0,
-        meetingCompleted: 0
+        interested: 0,
+        wrongPerson: 0,
+        bounce: 0,
+        optOut: 0,
+        meetingCompleted: 0,
+        totalResponses: 0,
+        responseRate: 0,
+        openRate: 0,
+        clickRate: 0
       };
     });
 
-    // Calculate Data Research manually (contacts added in that period)
-    contacts.forEach(contact => {
-      if (contact.createdAt) {
-        const period = viewMode === 'month' ? getMonthKey(contact.createdAt) : getYearKey(contact.createdAt);
+    // Calculate emails sent (total email activities)
+    activities.forEach(activity => {
+      if (activity.createdAt) {
+        const period = viewMode === 'month' 
+          ? getMonthKey(activity.createdAt) 
+          : getYearKey(activity.createdAt);
         if (data[period]) {
-          data[period].dataResearch++;
+          data[period].emailsSent++;
         }
       }
     });
 
-    // Group activities by contact
-    const contactActivities = {};
+    // Calculate metrics by status
     activities.forEach(activity => {
-      if (!activity.createdAt) return;
-      const contactId = activity.contactId?.toString() || 'unknown';
-
-      if (!contactActivities[contactId]) {
-        contactActivities[contactId] = [];
-      }
-      contactActivities[contactId].push(activity);
-    });
-
-    // Calculate metrics per period
-    activities.forEach(activity => {
-      if (!activity.createdAt) return;
-      const period = viewMode === 'month' ? getMonthKey(activity.createdAt) : getYearKey(activity.createdAt);
-      if (!data[period]) return;
-
-      // Connection Request Sent
-      if (activity.lnRequestSent === 'Yes') {
-        data[period].connectionRequestSent++;
-      }
-
-      // Existing Connection
-      if (activity.lnRequestSent === 'Existing Connect') {
-        data[period].existingConnection++;
-      }
-
-      // Connection Accepted
-      if (activity.connected === 'Yes') {
-        data[period].connectionAccepted++;
-      }
-
-      // Status-based metrics (count activities with these statuses)
-      if (activity.status === 'CIP') {
-        data[period].conversationsInProgress++;
-      } else if (activity.status === 'Meeting Proposed') {
-        data[period].meetingProposed++;
-      } else if (activity.status === 'Meeting Scheduled') {
-        data[period].meetingScheduled++;
-      } else if (activity.status === 'Meeting Completed') {
-        data[period].meetingCompleted++;
-      }
-    });
-
-    // Calculate First Message Sent and Followup Messages
-    Object.keys(contactActivities).forEach(contactId => {
-      const contactActs = contactActivities[contactId].sort((a, b) => 
-        new Date(a.createdAt) - new Date(b.createdAt)
-      );
-
-      contactActs.forEach((activity, index) => {
-        if (!activity.createdAt || !activity.conversationNotes) return;
-        const period = viewMode === 'month' ? getMonthKey(activity.createdAt) : getYearKey(activity.createdAt);
+      if (activity.createdAt && activity.status) {
+        const period = viewMode === 'month' 
+          ? getMonthKey(activity.createdAt) 
+          : getYearKey(activity.createdAt);
         if (!data[period]) return;
 
-        // First Message Sent (first activity with conversation notes for this contact)
-        if (index === 0) {
-          data[period].firstMessageSent++;
-        } else {
-          // Followup Messages sent (subsequent activities with conversation notes)
-          data[period].followupMessagesSent++;
+        switch (activity.status) {
+          case 'No Reply':
+            data[period].noReply++;
+            break;
+          case 'Not Interested':
+            data[period].notInterested++;
+            data[period].totalResponses++;
+            break;
+          case 'Out of Office':
+            data[period].outOfOffice++;
+            data[period].totalResponses++;
+            break;
+          case 'Meeting Proposed':
+            data[period].meetingProposed++;
+            data[period].totalResponses++;
+            break;
+          case 'Meeting Scheduled':
+            data[period].meetingScheduled++;
+            data[period].totalResponses++;
+            break;
+          case 'Interested':
+            data[period].interested++;
+            data[period].totalResponses++;
+            break;
+          case 'Wrong Person':
+            data[period].wrongPerson++;
+            data[period].totalResponses++;
+            break;
+          case 'Bounce':
+            data[period].bounce++;
+            break;
+          case 'Opt-Out':
+            data[period].optOut++;
+            data[period].totalResponses++;
+            break;
+          case 'Meeting Completed':
+            data[period].meetingCompleted++;
+            data[period].totalResponses++;
+            break;
         }
-      });
+      }
+    });
+
+    // Calculate response rate and other metrics
+    periods.forEach(period => {
+      if (data[period].emailsSent > 0) {
+        data[period].responseRate = ((data[period].totalResponses / data[period].emailsSent) * 100).toFixed(1);
+      }
     });
 
     setReportData(data);
   };
 
   const metrics = [
-    { key: 'dataResearch', label: 'Data Research manually', section: 'DRA' },
-    { key: 'connectionRequestSent', label: 'Connection Request Sent', section: 'DRA' },
-    { key: 'connectionAccepted', label: 'Connection Accepted', section: 'DRA' },
-    { key: 'firstMessageSent', label: 'First Message Sent', section: 'DRA' },
-    { key: 'followupMessagesSent', label: 'Followup Messages sent', section: 'DRA' },
-    { key: 'existingConnection', label: 'Existing Connection', section: 'Linked IN' },
-    { key: 'conversationsInProgress', label: 'Conversations in Progress', section: 'Linked IN', highlight: true },
-    { key: 'meetingProposed', label: 'Meeting Proposed', section: 'Linked IN', highlight: true },
-    { key: 'meetingScheduled', label: 'Meeting Scheduled', section: 'Linked IN', highlight: true },
-    { key: 'meetingCompleted', label: 'Meeting Completed', section: 'Linked IN', highlight: true }
+    { key: 'emailsSent', label: 'Emails Sent', section: 'Email Activity', bold: true },
+    { key: 'noReply', label: 'No Reply', section: 'Email Activity', bold: false },
+    { key: 'notInterested', label: 'Not Interested', section: 'Email Activity', bold: false },
+    { key: 'outOfOffice', label: 'Out of Office', section: 'Email Activity', bold: false },
+    { key: 'meetingProposed', label: 'Meeting Proposed', section: 'Email Activity', bold: true, highlight: true },
+    { key: 'meetingScheduled', label: 'Meeting Scheduled', section: 'Email Activity', bold: true, highlight: true },
+    { key: 'interested', label: 'Interested', section: 'Email Activity', bold: true, highlight: true },
+    { key: 'wrongPerson', label: 'Wrong Person', section: 'Email Activity', bold: false },
+    { key: 'bounce', label: 'Bounce', section: 'Email Activity', bold: false },
+    { key: 'optOut', label: 'Opt-Out', section: 'Email Activity', bold: false },
+    { key: 'meetingCompleted', label: 'Meeting Completed', section: 'Email Activity', bold: true, highlight: true, highlightDark: true },
+    { key: 'totalResponses', label: 'Total Responses', section: 'Email Activity', bold: true },
+    { key: 'responseRate', label: 'Response Rate (%)', section: 'Email Activity', bold: true, isPercentage: true }
   ];
 
   const periods = viewMode === 'month' ? getMonths() : getYears();
@@ -278,20 +275,20 @@ export default function LinkedInFunnelReport() {
     const labels = periods;
     
     return {
-      connectionFunnel: {
+      emailFunnel: {
         labels,
         datasets: [
           {
-            label: 'Connection Request Sent',
-            data: labels.map(period => reportData[period]?.connectionRequestSent || 0),
+            label: 'Emails Sent',
+            data: labels.map(period => reportData[period]?.emailsSent || 0),
             borderColor: 'rgb(59, 130, 246)',
             backgroundColor: 'rgba(59, 130, 246, 0.1)',
             tension: 0.4,
             fill: true,
           },
           {
-            label: 'Connection Accepted',
-            data: labels.map(period => reportData[period]?.connectionAccepted || 0),
+            label: 'Total Responses',
+            data: labels.map(period => reportData[period]?.totalResponses || 0),
             borderColor: 'rgb(34, 197, 94)',
             backgroundColor: 'rgba(34, 197, 94, 0.1)',
             tension: 0.4,
@@ -299,24 +296,33 @@ export default function LinkedInFunnelReport() {
           }
         ]
       },
-      messageActivity: {
+      responseBreakdown: {
         labels,
         datasets: [
           {
-            label: 'First Message Sent',
-            data: labels.map(period => reportData[period]?.firstMessageSent || 0),
-            borderColor: 'rgb(168, 85, 247)',
-            backgroundColor: 'rgba(168, 85, 247, 0.1)',
-            tension: 0.4,
-            fill: true,
+            label: 'No Reply',
+            data: labels.map(period => reportData[period]?.noReply || 0),
+            backgroundColor: 'rgba(156, 163, 175, 0.8)',
           },
           {
-            label: 'Followup Messages',
-            data: labels.map(period => reportData[period]?.followupMessagesSent || 0),
-            borderColor: 'rgb(236, 72, 153)',
-            backgroundColor: 'rgba(236, 72, 153, 0.1)',
-            tension: 0.4,
-            fill: true,
+            label: 'Not Interested',
+            data: labels.map(period => reportData[period]?.notInterested || 0),
+            backgroundColor: 'rgba(239, 68, 68, 0.8)',
+          },
+          {
+            label: 'Interested',
+            data: labels.map(period => reportData[period]?.interested || 0),
+            backgroundColor: 'rgba(34, 197, 94, 0.8)',
+          },
+          {
+            label: 'Meeting Proposed',
+            data: labels.map(period => reportData[period]?.meetingProposed || 0),
+            backgroundColor: 'rgba(251, 191, 36, 0.8)',
+          },
+          {
+            label: 'Meeting Scheduled',
+            data: labels.map(period => reportData[period]?.meetingScheduled || 0),
+            backgroundColor: 'rgba(6, 182, 212, 0.8)',
           }
         ]
       },
@@ -331,7 +337,7 @@ export default function LinkedInFunnelReport() {
           {
             label: 'Meeting Scheduled',
             data: labels.map(period => reportData[period]?.meetingScheduled || 0),
-            backgroundColor: 'rgba(59, 130, 246, 0.8)',
+            backgroundColor: 'rgba(6, 182, 212, 0.8)',
           },
           {
             label: 'Meeting Completed',
@@ -340,13 +346,16 @@ export default function LinkedInFunnelReport() {
           }
         ]
       },
-      conversationsStatus: {
+      responseRate: {
         labels,
         datasets: [
           {
-            label: 'Conversations in Progress',
-            data: labels.map(period => reportData[period]?.conversationsInProgress || 0),
-            backgroundColor: 'rgba(34, 197, 94, 0.8)',
+            label: 'Response Rate (%)',
+            data: labels.map(period => parseFloat(reportData[period]?.responseRate || 0)),
+            borderColor: 'rgb(168, 85, 247)',
+            backgroundColor: 'rgba(168, 85, 247, 0.1)',
+            tension: 0.4,
+            fill: true,
           }
         ]
       }
@@ -433,6 +442,9 @@ export default function LinkedInFunnelReport() {
     );
   }
 
+  // Group metrics by section
+  const emailActivityMetrics = metrics.filter(m => m.section === 'Email Activity');
+
   return (
     <div className="min-h-screen bg-white">
       <div className="max-w-7xl mx-auto px-6 lg:px-8 py-8">
@@ -446,7 +458,7 @@ export default function LinkedInFunnelReport() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
-              Back to Sales Funnel
+              Back to Sales Report
             </button>
             
             <button
@@ -471,7 +483,7 @@ export default function LinkedInFunnelReport() {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h1 className="text-2xl font-semibold text-gray-900 mb-2">
-                  {viewMode === 'month' ? 'Monthly' : 'Yearly'} Report - {project?.companyName || 'Project'}
+                  {viewMode === 'month' ? 'Monthly' : 'Yearly'} Email Report - {project?.companyName || 'Project'}
                 </h1>
                 {project?.website && (
                   <a 
@@ -521,23 +533,23 @@ export default function LinkedInFunnelReport() {
         {/* Charts Section */}
         {periods.length > 0 && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-            {/* Connection Funnel Chart */}
+            {/* Email Funnel Chart */}
             <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Connection Funnel</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Email Funnel</h3>
               <div className="h-64">
-                <Line data={chartData.connectionFunnel} options={chartOptions} />
+                <Line data={chartData.emailFunnel} options={chartOptions} />
               </div>
             </div>
 
-            {/* Message Activity Chart */}
+            {/* Response Breakdown */}
             <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Message Activity</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Response Breakdown</h3>
               <div className="h-64">
-                <Line data={chartData.messageActivity} options={chartOptions} />
+                <Bar data={chartData.responseBreakdown} options={barChartOptions} />
               </div>
             </div>
 
-            {/* Meeting Pipeline Chart */}
+            {/* Meeting Pipeline */}
             <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Meeting Pipeline</h3>
               <div className="h-64">
@@ -545,68 +557,85 @@ export default function LinkedInFunnelReport() {
               </div>
             </div>
 
-            {/* Conversations Status Chart */}
+            {/* Response Rate */}
             <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Conversations in Progress</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Response Rate</h3>
               <div className="h-64">
-                <Bar data={chartData.conversationsStatus} options={chartOptions} />
+                <Line data={chartData.responseRate} options={chartOptions} />
               </div>
             </div>
           </div>
         )}
 
         {/* Report Table */}
-        <div className="bg-white border border-gray-200 rounded-lg overflow-hidden shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
-                    Key Results
-                  </th>
-                  {periods.map((period) => (
-                    <th key={period} className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200 last:border-r-0">
-                      <div>{period}</div>
-                      <div className="text-xs font-normal text-gray-500 mt-1">Progress</div>
+        {periods.length > 0 && (
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200">
+                      Key Results
                     </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {['DRA', 'Linked IN'].map((section) => (
-                  <React.Fragment key={section}>
-                    {metrics
-                      .filter(m => m.section === section)
-                      .map((metric, index) => (
-                        <tr
-                          key={metric.key}
-                          className={metric.highlight ? 'bg-green-50' : 'hover:bg-gray-50'}
+                    {periods.map((period) => (
+                      <th key={period} className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider border-r border-gray-200 last:border-r-0 bg-blue-50">
+                        <div>{period}</div>
+                        <div className="text-xs font-normal text-gray-500 mt-1">Progress</div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {/* Email Activity Section */}
+                  <tr>
+                    <td colSpan={periods.length + 1} className="px-6 py-3 bg-yellow-100 border-b-2 border-yellow-200">
+                      <span className="text-sm font-bold text-gray-900">Email Activity</span>
+                    </td>
+                  </tr>
+                  {emailActivityMetrics.map((metric) => (
+                    <tr
+                      key={metric.key}
+                      className={`${
+                        metric.highlight
+                          ? metric.highlightDark 
+                            ? 'bg-green-200' 
+                            : 'bg-green-50'
+                          : 'hover:bg-gray-50'
+                      } transition-colors duration-150`}
+                    >
+                      <td className={`px-6 py-4 whitespace-nowrap text-sm border-r border-gray-200 ${
+                        metric.bold ? 'font-bold text-gray-900' : 'text-gray-700'
+                      } ${metric.highlightDark ? 'bg-green-200' : ''}`}>
+                        {metric.label}
+                      </td>
+                      {periods.map((period) => (
+                        <td
+                          key={period}
+                          className={`px-4 py-4 whitespace-nowrap text-sm text-center border-r border-gray-200 last:border-r-0 ${
+                            metric.bold
+                              ? 'font-semibold text-gray-900'
+                              : 'text-gray-700'
+                          }`}
                         >
-                          <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 border-r border-gray-200 ${
-                            metric.highlight ? 'font-semibold' : ''
-                          }`}>
-                            {metric.label}
-                          </td>
-                          {periods.map((period) => (
-                            <td
-                              key={period}
-                              className={`px-4 py-4 whitespace-nowrap text-sm text-center border-r border-gray-200 last:border-r-0 ${
-                                metric.highlight
-                                  ? 'font-semibold text-gray-900'
-                                  : 'text-gray-700'
-                              }`}
-                            >
-                              {reportData[period]?.[metric.key] || 0}
-                            </td>
-                          ))}
-                        </tr>
+                          {metric.isPercentage 
+                            ? `${reportData[period]?.[metric.key] || 0}%`
+                            : (reportData[period]?.[metric.key] || 0)
+                          }
+                        </td>
                       ))}
-                  </React.Fragment>
-                ))}
-              </tbody>
-            </table>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+        )}
+
+        {periods.length === 0 && !loading && (
+          <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
+            <p className="text-gray-500">No email activities found for this project.</p>
+          </div>
+        )}
       </div>
     </div>
   );

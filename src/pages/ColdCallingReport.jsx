@@ -27,7 +27,7 @@ ChartJS.register(
   Filler
 );
 
-export default function EmailFunnelReport() {
+export default function ColdCallingReport() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [project, setProject] = useState(null);
@@ -36,7 +36,7 @@ export default function EmailFunnelReport() {
   const [loading, setLoading] = useState(true);
   const [reportData, setReportData] = useState({});
   const [lastUpdated, setLastUpdated] = useState(null);
-  const [viewMode, setViewMode] = useState('month'); // 'month' or 'year'
+  const [viewMode, setViewMode] = useState('day'); // 'day' or 'month'
 
   useEffect(() => {
     if (id) {
@@ -65,12 +65,12 @@ export default function EmailFunnelReport() {
         setProject(projectResponse.data.data);
       }
 
-      // Fetch all email activities for the project
+      // Fetch all call activities for the project
       const activitiesResponse = await API.get(`/activities/project/${id}?limit=10000`);
       if (activitiesResponse.data.success) {
         const allActivities = activitiesResponse.data.data || [];
-        const emailActivities = allActivities.filter(a => a.type === 'email');
-        setActivities(emailActivities);
+        const callActivities = allActivities.filter(a => a.type === 'call');
+        setActivities(callActivities);
       }
 
       // Fetch project contacts
@@ -93,6 +93,14 @@ export default function EmailFunnelReport() {
     }
   }, [activities, contacts, viewMode]);
 
+  const getDayKey = (date) => {
+    const d = new Date(date);
+    const day = d.getDate();
+    const month = d.toLocaleString('default', { month: 'short' });
+    const year = d.getFullYear().toString().slice(-2);
+    return `${day} ${month} '${year}`;
+  };
+
   const getMonthKey = (date) => {
     const d = new Date(date);
     const month = d.toLocaleString('default', { month: 'short' });
@@ -100,17 +108,41 @@ export default function EmailFunnelReport() {
     return `${month} '${year}`;
   };
 
-  const getYearKey = (date) => {
-    const d = new Date(date);
-    return d.getFullYear().toString();
+  const getDays = () => {
+    const days = new Set();
+    
+    // Add days from activities (use callDate if available, otherwise createdAt)
+    activities.forEach(activity => {
+      const date = activity.callDate ? new Date(activity.callDate) : new Date(activity.createdAt);
+      if (date) {
+        days.add(getDayKey(date));
+      }
+    });
+
+    // Add days from contacts
+    contacts.forEach(contact => {
+      if (contact.createdAt) {
+        days.add(getDayKey(new Date(contact.createdAt)));
+      }
+    });
+
+    // Sort days chronologically
+    const sortedDays = Array.from(days).sort((a, b) => {
+      const dateA = new Date(a.replace(/(\d+) (\w+) '(\d+)/, '$2 $1, 20$3'));
+      const dateB = new Date(b.replace(/(\d+) (\w+) '(\d+)/, '$2 $1, 20$3'));
+      return dateA - dateB;
+    });
+
+    return sortedDays;
   };
 
   const getMonths = () => {
     const months = new Set();
     
     activities.forEach(activity => {
-      if (activity.createdAt) {
-        months.add(getMonthKey(activity.createdAt));
+      const date = activity.callDate ? new Date(activity.callDate) : new Date(activity.createdAt);
+      if (date) {
+        months.add(getMonthKey(date));
       }
     });
 
@@ -136,116 +168,145 @@ export default function EmailFunnelReport() {
     return sortedMonths;
   };
 
-  const getYears = () => {
-    const years = new Set();
-    
-    activities.forEach(activity => {
-      if (activity.createdAt) {
-        years.add(getYearKey(activity.createdAt));
-      }
-    });
-
-    contacts.forEach(contact => {
-      if (contact.createdAt) {
-        years.add(getYearKey(new Date(contact.createdAt)));
-      }
-    });
-
-    const sortedYears = Array.from(years).sort((a, b) => parseInt(a) - parseInt(b));
-    return sortedYears;
-  };
-
   const calculateReportData = () => {
-    const periods = viewMode === 'month' ? getMonths() : getYears();
+    const periods = viewMode === 'day' ? getDays() : getMonths();
     const data = {};
 
     periods.forEach(period => {
       data[period] = {
-        emailsSent: 0,
-        noReply: 0,
-        notInterested: 0,
-        outOfOffice: 0,
-        meetingProposed: 0,
-        meetingScheduled: 0,
+        // DRA Section
+        dataAllocated: 0,
         interested: 0,
-        wrongPerson: 0,
-        bounce: 0,
-        optOut: 0,
-        meetingCompleted: 0,
-        totalResponses: 0,
-        responseRate: 0,
-        openRate: 0,
-        clickRate: 0
+        notInterested: 0,
+        ring: 0,
+        busy: 0,
+        hangUp: 0,
+        callBack: 0,
+        switchOff: 0,
+        // Cold Calling Section
+        detailsShared: 0,
+        future: 0,
+        invalid: 0,
+        demoBooked: 0,
+        followUps: 0,
+        totalCalls: 0,
+        freshCalls: 0
       };
     });
 
-    // Calculate emails sent (total email activities)
-    activities.forEach(activity => {
-      if (activity.createdAt) {
-        const period = viewMode === 'month' 
-          ? getMonthKey(activity.createdAt) 
-          : getYearKey(activity.createdAt);
+    // Calculate Data Allocated (contacts added in that period)
+    contacts.forEach(contact => {
+      if (contact.createdAt) {
+        const period = viewMode === 'day' 
+          ? getDayKey(new Date(contact.createdAt)) 
+          : getMonthKey(new Date(contact.createdAt));
         if (data[period]) {
-          data[period].emailsSent++;
+          data[period].dataAllocated++;
         }
       }
     });
 
-    // Calculate metrics by status
-    activities.forEach(activity => {
-      if (activity.createdAt && activity.status) {
-        const period = viewMode === 'month' 
-          ? getMonthKey(activity.createdAt) 
-          : getYearKey(activity.createdAt);
-        if (!data[period]) return;
+    // Group activities by contact to track first calls vs follow-ups
+    const contactFirstCalls = new Map();
+    const contactActivitiesByPeriod = {};
 
-        switch (activity.status) {
-          case 'No Reply':
-            data[period].noReply++;
+    activities.forEach(activity => {
+      const date = activity.callDate ? new Date(activity.callDate) : new Date(activity.createdAt);
+      if (!date) return;
+
+      const period = viewMode === 'day' ? getDayKey(date) : getMonthKey(date);
+      if (!data[period]) return;
+
+      const contactId = activity.contactId?.toString() || 'unknown';
+
+      // Track first call per contact
+      if (activity.callNumber === '1st call' && !contactFirstCalls.has(contactId)) {
+        contactFirstCalls.set(contactId, period);
+      }
+
+      // Group activities by period and contact
+      if (!contactActivitiesByPeriod[period]) {
+        contactActivitiesByPeriod[period] = {};
+      }
+      if (!contactActivitiesByPeriod[period][contactId]) {
+        contactActivitiesByPeriod[period][contactId] = [];
+      }
+      contactActivitiesByPeriod[period][contactId].push(activity);
+    });
+
+    // Calculate metrics per period
+    activities.forEach(activity => {
+      const date = activity.callDate ? new Date(activity.callDate) : new Date(activity.createdAt);
+      if (!date) return;
+
+      const period = viewMode === 'day' ? getDayKey(date) : getMonthKey(date);
+      if (!data[period]) return;
+
+      // Count by callStatus for DRA section
+      if (activity.callStatus) {
+        switch (activity.callStatus) {
+          case 'Interested':
+            data[period].interested++;
             break;
           case 'Not Interested':
             data[period].notInterested++;
-            data[period].totalResponses++;
             break;
-          case 'Out of Office':
-            data[period].outOfOffice++;
-            data[period].totalResponses++;
+          case 'Ring':
+            data[period].ring++;
             break;
-          case 'Meeting Proposed':
-            data[period].meetingProposed++;
-            data[period].totalResponses++;
+          case 'Busy':
+            data[period].busy++;
             break;
-          case 'Meeting Scheduled':
-            data[period].meetingScheduled++;
-            data[period].totalResponses++;
+          case 'Hang Up':
+            data[period].hangUp++;
             break;
-          case 'Interested':
-            data[period].interested++;
-            data[period].totalResponses++;
+          case 'Call Back':
+            data[period].callBack++;
             break;
-          case 'Wrong Person':
-            data[period].wrongPerson++;
-            data[period].totalResponses++;
+          case 'Switch Off':
+            data[period].switchOff++;
             break;
-          case 'Bounce':
-            data[period].bounce++;
+          case 'Details Shared':
+            data[period].detailsShared++;
             break;
-          case 'Opt-Out':
-            data[period].optOut++;
-            data[period].totalResponses++;
+          case 'Future':
+            data[period].future++;
             break;
-          case 'Meeting Completed':
-            data[period].meetingCompleted++;
-            data[period].totalResponses++;
+          case 'Invalid':
+            data[period].invalid++;
+            break;
+          case 'Demo Booked':
+            data[period].demoBooked++;
             break;
         }
       }
+
+      // Count total calls
+      data[period].totalCalls++;
     });
 
-    // Calculate response rate and other metrics
-    periods.forEach(period => {
-      if (data[period].emailsSent > 0) {
-        data[period].responseRate = ((data[period].totalResponses / data[period].emailsSent) * 100).toFixed(1);
+    // Calculate Fresh Calls and Follow Ups
+    Object.keys(contactActivitiesByPeriod).forEach(period => {
+      const periodData = contactActivitiesByPeriod[period];
+      let freshCalls = 0;
+      let followUps = 0;
+
+      Object.keys(periodData).forEach(contactId => {
+        const contactActs = periodData[contactId];
+        const firstCallPeriod = contactFirstCalls.get(contactId);
+
+        contactActs.forEach(activity => {
+          if (activity.callNumber === '1st call' || (firstCallPeriod === period && !activity.callNumber)) {
+            freshCalls++;
+          } else {
+            followUps++;
+          }
+        });
+      });
+
+      if (data[period]) {
+        data[period].freshCalls = freshCalls;
+        data[period].followUps = followUps;
       }
     });
 
@@ -253,42 +314,87 @@ export default function EmailFunnelReport() {
   };
 
   const metrics = [
-    { key: 'emailsSent', label: 'Emails Sent', section: 'Email Activity', bold: true },
-    { key: 'noReply', label: 'No Reply', section: 'Email Activity', bold: false },
-    { key: 'notInterested', label: 'Not Interested', section: 'Email Activity', bold: false },
-    { key: 'outOfOffice', label: 'Out of Office', section: 'Email Activity', bold: false },
-    { key: 'meetingProposed', label: 'Meeting Proposed', section: 'Email Activity', bold: true, highlight: true },
-    { key: 'meetingScheduled', label: 'Meeting Scheduled', section: 'Email Activity', bold: true, highlight: true },
-    { key: 'interested', label: 'Interested', section: 'Email Activity', bold: true, highlight: true },
-    { key: 'wrongPerson', label: 'Wrong Person', section: 'Email Activity', bold: false },
-    { key: 'bounce', label: 'Bounce', section: 'Email Activity', bold: false },
-    { key: 'optOut', label: 'Opt-Out', section: 'Email Activity', bold: false },
-    { key: 'meetingCompleted', label: 'Meeting Completed', section: 'Email Activity', bold: true, highlight: true, highlightDark: true },
-    { key: 'totalResponses', label: 'Total Responses', section: 'Email Activity', bold: true },
-    { key: 'responseRate', label: 'Response Rate (%)', section: 'Email Activity', bold: true, isPercentage: true }
+    // DRA Section
+    { key: 'dataAllocated', label: 'Data Allocated', section: 'DRA', bold: false },
+    { key: 'interested', label: 'Interested', section: 'DRA', bold: true },
+    { key: 'notInterested', label: 'Not Interested', section: 'DRA', bold: true },
+    { key: 'ring', label: 'Ring', section: 'DRA', bold: false },
+    { key: 'busy', label: 'Busy', section: 'DRA', bold: false, highlight: true },
+    { key: 'hangUp', label: 'Hang Up', section: 'DRA', bold: false },
+    { key: 'callBack', label: 'Call Back', section: 'DRA', bold: false },
+    { key: 'switchOff', label: 'Switch Off', section: 'DRA', bold: false },
+    // Cold Calling Section
+    { key: 'detailsShared', label: 'Detailed Shared', section: 'Cold Calling', bold: true, highlight: true },
+    { key: 'future', label: 'Future', section: 'Cold Calling', bold: false },
+    { key: 'invalid', label: 'Invalid', section: 'Cold Calling', bold: false },
+    { key: 'demoBooked', label: 'Demo Booked', section: 'Cold Calling', bold: true, highlight: true, highlightDark: true },
+    { key: 'followUps', label: 'Follow Ups', section: 'Cold Calling', bold: true },
+    { key: 'totalCalls', label: 'Total Calls', section: 'Cold Calling', bold: true },
+    { key: 'freshCalls', label: '(Fresh Calls + FollowUpS)', section: 'Cold Calling', bold: false, isFormula: true }
   ];
 
-  const periods = viewMode === 'month' ? getMonths() : getYears();
+  const periods = viewMode === 'day' ? getDays() : getMonths();
 
   // Prepare chart data
   const chartData = useMemo(() => {
     const labels = periods;
     
     return {
-      emailFunnel: {
+      draMetrics: {
         labels,
         datasets: [
           {
-            label: 'Emails Sent',
-            data: labels.map(period => reportData[period]?.emailsSent || 0),
-            borderColor: 'rgb(59, 130, 246)',
-            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            label: 'Interested',
+            data: labels.map(period => reportData[period]?.interested || 0),
+            borderColor: 'rgb(34, 197, 94)',
+            backgroundColor: 'rgba(34, 197, 94, 0.1)',
             tension: 0.4,
             fill: true,
           },
           {
-            label: 'Total Responses',
-            data: labels.map(period => reportData[period]?.totalResponses || 0),
+            label: 'Not Interested',
+            data: labels.map(period => reportData[period]?.notInterested || 0),
+            borderColor: 'rgb(239, 68, 68)',
+            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+            tension: 0.4,
+            fill: true,
+          }
+        ]
+      },
+      callStatusBreakdown: {
+        labels,
+        datasets: [
+          {
+            label: 'Ring',
+            data: labels.map(period => reportData[period]?.ring || 0),
+            backgroundColor: 'rgba(156, 163, 175, 0.8)',
+          },
+          {
+            label: 'Busy',
+            data: labels.map(period => reportData[period]?.busy || 0),
+            backgroundColor: 'rgba(59, 130, 246, 0.8)',
+          },
+          {
+            label: 'Call Back',
+            data: labels.map(period => reportData[period]?.callBack || 0),
+            backgroundColor: 'rgba(168, 85, 247, 0.8)',
+          }
+        ]
+      },
+      coldCallingMetrics: {
+        labels,
+        datasets: [
+          {
+            label: 'Details Shared',
+            data: labels.map(period => reportData[period]?.detailsShared || 0),
+            borderColor: 'rgb(251, 191, 36)',
+            backgroundColor: 'rgba(251, 191, 36, 0.1)',
+            tension: 0.4,
+            fill: true,
+          },
+          {
+            label: 'Demo Booked',
+            data: labels.map(period => reportData[period]?.demoBooked || 0),
             borderColor: 'rgb(34, 197, 94)',
             backgroundColor: 'rgba(34, 197, 94, 0.1)',
             tension: 0.4,
@@ -296,66 +402,23 @@ export default function EmailFunnelReport() {
           }
         ]
       },
-      responseBreakdown: {
+      callVolume: {
         labels,
         datasets: [
           {
-            label: 'No Reply',
-            data: labels.map(period => reportData[period]?.noReply || 0),
-            backgroundColor: 'rgba(156, 163, 175, 0.8)',
-          },
-          {
-            label: 'Not Interested',
-            data: labels.map(period => reportData[period]?.notInterested || 0),
-            backgroundColor: 'rgba(239, 68, 68, 0.8)',
-          },
-          {
-            label: 'Interested',
-            data: labels.map(period => reportData[period]?.interested || 0),
+            label: 'Total Calls',
+            data: labels.map(period => reportData[period]?.totalCalls || 0),
             backgroundColor: 'rgba(34, 197, 94, 0.8)',
           },
           {
-            label: 'Meeting Proposed',
-            data: labels.map(period => reportData[period]?.meetingProposed || 0),
-            backgroundColor: 'rgba(251, 191, 36, 0.8)',
+            label: 'Fresh Calls',
+            data: labels.map(period => reportData[period]?.freshCalls || 0),
+            backgroundColor: 'rgba(59, 130, 246, 0.8)',
           },
           {
-            label: 'Meeting Scheduled',
-            data: labels.map(period => reportData[period]?.meetingScheduled || 0),
-            backgroundColor: 'rgba(6, 182, 212, 0.8)',
-          }
-        ]
-      },
-      meetingPipeline: {
-        labels,
-        datasets: [
-          {
-            label: 'Meeting Proposed',
-            data: labels.map(period => reportData[period]?.meetingProposed || 0),
-            backgroundColor: 'rgba(251, 191, 36, 0.8)',
-          },
-          {
-            label: 'Meeting Scheduled',
-            data: labels.map(period => reportData[period]?.meetingScheduled || 0),
-            backgroundColor: 'rgba(6, 182, 212, 0.8)',
-          },
-          {
-            label: 'Meeting Completed',
-            data: labels.map(period => reportData[period]?.meetingCompleted || 0),
-            backgroundColor: 'rgba(34, 197, 94, 0.8)',
-          }
-        ]
-      },
-      responseRate: {
-        labels,
-        datasets: [
-          {
-            label: 'Response Rate (%)',
-            data: labels.map(period => parseFloat(reportData[period]?.responseRate || 0)),
-            borderColor: 'rgb(168, 85, 247)',
-            backgroundColor: 'rgba(168, 85, 247, 0.1)',
-            tension: 0.4,
-            fill: true,
+            label: 'Follow Ups',
+            data: labels.map(period => reportData[period]?.followUps || 0),
+            backgroundColor: 'rgba(168, 85, 247, 0.8)',
           }
         ]
       }
@@ -443,7 +506,8 @@ export default function EmailFunnelReport() {
   }
 
   // Group metrics by section
-  const emailActivityMetrics = metrics.filter(m => m.section === 'Email Activity');
+  const draMetrics = metrics.filter(m => m.section === 'DRA');
+  const coldCallingMetrics = metrics.filter(m => m.section === 'Cold Calling');
 
   return (
     <div className="min-h-screen bg-white">
@@ -458,7 +522,7 @@ export default function EmailFunnelReport() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
-              Back to Sales Funnel
+              Back to Sales Report
             </button>
             
             <button
@@ -483,7 +547,7 @@ export default function EmailFunnelReport() {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h1 className="text-2xl font-semibold text-gray-900 mb-2">
-                  {viewMode === 'month' ? 'Monthly' : 'Yearly'} Email Report - {project?.companyName || 'Project'}
+                  {viewMode === 'day' ? 'Daily' : 'Monthly'} Report - {project?.companyName || 'Project'}
                 </h1>
                 {project?.website && (
                   <a 
@@ -505,6 +569,16 @@ export default function EmailFunnelReport() {
                 {/* View Mode Toggle */}
                 <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
                   <button
+                    onClick={() => setViewMode('day')}
+                    className={`px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
+                      viewMode === 'day'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Daily
+                  </button>
+                  <button
                     onClick={() => setViewMode('month')}
                     className={`px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
                       viewMode === 'month'
@@ -513,16 +587,6 @@ export default function EmailFunnelReport() {
                     }`}
                   >
                     Monthly
-                  </button>
-                  <button
-                    onClick={() => setViewMode('year')}
-                    className={`px-4 py-2 text-sm font-medium rounded-md transition-all duration-200 ${
-                      viewMode === 'year'
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-600 hover:text-gray-900'
-                    }`}
-                  >
-                    Yearly
                   </button>
                 </div>
               </div>
@@ -533,35 +597,35 @@ export default function EmailFunnelReport() {
         {/* Charts Section */}
         {periods.length > 0 && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-            {/* Email Funnel Chart */}
+            {/* DRA Metrics Chart */}
             <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Email Funnel</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">DRA Metrics</h3>
               <div className="h-64">
-                <Line data={chartData.emailFunnel} options={chartOptions} />
+                <Line data={chartData.draMetrics} options={chartOptions} />
               </div>
             </div>
 
-            {/* Response Breakdown */}
+            {/* Call Status Breakdown */}
             <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Response Breakdown</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Call Status Breakdown</h3>
               <div className="h-64">
-                <Bar data={chartData.responseBreakdown} options={barChartOptions} />
+                <Bar data={chartData.callStatusBreakdown} options={barChartOptions} />
               </div>
             </div>
 
-            {/* Meeting Pipeline */}
+            {/* Cold Calling Metrics */}
             <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Meeting Pipeline</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Cold Calling Metrics</h3>
               <div className="h-64">
-                <Bar data={chartData.meetingPipeline} options={barChartOptions} />
+                <Line data={chartData.coldCallingMetrics} options={chartOptions} />
               </div>
             </div>
 
-            {/* Response Rate */}
+            {/* Call Volume */}
             <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Response Rate</h3>
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Call Volume</h3>
               <div className="h-64">
-                <Line data={chartData.responseRate} options={chartOptions} />
+                <Bar data={chartData.callVolume} options={barChartOptions} />
               </div>
             </div>
           </div>
@@ -586,13 +650,51 @@ export default function EmailFunnelReport() {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {/* Email Activity Section */}
+                  {/* DRA Section */}
                   <tr>
                     <td colSpan={periods.length + 1} className="px-6 py-3 bg-yellow-100 border-b-2 border-yellow-200">
-                      <span className="text-sm font-bold text-gray-900">Email Activity</span>
+                      <span className="text-sm font-bold text-gray-900">DRA</span>
                     </td>
                   </tr>
-                  {emailActivityMetrics.map((metric) => (
+                  {draMetrics.map((metric) => (
+                    <tr
+                      key={metric.key}
+                      className={`${
+                        metric.highlight
+                          ? 'bg-green-50'
+                          : 'hover:bg-gray-50'
+                      } transition-colors duration-150`}
+                    >
+                      <td className={`px-6 py-4 whitespace-nowrap text-sm border-r border-gray-200 ${
+                        metric.bold ? 'font-bold text-gray-900' : 'text-gray-700'
+                      } ${metric.highlightDark ? 'bg-green-100' : ''}`}>
+                        {metric.label}
+                      </td>
+                      {periods.map((period) => (
+                        <td
+                          key={period}
+                          className={`px-4 py-4 whitespace-nowrap text-sm text-center border-r border-gray-200 last:border-r-0 ${
+                            metric.bold
+                              ? 'font-semibold text-gray-900'
+                              : 'text-gray-700'
+                          }`}
+                        >
+                          {metric.isFormula 
+                            ? `(${reportData[period]?.freshCalls || 0} + ${reportData[period]?.followUps || 0})`
+                            : (reportData[period]?.[metric.key] || 0)
+                          }
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+
+                  {/* Cold Calling Section */}
+                  <tr>
+                    <td colSpan={periods.length + 1} className="px-6 py-3 bg-yellow-100 border-b-2 border-yellow-200">
+                      <span className="text-sm font-bold text-gray-900">Cold Calling</span>
+                    </td>
+                  </tr>
+                  {coldCallingMetrics.map((metric) => (
                     <tr
                       key={metric.key}
                       className={`${
@@ -617,8 +719,8 @@ export default function EmailFunnelReport() {
                               : 'text-gray-700'
                           }`}
                         >
-                          {metric.isPercentage 
-                            ? `${reportData[period]?.[metric.key] || 0}%`
+                          {metric.isFormula 
+                            ? `(${reportData[period]?.freshCalls || 0} + ${reportData[period]?.followUps || 0})`
                             : (reportData[period]?.[metric.key] || 0)
                           }
                         </td>
@@ -633,7 +735,7 @@ export default function EmailFunnelReport() {
 
         {periods.length === 0 && !loading && (
           <div className="text-center py-12 bg-gray-50 rounded-lg border border-gray-200">
-            <p className="text-gray-500">No email activities found for this project.</p>
+            <p className="text-gray-500">No call activities found for this project.</p>
           </div>
         )}
       </div>

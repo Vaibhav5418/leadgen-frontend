@@ -11,10 +11,15 @@ import AddContact from './pages/AddContact';
 import Projects from './pages/Projects';
 import CreateProject from './pages/CreateProject';
 import ProjectDetail from './pages/ProjectDetail';
-import Funnel from './pages/Funnel';
-import LinkedInFunnelReport from './pages/LinkedInFunnelReport';
-import ColdCallingFunnelReport from './pages/ColdCallingFunnelReport';
-import EmailFunnelReport from './pages/EmailFunnelReport';
+import Report from './pages/Report';
+import LinkedInReport from './pages/LinkedInReport';
+import ColdCallingReport from './pages/ColdCallingReport';
+import EmailReport from './pages/EmailReport';
+import FunnelProjects from './pages/FunnelProjects';
+import ProjectFunnelSelection from './pages/ProjectFunnelSelection';
+import LinkedInFunnelDetail from './pages/LinkedInFunnelDetail';
+import ColdCallingFunnelDetail from './pages/ColdCallingFunnelDetail';
+import EmailFunnelDetail from './pages/EmailFunnelDetail';
 
 // Private Route Component
 const PrivateRoute = ({ children }) => {
@@ -143,7 +148,7 @@ export default function App() {
             path="/projects/:id/funnel"
             element={
               <PrivateRoute>
-                <Funnel />
+                <Report />
               </PrivateRoute>
             }
           />
@@ -152,7 +157,7 @@ export default function App() {
             path="/projects/:id/linkedin-funnel"
             element={
               <PrivateRoute>
-                <LinkedInFunnelReport />
+                <LinkedInReport />
               </PrivateRoute>
             }
           />
@@ -161,7 +166,7 @@ export default function App() {
             path="/projects/:id/cold-calling-funnel"
             element={
               <PrivateRoute>
-                <ColdCallingFunnelReport />
+                <ColdCallingReport />
               </PrivateRoute>
             }
           />
@@ -170,7 +175,52 @@ export default function App() {
             path="/projects/:id/email-funnel"
             element={
               <PrivateRoute>
-                <EmailFunnelReport />
+                <EmailReport />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/funnel"
+            element={
+              <PrivateRoute>
+                <FunnelProjects />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/funnel/:id"
+            element={
+              <PrivateRoute>
+                <ProjectFunnelSelection />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/funnel/:id/linkedin"
+            element={
+              <PrivateRoute>
+                <LinkedInFunnelDetail />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/funnel/:id/cold-calling"
+            element={
+              <PrivateRoute>
+                <ColdCallingFunnelDetail />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/funnel/:id/email"
+            element={
+              <PrivateRoute>
+                <EmailFunnelDetail />
               </PrivateRoute>
             }
           />

@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 
-export default function Funnel() {
+export default function Report() {
   const { id } = useParams();
   const navigate = useNavigate();
 
@@ -111,7 +111,7 @@ export default function Funnel() {
           
           <div className="mb-2">
             <h1 className="text-3xl font-semibold text-gray-900 tracking-tight mb-3">
-              Sales Funnel
+              Sales Report
             </h1>
             <div className="w-16 h-0.5 bg-gradient-to-r from-emerald-500 via-blue-500 to-indigo-500 rounded-full"></div>
           </div>
@@ -159,4 +159,3 @@ export default function Funnel() {
     </div>
   );
 }
-
