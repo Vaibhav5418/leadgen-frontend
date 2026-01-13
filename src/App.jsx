@@ -11,12 +11,12 @@ import AddContact from './pages/AddContact';
 import Projects from './pages/Projects';
 import CreateProject from './pages/CreateProject';
 import ProjectDetail from './pages/ProjectDetail';
+import ProjectDashboard from './pages/ProjectDashboard';
 import Report from './pages/Report';
 import LinkedInReport from './pages/LinkedInReport';
 import ColdCallingReport from './pages/ColdCallingReport';
 import EmailReport from './pages/EmailReport';
 import FunnelProjects from './pages/FunnelProjects';
-import ProjectFunnelSelection from './pages/ProjectFunnelSelection';
 import LinkedInFunnelDetail from './pages/LinkedInFunnelDetail';
 import ColdCallingFunnelDetail from './pages/ColdCallingFunnelDetail';
 import EmailFunnelDetail from './pages/EmailFunnelDetail';
@@ -118,6 +118,15 @@ export default function App() {
           />
 
           <Route
+            path="/projects/dashboard"
+            element={
+              <PrivateRoute>
+                <ProjectDashboard />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
             path="/projects/new"
             element={
               <PrivateRoute>
@@ -185,15 +194,6 @@ export default function App() {
             element={
               <PrivateRoute>
                 <FunnelProjects />
-              </PrivateRoute>
-            }
-          />
-
-          <Route
-            path="/funnel/:id"
-            element={
-              <PrivateRoute>
-                <ProjectFunnelSelection />
               </PrivateRoute>
             }
           />

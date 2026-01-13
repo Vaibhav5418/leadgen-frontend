@@ -172,7 +172,7 @@ export default function FunnelProjects() {
             {projects.map((project, index) => (
               <div
                 key={project._id}
-                onClick={() => navigate(`/funnel/${project._id}`)}
+                onClick={() => navigate(`/projects/${project._id}`)}
                 className={`group relative bg-white rounded-lg border border-slate-200 shadow-sm hover:shadow hover:border-slate-300 cursor-pointer transition-all duration-150 flex flex-col ${
                   mounted ? 'opacity-100' : 'opacity-0'
                 }`}

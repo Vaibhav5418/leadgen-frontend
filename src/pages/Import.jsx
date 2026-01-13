@@ -136,8 +136,8 @@ export default function Import() {
         <h1 className="text-3xl font-bold text-gray-900 mb-4">Import Contacts</h1>
         <p className="text-gray-600 mb-6">
           Upload a CSV or Excel file with the following columns:
-          Name, Title, Company, Email, First Phone, # Employees, Category,
-          Industry, Keywords, Person Linkedin Url, Website, Company Linkedin Url,
+          Name (required), Company (required), Email (required), Person Linkedin Url (required), Title, First Phone, # Employees, Category,
+          Industry, Keywords, Website, Company Linkedin Url,
           Facebook Url, Twitter Url, City, State, Country, Company Address,
           Company City, Company State, Company Country, Company Phone,
           SEO Description, Technologies, Annual Revenue.

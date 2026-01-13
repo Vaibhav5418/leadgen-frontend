@@ -889,23 +889,45 @@ export default function ProjectDetail() {
             <p className="text-sm text-gray-600">Track and manage prospect interactions across the entire sales pipeline</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap justify-end">
           <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm text-gray-700">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
             </svg>
             Export
           </button>
-          <button 
-            onClick={() => navigate(`/projects/${id}/funnel`)}
-            className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm text-gray-700"
-            title="View Sales Report"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-            </svg>
-            Report
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => navigate(`/funnel/${id}/cold-calling`)}
+              className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm text-gray-700"
+              title="Cold Calling Funnel"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+              </svg>
+              Calling Funnel
+            </button>
+            <button
+              onClick={() => navigate(`/funnel/${id}/linkedin`)}
+              className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm text-gray-700"
+              title="LinkedIn Funnel"
+            >
+              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+              </svg>
+              LinkedIn Funnel
+            </button>
+            <button
+              onClick={() => navigate(`/funnel/${id}/email`)}
+              className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm text-gray-700"
+              title="Email Funnel"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              Email Funnel
+            </button>
+          </div>
           <button 
             onClick={handleToggleProspectSuggestions}
             disabled={!hasICP}
@@ -940,80 +962,6 @@ export default function ProjectDetail() {
         </div>
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-          <div className="flex items-center justify-between mb-2">
-            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-              </svg>
-            </div>
-            <span className="text-sm font-medium text-green-600 flex items-center gap-1">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-              </svg>
-              +12%
-            </span>
-          </div>
-          <div className="text-2xl font-bold text-gray-900 mb-1">{stats.total}</div>
-          <div className="text-sm text-gray-600">Total Prospects</div>
-        </div>
-
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-          <div className="flex items-center justify-between mb-2">
-            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-            </div>
-            <span className="text-sm font-medium text-green-600 flex items-center gap-1">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-              </svg>
-              +8%
-            </span>
-          </div>
-          <div className="text-2xl font-bold text-gray-900 mb-1">{stats.active}</div>
-          <div className="text-sm text-gray-600">Active Prospects</div>
-        </div>
-
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-          <div className="flex items-center justify-between mb-2">
-            <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            </div>
-            <span className="text-sm font-medium text-red-600 flex items-center gap-1">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17l5-5m0 0l-5-5m5 5H6" />
-              </svg>
-              -5%
-            </span>
-          </div>
-          <div className="text-2xl font-bold text-gray-900 mb-1">{stats.overdue}</div>
-          <div className="text-sm text-gray-600">Overdue Follow-ups</div>
-        </div>
-
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-          <div className="flex items-center justify-between mb-2">
-            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-            </div>
-            <span className="text-sm font-medium text-green-600 flex items-center gap-1">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-              </svg>
-              +15%
-            </span>
-          </div>
-          <div className="text-2xl font-bold text-gray-900 mb-1">{stats.thisWeek}</div>
-          <div className="text-sm text-gray-600">This Week Actions</div>
-        </div>
-      </div>
 
       {/* Filters Section */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mb-6">

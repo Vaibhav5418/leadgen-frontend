@@ -105,6 +105,15 @@ export default function Projects() {
           <p className="text-sm text-gray-600">Track and manage your outbound lead generation campaigns</p>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => navigate('/projects/dashboard')}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-colors font-medium text-sm shadow-sm"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+            Analytics Dashboard
+          </button>
           <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm text-gray-700">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
@@ -125,76 +134,68 @@ export default function Projects() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-          <div className="flex items-center justify-between mb-2">
-            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        {/* Total Projects */}
+        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100 shadow-sm p-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-12 h-12 rounded-lg bg-white/80 border border-blue-100 flex items-center justify-center shadow-xs">
+              <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
               </svg>
             </div>
-            <span className="text-sm font-medium text-green-600 flex items-center gap-1">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-              </svg>
-              +12%
+            <span className="text-xs font-semibold text-blue-700 bg-white/70 border border-blue-100 px-2 py-1 rounded-full shadow-xs">
+              Portfolio Size
             </span>
           </div>
-          <div className="text-2xl font-bold text-gray-900 mb-1">{stats.total}</div>
-          <div className="text-sm text-gray-600">Total Projects</div>
+          <div className="text-3xl font-bold text-gray-900 leading-tight">{stats.total}</div>
+          <div className="text-sm text-gray-600 mt-1">Total Projects</div>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-          <div className="flex items-center justify-between mb-2">
-            <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        {/* Active Projects */}
+        <div className="bg-gradient-to-br from-emerald-50 via-emerald-50 to-teal-50 rounded-xl border border-emerald-100 shadow-sm p-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-12 h-12 rounded-lg bg-white/80 border border-emerald-100 flex items-center justify-center shadow-xs">
+              <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
-            <span className="text-sm font-medium text-green-600 flex items-center gap-1">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-              </svg>
-              +8%
+            <span className="text-xs font-semibold text-emerald-700 bg-white/70 border border-emerald-100 px-2 py-1 rounded-full shadow-xs">
+              In Flight
             </span>
           </div>
-          <div className="text-2xl font-bold text-gray-900 mb-1">{stats.active}</div>
-          <div className="text-sm text-gray-600">Active Projects</div>
+          <div className="text-3xl font-bold text-gray-900 leading-tight">{stats.active}</div>
+          <div className="text-sm text-gray-600 mt-1">Active Projects</div>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-          <div className="flex items-center justify-between mb-2">
-            <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        {/* Draft Projects */}
+        <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl border border-amber-100 shadow-sm p-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-12 h-12 rounded-lg bg-white/80 border border-amber-100 flex items-center justify-center shadow-xs">
+              <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
             </div>
-            <span className="text-sm font-medium text-red-600 flex items-center gap-1">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17l5-5m0 0l-5-5m5 5H6" />
-              </svg>
-              -5%
+            <span className="text-xs font-semibold text-amber-700 bg-white/70 border border-amber-100 px-2 py-1 rounded-full shadow-xs">
+              In Draft
             </span>
           </div>
-          <div className="text-2xl font-bold text-gray-900 mb-1">{stats.draft}</div>
-          <div className="text-sm text-gray-600">Draft Projects</div>
+          <div className="text-3xl font-bold text-gray-900 leading-tight">{stats.draft}</div>
+          <div className="text-sm text-gray-600 mt-1">Draft Projects</div>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-6">
-          <div className="flex items-center justify-between mb-2">
-            <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-              <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        {/* Completed Projects */}
+        <div className="bg-gradient-to-br from-purple-50 via-indigo-50 to-blue-50 rounded-xl border border-indigo-100 shadow-sm p-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-12 h-12 rounded-lg bg-white/80 border border-indigo-100 flex items-center justify-center shadow-xs">
+              <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
             </div>
-            <span className="text-sm font-medium text-green-600 flex items-center gap-1">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
-              </svg>
-              +15%
+            <span className="text-xs font-semibold text-indigo-700 bg-white/70 border border-indigo-100 px-2 py-1 rounded-full shadow-xs">
+              Completed
             </span>
           </div>
-          <div className="text-2xl font-bold text-gray-900 mb-1">{stats.completed}</div>
-          <div className="text-sm text-gray-600">Completed Projects</div>
+          <div className="text-3xl font-bold text-gray-900 leading-tight">{stats.completed}</div>
+          <div className="text-sm text-gray-600 mt-1">Completed Projects</div>
         </div>
       </div>
 

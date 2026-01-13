@@ -117,7 +117,7 @@ export default function BulkImportModal({ isOpen, onClose, projectId, onImportSu
   const handleClose = () => {
     setFile(null);
     setAssignTo('');
-    setDefaultStage('CIP');
+    setDefaultStage('New');
     setError('');
     setSuccess('');
     setIsDragging(false);
@@ -162,15 +162,15 @@ export default function BulkImportModal({ isOpen, onClose, projectId, onImportSu
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   <ul className="text-sm text-gray-700 space-y-1 list-disc list-inside">
                     <li><span className="font-semibold">Name</span> (required)</li>
-                    <li><span className="font-semibold">Title</span> (optional)</li>
                     <li><span className="font-semibold">Company</span> (required)</li>
                     <li><span className="font-semibold">Email</span> (required)</li>
+                    <li><span className="font-semibold">Person Linkedin Url</span> (required)</li>
+                    <li><span className="font-semibold">Title</span> (optional)</li>
                     <li><span className="font-semibold">First Phone</span> (optional)</li>
                     <li><span className="font-semibold">Employees</span> (optional)</li>
                     <li><span className="font-semibold">Category</span> (optional)</li>
                     <li><span className="font-semibold">Industry</span> (optional)</li>
                     <li><span className="font-semibold">Keywords</span> (optional)</li>
-                    <li><span className="font-semibold">Person Linkedin Url</span> (optional)</li>
                     <li><span className="font-semibold">Website</span> (optional)</li>
                     <li><span className="font-semibold">Company Linkedin Url</span> (optional)</li>
                     <li><span className="font-semibold">Facebook Url</span> (optional)</li>

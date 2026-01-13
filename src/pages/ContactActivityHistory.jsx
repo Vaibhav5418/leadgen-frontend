@@ -14,6 +14,15 @@ export default function ContactActivityHistory() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeFilter, setActiveFilter] = useState('all'); // 'all', 'call', 'email', 'linkedin'
+  const [isEditing, setIsEditing] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    email: '',
+    firstPhone: '',
+    personLinkedinUrl: '',
+    company: ''
+  });
+  const [saving, setSaving] = useState(false);
   const [activityModal, setActivityModal] = useState({
     isOpen: false,
     type: null,
@@ -38,11 +47,74 @@ export default function ContactActivityHistory() {
   const fetchContact = async () => {
     try {
       const response = await API.get(`/contacts/${id}`);
-      setContact(response.data?.data || response.data);
+      const contactData = response.data?.data || response.data;
+      setContact(contactData);
+      // Initialize edit form data
+      setEditFormData({
+        name: contactData?.name || '',
+        email: contactData?.email || '',
+        firstPhone: contactData?.firstPhone || '',
+        personLinkedinUrl: contactData?.personLinkedinUrl || contactData?.companyLinkedinUrl || '',
+        company: contactData?.company || ''
+      });
     } catch (err) {
       console.error('Error fetching contact:', err);
       setError('Failed to load contact details.');
     }
+  };
+
+  const handleEditClick = () => {
+    setIsEditing(true);
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    // Reset form data to original contact data
+    if (contact) {
+      setEditFormData({
+        name: contact.name || '',
+        email: contact.email || '',
+        firstPhone: contact.firstPhone || '',
+        personLinkedinUrl: contact.personLinkedinUrl || contact.companyLinkedinUrl || '',
+        company: contact.company || ''
+      });
+    }
+  };
+
+  const handleSaveEdit = async () => {
+    if (!id) return;
+    
+    setSaving(true);
+    try {
+      const updateData = {
+        name: editFormData.name.trim(),
+        email: editFormData.email.trim(),
+        firstPhone: editFormData.firstPhone.trim(),
+        personLinkedinUrl: editFormData.personLinkedinUrl.trim(),
+        company: editFormData.company.trim()
+      };
+
+      const response = await API.put(`/contacts/${id}`, updateData);
+      
+      if (response.data.success) {
+        setContact(response.data.data);
+        setIsEditing(false);
+        // Refresh activities to get updated contact info
+        fetchActivities();
+      }
+    } catch (err) {
+      console.error('Error updating contact:', err);
+      alert(err.response?.data?.error || 'Failed to update contact. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleInputChange = (field, value) => {
+    setEditFormData(prev => ({
+      ...prev,
+      [field]: value
+    }));
   };
 
   const fetchActivities = async () => {
@@ -272,71 +344,189 @@ export default function ContactActivityHistory() {
 
               {/* Name and Details */}
               <div className="flex-1 min-w-0 w-full lg:w-auto text-center lg:text-left">
-                <div className="mb-3">
-                  <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-2 tracking-tight">
-                    {contact?.name || 'Contact'}
-                  </h1>
-                  {contact?.company && (
-                    <p className="text-gray-600 text-lg lg:text-xl font-medium">
-                      {contact.company}
-                    </p>
-                  )}
-                </div>
-                <div className="flex flex-col sm:flex-row sm:flex-wrap items-center sm:items-center justify-center lg:justify-start gap-4 text-gray-600 text-sm">
-                  {contact?.email && (
-                    <a
-                      href={`mailto:${contact.email}`}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 hover:bg-blue-50 rounded-lg transition-colors duration-200 border border-gray-200 hover:border-blue-200 group"
-                    >
-                      <svg className="w-4 h-4 text-gray-400 group-hover:text-blue-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                      </svg>
-                      <span className="font-medium">{contact.email}</span>
-                    </a>
-                  )}
-                  {contact?.firstPhone && (
-                    <a
-                      href={`tel:${contact.firstPhone}`}
-                      className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 hover:bg-green-50 rounded-lg transition-colors duration-200 border border-gray-200 hover:border-green-200 group"
-                    >
-                      <svg className="w-4 h-4 text-gray-400 group-hover:text-green-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                      </svg>
-                      <span className="font-medium">{contact.firstPhone}</span>
-                    </a>
-                  )}
-                </div>
+                {!isEditing ? (
+                  <>
+                    <div className="mb-3">
+                      <h1 className="text-3xl lg:text-4xl font-bold text-gray-900 mb-2 tracking-tight">
+                        {contact?.name || 'Contact'}
+                      </h1>
+                      {contact?.company && (
+                        <p className="text-gray-600 text-lg lg:text-xl font-medium">
+                          {contact.company}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex flex-col sm:flex-row sm:flex-wrap items-center sm:items-center justify-center lg:justify-start gap-4 text-gray-600 text-sm">
+                      {contact?.email && (
+                        <a
+                          href={`mailto:${contact.email}`}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 hover:bg-blue-50 rounded-lg transition-colors duration-200 border border-gray-200 hover:border-blue-200 group"
+                        >
+                          <svg className="w-4 h-4 text-gray-400 group-hover:text-blue-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                          </svg>
+                          <span className="font-medium">{contact.email}</span>
+                        </a>
+                      )}
+                      {contact?.firstPhone && (
+                        <a
+                          href={`tel:${contact.firstPhone}`}
+                          className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 hover:bg-green-50 rounded-lg transition-colors duration-200 border border-gray-200 hover:border-green-200 group"
+                        >
+                          <svg className="w-4 h-4 text-gray-400 group-hover:text-green-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                          </svg>
+                          <span className="font-medium">{contact.firstPhone}</span>
+                        </a>
+                      )}
+                      {contact?.personLinkedinUrl && (
+                        <a
+                          href={contact.personLinkedinUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 px-3 py-1.5 bg-gray-50 hover:bg-blue-50 rounded-lg transition-colors duration-200 border border-gray-200 hover:border-blue-200 group"
+                        >
+                          <svg className="w-4 h-4 text-gray-400 group-hover:text-blue-600 transition-colors" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                          </svg>
+                          <span className="font-medium">LinkedIn</span>
+                        </a>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <div className="space-y-4 w-full max-w-2xl">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                      <input
+                        type="text"
+                        value={editFormData.name}
+                        onChange={(e) => handleInputChange('name', e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Contact name"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Company</label>
+                      <input
+                        type="text"
+                        value={editFormData.company}
+                        onChange={(e) => handleInputChange('company', e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Company name"
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                        <input
+                          type="email"
+                          value={editFormData.email}
+                          onChange={(e) => handleInputChange('email', e.target.value)}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="email@example.com"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                        <input
+                          type="tel"
+                          value={editFormData.firstPhone}
+                          onChange={(e) => handleInputChange('firstPhone', e.target.value)}
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                          placeholder="+1234567890"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">LinkedIn URL</label>
+                      <input
+                        type="url"
+                        value={editFormData.personLinkedinUrl}
+                        onChange={(e) => handleInputChange('personLinkedinUrl', e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="https://linkedin.com/in/..."
+                      />
+                    </div>
+                    <div className="flex gap-3">
+                      <button
+                        onClick={handleSaveEdit}
+                        disabled={saving}
+                        className="px-6 py-2 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                      >
+                        {saving ? (
+                          <>
+                            <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Saving...
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Save
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={handleCancelEdit}
+                        disabled={saving}
+                        className="px-6 py-2 bg-gray-200 text-gray-700 font-medium rounded-lg hover:bg-gray-300 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Action Buttons */}
               <div className="flex flex-col sm:flex-row gap-3 w-full lg:w-auto">
-                <button
-                  onClick={() => handleOpenActivityModal('call')}
-                  className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white font-semibold text-sm rounded-xl hover:from-green-700 hover:to-green-800 transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105 active:scale-100 w-full sm:w-auto"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                  </svg>
-                  <span>Log Call</span>
-                </button>
-                <button
-                  onClick={() => handleOpenActivityModal('email')}
-                  className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold text-sm rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105 active:scale-100 w-full sm:w-auto"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                  <span>Log Email</span>
-                </button>
-                <button
-                  onClick={() => handleOpenActivityModal('linkedin')}
-                  className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-blue-700 to-indigo-700 text-white font-semibold text-sm rounded-xl hover:from-blue-800 hover:to-indigo-800 transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105 active:scale-100 w-full sm:w-auto"
-                >
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
-                  </svg>
-                  <span>Log LinkedIn</span>
-                </button>
+                {!isEditing && (
+                  <button
+                    onClick={handleEditClick}
+                    className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-gray-600 to-gray-700 text-white font-semibold text-sm rounded-xl hover:from-gray-700 hover:to-gray-800 transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105 active:scale-100 w-full sm:w-auto"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                    </svg>
+                    <span>Edit Contact</span>
+                  </button>
+                )}
+                {!isEditing && (
+                  <>
+                    <button
+                      onClick={() => handleOpenActivityModal('call')}
+                      className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-green-600 to-green-700 text-white font-semibold text-sm rounded-xl hover:from-green-700 hover:to-green-800 transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105 active:scale-100 w-full sm:w-auto"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                      </svg>
+                      <span>Log Call</span>
+                    </button>
+                    <button
+                      onClick={() => handleOpenActivityModal('email')}
+                      className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold text-sm rounded-xl hover:from-blue-700 hover:to-blue-800 transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105 active:scale-100 w-full sm:w-auto"
+                    >
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                      <span>Log Email</span>
+                    </button>
+                    <button
+                      onClick={() => handleOpenActivityModal('linkedin')}
+                      className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-gradient-to-r from-blue-700 to-indigo-700 text-white font-semibold text-sm rounded-xl hover:from-blue-800 hover:to-indigo-800 transition-all duration-200 shadow-md hover:shadow-lg transform hover:scale-105 active:scale-100 w-full sm:w-auto"
+                    >
+                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                      </svg>
+                      <span>Log LinkedIn</span>
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </div>

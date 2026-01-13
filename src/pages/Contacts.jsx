@@ -230,6 +230,39 @@ export default function Contacts() {
     );
   };
 
+  const handleDeleteSelected = async () => {
+    if (selectedContacts.length === 0) return;
+
+    const confirmMessage = selectedContacts.length === 1
+      ? 'Are you sure you want to delete this contact?'
+      : `Are you sure you want to delete ${selectedContacts.length} contacts?`;
+
+    if (!window.confirm(confirmMessage)) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      // Delete contacts one by one (or you can create a bulk delete endpoint)
+      const deletePromises = selectedContacts.map(contactId =>
+        API.delete(`/contacts/${contactId}`)
+      );
+
+      await Promise.all(deletePromises);
+
+      // Clear selection
+      setSelectedContacts([]);
+
+      // Refresh contacts list
+      await fetchContacts();
+    } catch (err) {
+      console.error('Error deleting contacts:', err);
+      alert(err.response?.data?.error || 'Failed to delete contacts');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSort = (column) => {
     if (sortColumn === column) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -615,6 +648,21 @@ export default function Contacts() {
 
               {/* Action Buttons */}
               <div className="flex gap-3 w-full sm:w-auto">
+                {selectedContacts.length > 0 && (
+                  <button
+                    onClick={handleDeleteSelected}
+                    disabled={loading}
+                    className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 active:bg-red-800 transition-all duration-200 font-semibold text-sm shadow-md hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transform hover:scale-105 active:scale-100 flex-1 sm:flex-none disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    <span className="hidden sm:inline">
+                      Remove {selectedContacts.length > 1 ? `(${selectedContacts.length})` : ''}
+                    </span>
+                    <span className="sm:hidden">Remove</span>
+                  </button>
+                )}
                 <button
                   onClick={() => navigate('/import')}
                   className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 hover:border-gray-400 active:bg-gray-100 transition-all duration-200 font-semibold text-sm shadow-sm hover:shadow-md focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 flex-1 sm:flex-none"
