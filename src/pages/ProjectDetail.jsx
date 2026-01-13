@@ -16,7 +16,7 @@ export default function ProjectDetail() {
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const searchTimeoutRef = useRef(null);
   const [quickFilter, setQuickFilter] = useState('');
-  const [filterStage, setFilterStage] = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
   const [filterTeamMember, setFilterTeamMember] = useState('');
   const [filterPriority, setFilterPriority] = useState('');
   const [filterMatchType, setFilterMatchType] = useState('');
@@ -33,7 +33,8 @@ export default function ProjectDetail() {
     contactId: null,
     phoneNumber: null,
     email: null,
-    linkedInProfileUrl: null
+    linkedInProfileUrl: null,
+    lastActivity: null
   });
   const [bulkImportModal, setBulkImportModal] = useState(false);
   const [allProjectActivities, setAllProjectActivities] = useState([]);
@@ -217,7 +218,7 @@ export default function ProjectDetail() {
       byContactId: new Map(),
       lastActivityByContactId: new Map(),
       nextActionByContactId: new Map(),
-      latestLinkedInStatusByContactId: new Map()
+      latestActivityStatusByContactId: new Map() // Changed from latestLinkedInStatusByContactId to track all activity types
     };
     
     const now = new Date();
@@ -244,11 +245,15 @@ export default function ProjectDetail() {
           }
         }
         
-        // Track latest LinkedIn activity status (for automatic stage display)
-        if (activity.type === 'linkedin' && activity.status) {
-          const existing = lookups.latestLinkedInStatusByContactId.get(contactIdStr);
+        // Track latest activity status (for all activity types - call, email, linkedin)
+        // This determines the stage based on the most recent activity status
+        if (activity.status) {
+          const existing = lookups.latestActivityStatusByContactId.get(contactIdStr);
           if (!existing || new Date(activity.createdAt) > new Date(existing.createdAt)) {
-            lookups.latestLinkedInStatusByContactId.set(contactIdStr, activity.status);
+            lookups.latestActivityStatusByContactId.set(contactIdStr, {
+              status: activity.status,
+              createdAt: activity.createdAt
+            });
           }
         }
       }
@@ -343,17 +348,33 @@ export default function ProjectDetail() {
   }, [expandedContacts, fetchActivitiesForContact]);
 
   const handleOpenActivityModal = (type, contact) => {
-    const contactIdValue = contact._id?.toString ? contact._id.toString() : contact._id;
+    // Ensure contactId is always a string for Map lookup
+    const contactIdValue = contact._id ? (contact._id.toString ? contact._id.toString() : String(contact._id)) : null;
+    
+    // Get the most recent activity for this contact
+    let lastActivity = null;
+    let detectedType = type; // Default to the passed type
+    
+    if (contactIdValue) {
+      lastActivity = activityLookups.lastActivityByContactId.get(contactIdValue) || null;
+      
+      // If we have a last activity, use its type instead of the passed type
+      if (lastActivity && lastActivity.type) {
+        detectedType = lastActivity.type;
+      }
+    }
+    
     setActivityModal({
       isOpen: true,
-      type,
+      type: detectedType,
       contactName: contact.name || 'N/A',
       companyName: contact.company || '',
       projectId: id,
       contactId: contactIdValue || null,
       phoneNumber: contact.firstPhone || null,
       email: contact.email || null,
-      linkedInProfileUrl: contact.personLinkedinUrl || contact.companyLinkedinUrl || null
+      linkedInProfileUrl: contact.personLinkedinUrl || contact.companyLinkedinUrl || null,
+      lastActivity: lastActivity || null // Pass the last activity data
     });
   };
 
@@ -367,7 +388,8 @@ export default function ProjectDetail() {
       contactId: null,
       phoneNumber: null,
       email: null,
-      linkedInProfileUrl: null
+      linkedInProfileUrl: null,
+      lastActivity: null
     });
     // Refresh all project activities (this will update the stage display automatically)
     fetchAllProjectActivities();
@@ -681,12 +703,13 @@ export default function ProjectDetail() {
       if (!matchesSearch) return false;
     }
 
-    // Stage filter - check both LinkedIn status and contact.stage
-    if (filterStage) {
+    // Status filter - check latest activity status and contact.stage
+    if (filterStatus) {
       const contactIdStr = (contact._id?.toString ? contact._id.toString() : contact._id) || '';
-      const latestLinkedInStatus = contactIdStr ? activityLookups.latestLinkedInStatusByContactId.get(contactIdStr) : null;
-      const contactStage = latestLinkedInStatus || contact.stage || 'New';
-      if (contactStage !== filterStage) return false;
+      const latestStatusData = contactIdStr ? activityLookups.latestActivityStatusByContactId.get(contactIdStr) : null;
+      const latestStatus = latestStatusData?.status || null;
+      const contactStatus = latestStatus || contact.stage || 'New';
+      if (contactStatus !== filterStatus) return false;
     }
 
     // Team member filter
@@ -740,14 +763,15 @@ export default function ProjectDetail() {
       if (!hasDueToday) return false;
     } else if (quickFilter === 'new-prospects') {
       const contactIdStr = (contact._id?.toString ? contact._id.toString() : contact._id) || '';
-      const latestLinkedInStatus = contactIdStr ? activityLookups.latestLinkedInStatusByContactId.get(contactIdStr) : null;
-      const contactStage = latestLinkedInStatus || contact.stage || 'New';
-      if (contactStage !== 'New') return false;
+      const latestStatusData = contactIdStr ? activityLookups.latestActivityStatusByContactId.get(contactIdStr) : null;
+      const latestStatus = latestStatusData?.status || null;
+      const contactStatus = latestStatus || contact.stage || 'New';
+      if (contactStatus !== 'New') return false;
     }
 
       return true;
     });
-  }, [contacts, debouncedSearchQuery, quickFilter, filterStage, filterTeamMember, filterPriority, filterMatchType, allProjectActivities, project, activityLookups]);
+  }, [contacts, debouncedSearchQuery, quickFilter, filterStatus, filterTeamMember, filterPriority, filterMatchType, allProjectActivities, project, activityLookups]);
 
   // Memoize select all checked state
   const isAllSelected = useMemo(() => {
@@ -1027,9 +1051,9 @@ export default function ProjectDetail() {
               setQuickFilter(newFilter);
               // Clear stage filter when new prospects is applied
               if (newFilter === 'new-prospects') {
-                setFilterStage('New');
+                setFilterStatus('New');
               } else if (quickFilter === 'new-prospects') {
-                setFilterStage('');
+                setFilterStatus('');
               }
             }}
             className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 ${
@@ -1043,9 +1067,9 @@ export default function ProjectDetail() {
 
           <div className="ml-auto flex items-center gap-3">
             <select
-              value={filterStage}
+              value={filterStatus}
               onChange={(e) => {
-                setFilterStage(e.target.value);
+                setFilterStatus(e.target.value);
                 // Clear new-prospects quick filter if stage changes
                 if (e.target.value !== 'New' && quickFilter === 'new-prospects') {
                   setQuickFilter('');
@@ -1101,7 +1125,7 @@ export default function ProjectDetail() {
         </div>
 
         {/* Active Filters Display */}
-        {(searchQuery || quickFilter || filterStage || filterTeamMember || filterPriority) && (
+        {(searchQuery || quickFilter || filterStatus || filterTeamMember || filterPriority) && (
           <div className="mt-3 pt-3 border-t border-gray-200 flex items-center gap-2 flex-wrap">
             <span className="text-xs font-medium text-gray-500">Active filters:</span>
             {searchQuery && (
@@ -1152,7 +1176,7 @@ export default function ProjectDetail() {
                 <button
                   onClick={() => {
                     setQuickFilter('');
-                    setFilterStage('');
+                    setFilterStatus('');
                   }}
                   className="hover:text-blue-900"
                 >
@@ -1162,11 +1186,11 @@ export default function ProjectDetail() {
                 </button>
               </span>
             )}
-            {filterStage && (
+            {filterStatus && (
               <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded border border-blue-200">
-                Stage: {filterStage}
+                Status: {filterStatus}
                 <button
-                  onClick={() => setFilterStage('')}
+                  onClick={() => setFilterStatus('')}
                   className="hover:text-blue-900"
                 >
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1218,7 +1242,7 @@ export default function ProjectDetail() {
               onClick={() => {
                 setSearchQuery('');
                 setQuickFilter('');
-                setFilterStage('');
+                setFilterStatus('');
                 setFilterTeamMember('');
                 setFilterPriority('');
                 setFilterMatchType('');
@@ -1236,7 +1260,7 @@ export default function ProjectDetail() {
         <div className="flex items-center gap-4 flex-wrap">
           <p className="text-sm text-gray-600">
             Showing <span className="font-semibold text-gray-900">{filteredContacts.length}</span> of <span className="font-semibold text-gray-900">{contacts.length}</span> prospects
-            {(searchQuery || quickFilter || filterStage || filterTeamMember || filterPriority || filterMatchType) && (
+            {(searchQuery || quickFilter || filterStatus || filterTeamMember || filterPriority || filterMatchType) && (
               <span className="ml-2 text-gray-500">
                 (filtered)
               </span>
@@ -1545,7 +1569,7 @@ export default function ProjectDetail() {
                   </th>
                   <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-[12%]">
                     <div className="flex items-center gap-2">
-                      Stage
+                      Status
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
                       </svg>
@@ -1578,14 +1602,16 @@ export default function ProjectDetail() {
                   // Get last interaction and next action using pre-computed lookups (much faster)
                   let contactLastActivity = null;
                   let nextActionActivity = null;
-                  let latestLinkedInStatus = null;
+                  let latestStatusData = null;
                   
                   if (contactIdValue) {
+                    const contactIdStr = contactIdValue.toString ? contactIdValue.toString() : String(contactIdValue);
                     // Fast lookup by contactId
-                    contactLastActivity = activityLookups.lastActivityByContactId.get(contactIdValue.toString()) || null;
-                    nextActionActivity = activityLookups.nextActionByContactId.get(contactIdValue.toString()) || null;
-                    latestLinkedInStatus = activityLookups.latestLinkedInStatusByContactId.get(contactIdValue.toString()) || null;
+                    contactLastActivity = activityLookups.lastActivityByContactId.get(contactIdStr) || null;
+                    nextActionActivity = activityLookups.nextActionByContactId.get(contactIdStr) || null;
+                    latestStatusData = activityLookups.latestActivityStatusByContactId.get(contactIdStr) || null;
                   }
+                  const latestStatus = latestStatusData?.status || null;
                   
                   // Fallback to name/email matching only if contactId lookup failed AND contactId is not available
                   // This ensures data isolation - only use fallback when absolutely necessary
@@ -1618,9 +1644,9 @@ export default function ProjectDetail() {
                     }
                   }
                   
-                  // Determine the stage to display - automatically fetch from latest LinkedIn activity status
-                  // If no LinkedIn status exists, fall back to contact.stage from database, then default to 'New'
-                  const displayStage = latestLinkedInStatus || contact.stage || 'New';
+                  // Determine the status to display - prioritize latest activity status over database stage
+                  // Always use the most recent activity status if available, otherwise use contact.stage, then default to 'New'
+                  const displayStatus = latestStatus || contact.stage || 'New';
                   const assignedTo = contact.assignedTo || project?.assignedTo || '-';
 
                   // Check if contact is from databank (has _id - MongoDB ObjectId)
@@ -1785,10 +1811,10 @@ export default function ProjectDetail() {
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          {getStageBadge(displayStage)}
-                          {latestLinkedInStatus && (
+                          {getStageBadge(displayStatus)}
+                          {latestStatus && latestStatus !== contact.stage && (
                             <div className="text-xs text-gray-400 mt-1">
-                              From LinkedIn activity
+                              From latest activity
                             </div>
                           )}
                         </td>
@@ -1926,6 +1952,7 @@ export default function ProjectDetail() {
         phoneNumber={activityModal.phoneNumber}
         email={activityModal.email}
         linkedInProfileUrl={activityModal.linkedInProfileUrl}
+        lastActivity={activityModal.lastActivity}
       />
 
       {/* Bulk Import Modal */}

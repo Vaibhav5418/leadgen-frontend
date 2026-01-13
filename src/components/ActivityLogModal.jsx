@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import API from '../api/axios';
 
-export default function ActivityLogModal({ isOpen, onClose, type, contactName, companyName, projectId, contactId, phoneNumber, email, linkedInProfileUrl, activityId, editMode = false }) {
+export default function ActivityLogModal({ isOpen, onClose, type, contactName, companyName, projectId, contactId, phoneNumber, email, linkedInProfileUrl, activityId, editMode = false, lastActivity = null }) {
   const [formData, setFormData] = useState({
     template: '',
     outcome: '',
@@ -30,6 +30,7 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
   const [linkedInAccounts, setLinkedInAccounts] = useState([]);
   const [newAccountName, setNewAccountName] = useState('');
   const [showAddAccount, setShowAddAccount] = useState(false);
+  const hasInitializedRef = useRef(false);
 
   // Load LinkedIn accounts from localStorage on component mount
   useEffect(() => {
@@ -94,16 +95,46 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
   };
 
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !hasInitializedRef.current) {
       // Trigger animation after modal is mounted
       setTimeout(() => setIsVisible(true), 10);
       
       // Get current date in YYYY-MM-DD format
       const today = new Date().toISOString().split('T')[0];
       
+      // Mark as initialized
+      hasInitializedRef.current = true;
+      
       // If edit mode, fetch the activity data
       if (editMode && activityId) {
         fetchActivityData();
+      } else if (lastActivity) {
+        // Pre-fill form with the most recent activity data
+        const activity = lastActivity;
+        setFormData({
+          template: activity.template || '',
+          outcome: activity.outcome || '',
+          conversationNotes: activity.conversationNotes || '',
+          nextAction: activity.nextAction || '',
+          nextActionDate: activity.nextActionDate ? new Date(activity.nextActionDate).toISOString().split('T')[0] : '',
+          phoneNumber: activity.phoneNumber || phoneNumber || '',
+          email: activity.email || email || '',
+          linkedInUrl: activity.linkedInUrl || linkedInProfileUrl || '',
+          status: activity.status || '',
+          linkedInAccountName: activity.linkedInAccountName || '',
+          lnRequestSent: activity.lnRequestSent || '',
+          connected: activity.connected || '',
+          callNumber: activity.callNumber || '',
+          callStatus: activity.callStatus || '',
+          callDate: activity.callDate ? new Date(activity.callDate).toISOString().split('T')[0] : (activity.type === 'call' ? today : ''),
+          emailDate: activity.emailDate ? new Date(activity.emailDate).toISOString().split('T')[0] : (activity.type === 'email' ? today : ''),
+          linkedinDate: activity.linkedinDate ? new Date(activity.linkedinDate).toISOString().split('T')[0] : (activity.type === 'linkedin' ? today : '')
+        });
+        setSavedValues({
+          phone: activity.phoneNumber || phoneNumber || null,
+          email: activity.email || email || null,
+          linkedin: activity.linkedInUrl || linkedInProfileUrl || null
+        });
       } else {
         // Initialize form data with props from database (if they exist) and set current date
         setFormData(prev => ({
@@ -121,10 +152,14 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
           linkedin: linkedInProfileUrl || null
         });
       }
-    } else {
+    } else if (!isOpen) {
       setIsVisible(false);
+      // Reset initialization flag when modal closes
+      hasInitializedRef.current = false;
     }
-  }, [isOpen, phoneNumber, email, linkedInProfileUrl, editMode, activityId]);
+    // Use a stable key for lastActivity to avoid dependency array size changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, editMode, activityId, type, phoneNumber, email, linkedInProfileUrl, lastActivity?._id]);
 
   if (!isOpen) return null;
 

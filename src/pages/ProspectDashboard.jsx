@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import API from '../api/axios';
 import {
@@ -372,7 +372,7 @@ export default function ProspectDashboard() {
     );
   }
 
-  const MetricCard = ({ title, value, subtitle, icon, color = 'blue' }) => {
+  const MetricCard = ({ title, value, subtitle, icon, color = 'blue', compact = false }) => {
     const colorClasses = {
       blue: { bg: 'from-blue-50 to-indigo-50', border: 'border-blue-100', icon: 'text-indigo-600', badge: 'text-blue-700 bg-white/70 border-blue-100' },
       green: { bg: 'from-emerald-50 to-teal-50', border: 'border-emerald-100', icon: 'text-emerald-600', badge: 'text-emerald-700 bg-white/70 border-emerald-100' },
@@ -380,6 +380,21 @@ export default function ProspectDashboard() {
       orange: { bg: 'from-amber-50 to-orange-50', border: 'border-amber-100', icon: 'text-amber-600', badge: 'text-amber-700 bg-white/70 border-amber-100' }
     };
     const colors = colorClasses[color] || colorClasses.blue;
+
+    if (compact) {
+      return (
+        <div className={`bg-gradient-to-br ${colors.bg} rounded-lg border ${colors.border} shadow-sm p-4 hover:shadow-md transition-shadow h-full`}>
+          <div className="flex items-center justify-between mb-2">
+            <div className={`w-8 h-8 rounded-lg bg-white/80 border ${colors.border} flex items-center justify-center shadow-xs`}>
+              {typeof icon === 'object' && icon.props ? React.cloneElement(icon, { className: 'w-4 h-4' }) : icon}
+            </div>
+          </div>
+          <div className="text-xl font-bold text-gray-900 leading-tight mb-1">{value}</div>
+          <div className="text-xs font-medium text-gray-700">{title}</div>
+          {subtitle && <div className="text-xs text-gray-500 mt-0.5">{subtitle}</div>}
+        </div>
+      );
+    }
 
     return (
       <div className={`bg-gradient-to-br ${colors.bg} rounded-xl border ${colors.border} shadow-sm p-6 hover:shadow-md transition-shadow`}>
@@ -486,8 +501,8 @@ export default function ProspectDashboard() {
     };
 
     return (
-      <div className="bg-white border-2 border-gray-200 rounded-xl p-3 shadow-sm hover:shadow-md transition-shadow">
-        <h3 className="text-sm font-bold text-gray-900 mb-3 text-center">{title}</h3>
+      <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow h-full">
+        <h3 className="text-sm font-semibold text-gray-900 mb-4 text-center">{title}</h3>
         <div className="flex flex-col items-center space-y-0">
           {stages.map((stage, index) => {
             const value = data[stage.key] || 0;
@@ -582,17 +597,17 @@ export default function ProspectDashboard() {
             );
           })}
         </div>
-        <div className="mt-3 pt-3 border-t border-gray-200">
-          <div className="grid grid-cols-2 gap-2 text-xs">
+        <div className="mt-4 pt-4 border-t border-gray-200">
+          <div className="grid grid-cols-2 gap-3 text-xs">
             <div className="text-center">
-              <div className="text-gray-600 mb-0.5">Conversion</div>
-              <div className="text-xs font-bold text-gray-900">
+              <div className="text-gray-600 mb-1 text-xs font-medium">Conversion</div>
+              <div className="text-sm font-bold text-gray-900">
                 {maxValue > 0 ? ((data.sql / maxValue) * 100).toFixed(1) : 0}%
               </div>
             </div>
             <div className="text-center">
-              <div className="text-gray-600 mb-0.5">Meetings</div>
-              <div className="text-xs font-bold text-gray-900">
+              <div className="text-gray-600 mb-1 text-xs font-medium">Meetings</div>
+              <div className="text-sm font-bold text-gray-900">
                 {maxValue > 0 ? ((data.scheduled / maxValue) * 100).toFixed(1) : 0}%
               </div>
             </div>
@@ -732,50 +747,54 @@ export default function ProspectDashboard() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {activeTab === 'overview' && (
           <div className="space-y-6">
-            {/* Key Metrics */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* Key Metrics - Compact */}
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
               <MetricCard
                 title="Total Prospects"
                 value={analytics.overview.totalProspects.toLocaleString()}
                 icon={
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                   </svg>
                 }
                 color="blue"
+                compact={true}
               />
               <MetricCard
                 title="Total Activities"
                 value={analytics.overview.totalActivities.toLocaleString()}
                 subtitle="Calls, emails & LinkedIn"
                 icon={
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                   </svg>
                 }
                 color="green"
+                compact={true}
               />
               <MetricCard
                 title="Win Rate"
                 value={`${analytics.pipeline.conversion.winRate}%`}
                 subtitle={`${analytics.pipeline.conversion.won} won`}
                 icon={
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 }
                 color="purple"
+                compact={true}
               />
               <MetricCard
                 title="Meeting Rate"
                 value={`${analytics.pipeline.conversion.meetingRate}%`}
                 subtitle={`${analytics.pipeline.conversion.meetings} meetings`}
                 icon={
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                 }
                 color="orange"
+                compact={true}
               />
               <MetricCard
                 title="SQL Rate"
@@ -784,11 +803,12 @@ export default function ProspectDashboard() {
                   : '0%'}
                 subtitle={`${analytics.pipeline.conversion.sql} SQL leads`}
                 icon={
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                   </svg>
                 }
                 color="blue"
+                compact={true}
               />
               <MetricCard
                 title="CIP Rate"
@@ -797,11 +817,12 @@ export default function ProspectDashboard() {
                   : '0%'}
                 subtitle={`${analytics.pipeline.conversion.cip} CIP prospects`}
                 icon={
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                   </svg>
                 }
                 color="green"
+                compact={true}
               />
               <MetricCard
                 title="Avg Activities/Prospect"
@@ -810,23 +831,58 @@ export default function ProspectDashboard() {
                   : '0'}
                 subtitle="Average engagement"
                 icon={
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                   </svg>
                 }
                 color="purple"
+                compact={true}
               />
               <MetricCard
                 title="Lost Deals"
                 value={analytics.pipeline.conversion.lost || 0}
                 subtitle="Deals lost"
                 icon={
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                   </svg>
                 }
                 color="orange"
+                compact={true}
               />
+            </div>
+
+            {/* Funnel Section with Horizontal Scroller */}
+            <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-6">Funnel Analytics</h3>
+              <div className="overflow-x-auto">
+                <div className="flex gap-6 min-w-max pb-2">
+                  <div className="flex-shrink-0 w-80">
+                    <FunnelVisualization
+                      title="Cold Calling Funnel"
+                      data={analytics.funnels.coldCalling}
+                      color="green"
+                      funnelType="call"
+                    />
+                  </div>
+                  <div className="flex-shrink-0 w-80">
+                    <FunnelVisualization
+                      title="Email Funnel"
+                      data={analytics.funnels.email}
+                      color="blue"
+                      funnelType="email"
+                    />
+                  </div>
+                  <div className="flex-shrink-0 w-80">
+                    <FunnelVisualization
+                      title="LinkedIn Funnel"
+                      data={analytics.funnels.linkedin}
+                      color="purple"
+                      funnelType="linkedin"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Charts Row 1 */}

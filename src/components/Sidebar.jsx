@@ -1,6 +1,29 @@
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
+const projectsItems = [
+  {
+    id: 'analytical-dashboard',
+    label: 'Dashboard',
+    path: '/projects/dashboard',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+      </svg>
+    )
+  },
+  {
+    id: 'project-management',
+    label: 'Project Management',
+    path: '/projects',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+      </svg>
+    )
+  }
+];
+
 export default function Sidebar() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -38,22 +61,23 @@ export default function Sidebar() {
     }
   ];
 
-  const projectsItem = {
-    id: 'projects',
-    label: 'Projects',
-    path: '/projects',
-    icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-      </svg>
-    )
-  };
 
   const menuItems = [];
 
   const isActive = (path) => {
     if (path === '/dashboard' || path === '/') {
       return location.pathname === '/dashboard' || location.pathname === '/';
+    }
+    // For projects/dashboard, check exact match
+    if (path === '/projects/dashboard') {
+      return location.pathname === '/projects/dashboard';
+    }
+    // For /projects, match /projects and /projects/:id but not /projects/dashboard
+    if (path === '/projects') {
+      return location.pathname === '/projects' || 
+             (location.pathname.startsWith('/projects/') && 
+              location.pathname !== '/projects/dashboard' &&
+              !location.pathname.startsWith('/projects/dashboard/'));
     }
     return location.pathname.startsWith(path);
   };
@@ -64,11 +88,25 @@ export default function Sidebar() {
   // Initialize databank open state based on active item
   const [isDatabankOpen, setIsDatabankOpen] = useState(hasActiveDatabankItem);
 
+  // Check if any projects item is active to auto-expand
+  const hasActiveProjectsItem = projectsItems.some(item => isActive(item.path));
+  
+  // Initialize projects open state based on active item
+  const [isProjectsOpen, setIsProjectsOpen] = useState(hasActiveProjectsItem);
+
   // Auto-expand databank folder when navigating to a databank item
   useEffect(() => {
     const hasActive = databankItems.some(item => isActive(item.path));
     if (hasActive) {
       setIsDatabankOpen(true);
+    }
+  }, [location.pathname]);
+
+  // Auto-expand projects folder when navigating to a projects item
+  useEffect(() => {
+    const hasActive = projectsItems.some(item => isActive(item.path));
+    if (hasActive) {
+      setIsProjectsOpen(true);
     }
   }, [location.pathname]);
 
@@ -139,28 +177,54 @@ export default function Sidebar() {
             )}
           </div>
 
-          {/* Projects Item */}
+          {/* Projects Folder */}
           <div className="mt-2">
-            {(() => {
-              const active = isActive(projectsItem.path);
-              return (
-                <button
-                  onClick={() => navigate(projectsItem.path)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
-                    active
-                      ? 'bg-blue-50 text-blue-600'
-                      : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
-                  }`}
-                >
-                  <span className={active ? 'text-blue-600' : 'text-gray-500'}>
-                    {projectsItem.icon}
-                  </span>
-                  <span className={`text-sm font-medium ${active ? 'text-blue-600' : 'text-gray-700'}`}>
-                    {projectsItem.label}
-                  </span>
-                </button>
-              );
-            })()}
+            <button
+              onClick={() => setIsProjectsOpen(!isProjectsOpen)}
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-gray-700 hover:bg-gray-50 hover:text-gray-900 transition-colors"
+            >
+              <div className="flex items-center gap-3">
+                <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                </svg>
+                <span className="text-sm font-medium">Projects</span>
+              </div>
+              <svg
+                className={`w-4 h-4 text-gray-500 transition-transform ${isProjectsOpen ? 'rotate-90' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+            
+            {/* Projects Sub-items */}
+            {isProjectsOpen && (
+              <div className="ml-4 mt-1 space-y-1 border-l-2 border-gray-200 pl-2">
+                {projectsItems.map((item) => {
+                  const active = isActive(item.path);
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => navigate(item.path)}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
+                        active
+                          ? 'bg-blue-50 text-blue-600'
+                          : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                      }`}
+                    >
+                      <span className={active ? 'text-blue-600' : 'text-gray-500'}>
+                        {item.icon}
+                      </span>
+                      <span className={`text-sm font-medium ${active ? 'text-blue-600' : 'text-gray-700'}`}>
+                        {item.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
         </div>
