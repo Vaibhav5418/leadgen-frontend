@@ -303,6 +303,12 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
       
       let response;
       
+      // Prepare date values - use the selected date if provided, otherwise null
+      // This ensures that when a user selects a previous date, that date is stored instead of the current date
+      const callDateValue = formData.callDate && formData.callDate.trim() ? formData.callDate.trim() : null;
+      const emailDateValue = formData.emailDate && formData.emailDate.trim() ? formData.emailDate.trim() : null;
+      const linkedinDateValue = formData.linkedinDate && formData.linkedinDate.trim() ? formData.linkedinDate.trim() : null;
+      
       if (editMode && activityId) {
         // Update existing activity
         response = await API.put(`/activities/${activityId}`, {
@@ -319,9 +325,9 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
           connected: formData.connected || null,
           callNumber: formData.callNumber || null,
           callStatus: formData.callStatus || null,
-          callDate: formData.callDate || null,
-          emailDate: formData.emailDate || null,
-          linkedinDate: formData.linkedinDate || null
+          callDate: callDateValue,
+          emailDate: emailDateValue,
+          linkedinDate: linkedinDateValue
         });
       } else {
         // Create new activity
@@ -343,9 +349,9 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
           connected: formData.connected || null,
           callNumber: formData.callNumber || null,
           callStatus: formData.callStatus || null,
-          callDate: formData.callDate || null,
-          emailDate: formData.emailDate || null,
-          linkedinDate: formData.linkedinDate || null
+          callDate: callDateValue,
+          emailDate: emailDateValue,
+          linkedinDate: linkedinDateValue
         });
       }
 
