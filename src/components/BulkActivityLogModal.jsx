@@ -429,6 +429,36 @@ export default function BulkActivityLogModal({ isOpen, onClose, type, selectedCo
   const hasExistingEmail = selectedContactsList.some(c => c.email);
   const hasExistingLinkedIn = selectedContactsList.some(c => c.personLinkedinUrl || c.companyLinkedinUrl);
 
+  // Get LinkedIn URLs for selected contacts
+  const getLinkedInUrls = () => {
+    return selectedContactsList
+      .map(c => c.personLinkedinUrl || c.companyLinkedinUrl)
+      .filter(url => url && url.trim() !== '');
+  };
+
+  // Copy LinkedIn URLs to clipboard
+  const handleCopyLinkedInUrls = () => {
+    const urls = getLinkedInUrls();
+    if (urls.length > 0) {
+      const urlsText = urls.join('\n');
+      navigator.clipboard.writeText(urlsText).then(() => {
+        // Show a temporary success message
+        const button = document.getElementById('copy-linkedin-urls-btn');
+        if (button) {
+          const originalText = button.textContent;
+          button.textContent = 'Copied!';
+          button.classList.add('bg-green-600');
+          setTimeout(() => {
+            button.textContent = originalText;
+            button.classList.remove('bg-green-600');
+          }, 2000);
+        }
+      }).catch(err => {
+        console.error('Failed to copy URLs:', err);
+      });
+    }
+  };
+
   return (
     <div 
       className={`fixed inset-0 bg-black bg-opacity-60 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity duration-300 ${
@@ -507,17 +537,59 @@ export default function BulkActivityLogModal({ isOpen, onClose, type, selectedCo
 
         {/* Selected Contacts List */}
         <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 max-h-32 overflow-y-auto">
-          <p className="text-xs font-semibold text-gray-700 mb-2">Selected Contacts:</p>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-gray-700">
+              {type === 'linkedin' ? 'Selected LinkedIn URLs:' : 'Selected Contacts:'}
+            </p>
+            {type === 'linkedin' && getLinkedInUrls().length > 0 && (
+              <button
+                id="copy-linkedin-urls-btn"
+                type="button"
+                onClick={handleCopyLinkedInUrls}
+                className="px-2 py-1 text-xs font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors flex items-center gap-1"
+                title="Copy all LinkedIn URLs"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                Copy All URLs
+              </button>
+            )}
+          </div>
           <div className="flex flex-wrap gap-2">
-            {selectedContactsList.slice(0, 10).map((contact) => (
-              <span key={contact._id || contact.name} className="px-2 py-1 bg-white text-xs font-medium text-gray-700 rounded-md border border-gray-200">
-                {contact.name || 'N/A'}
-              </span>
-            ))}
-            {selectedContactsList.length > 10 && (
-              <span className="px-2 py-1 bg-blue-100 text-xs font-semibold text-blue-700 rounded-md">
-                +{selectedContactsList.length - 10} more
-              </span>
+            {type === 'linkedin' ? (
+              <>
+                {selectedContactsList.slice(0, 10).map((contact) => {
+                  const linkedInUrl = contact.personLinkedinUrl || contact.companyLinkedinUrl;
+                  return linkedInUrl ? (
+                    <span 
+                      key={contact._id || contact.name} 
+                      className="px-2 py-1 bg-white text-xs font-medium text-blue-700 rounded-md border border-blue-200 hover:bg-blue-50 transition-colors break-all"
+                      title={linkedInUrl}
+                    >
+                      {linkedInUrl.length > 50 ? `${linkedInUrl.substring(0, 50)}...` : linkedInUrl}
+                    </span>
+                  ) : null;
+                })}
+                {selectedContactsList.length > 10 && (
+                  <span className="px-2 py-1 bg-blue-100 text-xs font-semibold text-blue-700 rounded-md">
+                    +{selectedContactsList.length - 10} more
+                  </span>
+                )}
+              </>
+            ) : (
+              <>
+                {selectedContactsList.slice(0, 10).map((contact) => (
+                  <span key={contact._id || contact.name} className="px-2 py-1 bg-white text-xs font-medium text-gray-700 rounded-md border border-gray-200">
+                    {contact.name || 'N/A'}
+                  </span>
+                ))}
+                {selectedContactsList.length > 10 && (
+                  <span className="px-2 py-1 bg-blue-100 text-xs font-semibold text-blue-700 rounded-md">
+                    +{selectedContactsList.length - 10} more
+                  </span>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -1231,9 +1303,28 @@ export default function BulkActivityLogModal({ isOpen, onClose, type, selectedCo
                 </div>
                 <p className="mt-2 text-xs text-gray-500">
                   {hasExistingLinkedIn 
-                    ? "Some selected contacts have LinkedIn URLs in database. Enter a value to override or leave empty to use existing data."
+                    ? `Using LinkedIn URLs from ${getLinkedInUrls().length} selected contact(s). Enter a value to override or leave empty to use existing URLs.`
                     : "This will be applied to all selected contacts. Click Save to store in database for all contacts with valid IDs."}
                 </p>
+                {type === 'linkedin' && getLinkedInUrls().length > 0 && (
+                  <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded-md">
+                    <p className="text-xs font-semibold text-blue-900 mb-1">
+                      LinkedIn URLs from selected contacts ({getLinkedInUrls().length}):
+                    </p>
+                    <div className="max-h-20 overflow-y-auto space-y-1">
+                      {getLinkedInUrls().slice(0, 5).map((url, index) => (
+                        <p key={index} className="text-xs text-blue-700 break-all font-mono">
+                          {url}
+                        </p>
+                      ))}
+                      {getLinkedInUrls().length > 5 && (
+                        <p className="text-xs text-blue-600 font-semibold">
+                          +{getLinkedInUrls().length - 5} more URLs
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 

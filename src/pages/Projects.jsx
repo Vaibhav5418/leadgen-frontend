@@ -75,22 +75,6 @@ export default function Projects() {
     return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   };
 
-  const getStatusBadge = (status) => {
-    const statusConfig = {
-      active: { bg: 'bg-green-100', text: 'text-green-800', label: 'Active' },
-      draft: { bg: 'bg-yellow-100', text: 'text-yellow-800', label: 'Draft' },
-      completed: { bg: 'bg-blue-100', text: 'text-blue-800', label: 'Completed' },
-      archived: { bg: 'bg-gray-100', text: 'text-gray-800', label: 'Archived' }
-    };
-    
-    const config = statusConfig[status] || statusConfig.draft;
-    return (
-      <span className={`px-3 py-1 text-xs font-medium rounded-full ${config.bg} ${config.text}`}>
-        {config.label}
-      </span>
-    );
-  };
-
   const getInitials = (name) => {
     if (!name) return '?';
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -261,10 +245,10 @@ export default function Projects() {
                     Company
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Contact Person
+                    Total Prospects
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
+                    Contact Person
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Created Date
@@ -293,15 +277,17 @@ export default function Projects() {
                       )}
                     </td>
                     <td className="px-6 py-4">
+                      <div className="text-sm font-semibold text-gray-900">
+                        {project.totalProspects || 0}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
                       <div className="text-sm text-gray-900">
                         {project.contactPerson?.fullName || 'N/A'}
                       </div>
                       {project.contactPerson?.email && (
                         <div className="text-xs text-gray-500">{project.contactPerson.email}</div>
                       )}
-                    </td>
-                    <td className="px-6 py-4">
-                      {getStatusBadge(project.status || 'draft')}
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm text-gray-900">
