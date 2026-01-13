@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, startTransition } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, startTransition, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import API from '../api/axios';
 import ActivityLogModal from '../components/ActivityLogModal';
@@ -13,6 +13,8 @@ export default function ProjectDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const searchTimeoutRef = useRef(null);
   const [quickFilter, setQuickFilter] = useState('');
   const [filterStage, setFilterStage] = useState('');
   const [filterTeamMember, setFilterTeamMember] = useState('');
@@ -46,19 +48,35 @@ export default function ProjectDetail() {
   const [showRemoveConfirmation, setShowRemoveConfirmation] = useState(false);
   const [removing, setRemoving] = useState(false);
 
+  // Debounce search query for better performance
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    searchTimeoutRef.current = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300); // 300ms debounce
+    
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchQuery]);
+
   useEffect(() => {
     if (id) {
       // Fetch project first, then contacts and activities in parallel
       fetchProject().then(() => {
-        // Only fetch imported contacts initially (not suggestions)
-        // Fetch activities
-        fetchAllProjectActivities().catch(err => {
-          console.error('Error fetching activities:', err);
-        });
-        // Fetch only imported contacts (not suggestions from databank)
-        fetchImportedContacts().catch(err => {
-          console.error('Error fetching imported contacts:', err);
-        });
+        // Fetch contacts and activities in parallel for better performance
+        Promise.all([
+          fetchAllProjectActivities().catch(err => {
+            console.error('Error fetching activities:', err);
+          }),
+          fetchImportedContacts().catch(err => {
+            console.error('Error fetching imported contacts:', err);
+          })
+        ]);
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -82,7 +100,8 @@ export default function ProjectDetail() {
   // Fetch only imported contacts (contacts already linked to project)
   const fetchImportedContacts = async () => {
     try {
-      const response = await API.get(`/projects/${id}/project-contacts`);
+      // Fetch all prospects by setting a high limit
+      const response = await API.get(`/projects/${id}/project-contacts?limit=10000`);
       if (response.data.success) {
         setContacts(response.data.data || []);
       }
@@ -192,70 +211,136 @@ export default function ProjectDetail() {
     }
   };
 
-  const fetchActivitiesForContact = async (contactId, contactEmail, contactName) => {
+  // Pre-compute activity lookups for better performance (must be defined before fetchActivitiesForContact)
+  const activityLookups = useMemo(() => {
+    const lookups = {
+      byContactId: new Map(),
+      lastActivityByContactId: new Map(),
+      nextActionByContactId: new Map(),
+      latestLinkedInStatusByContactId: new Map()
+    };
+    
+    const now = new Date();
+    allProjectActivities.forEach(activity => {
+      // Index by contactId
+      if (activity.contactId) {
+        const contactIdStr = activity.contactId.toString();
+        if (!lookups.byContactId.has(contactIdStr)) {
+          lookups.byContactId.set(contactIdStr, []);
+        }
+        lookups.byContactId.get(contactIdStr).push(activity);
+        
+        // Track last activity
+        const existing = lookups.lastActivityByContactId.get(contactIdStr);
+        if (!existing || new Date(activity.createdAt) > new Date(existing.createdAt)) {
+          lookups.lastActivityByContactId.set(contactIdStr, activity);
+        }
+        
+        // Track next action
+        if (activity.nextActionDate && new Date(activity.nextActionDate) >= now) {
+          const existing = lookups.nextActionByContactId.get(contactIdStr);
+          if (!existing || new Date(activity.nextActionDate) < new Date(existing.nextActionDate)) {
+            lookups.nextActionByContactId.set(contactIdStr, activity);
+          }
+        }
+        
+        // Track latest LinkedIn activity status (for automatic stage display)
+        if (activity.type === 'linkedin' && activity.status) {
+          const existing = lookups.latestLinkedInStatusByContactId.get(contactIdStr);
+          if (!existing || new Date(activity.createdAt) > new Date(existing.createdAt)) {
+            lookups.latestLinkedInStatusByContactId.set(contactIdStr, activity.status);
+          }
+        }
+      }
+    });
+    
+    return lookups;
+  }, [allProjectActivities]);
+
+  // Optimized: Use cached activities instead of making API calls
+  const fetchActivitiesForContact = useCallback(async (contactId, contactEmail, contactName) => {
     if (loadingActivities[contactId]) return;
+    
+    const contactIdStr = contactId?.toString ? contactId.toString() : contactId;
+    if (!contactIdStr) return;
     
     try {
       setLoadingActivities(prev => ({ ...prev, [contactId]: true }));
-      // Use contactId to fetch activities directly - ensures data isolation
-      const contactIdStr = contactId?.toString ? contactId.toString() : contactId;
-      if (contactIdStr) {
-        // Fetch activities directly by contactId for proper data isolation
+      
+      // First, try to get from cached activities (much faster)
+      const cachedActivities = activityLookups.byContactId.get(contactIdStr) || [];
+      
+      if (cachedActivities.length > 0) {
+        // Use cached data - no API call needed
+        setContactActivities(prev => ({
+          ...prev,
+          [contactId]: cachedActivities.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        }));
+        setLoadingActivities(prev => ({ ...prev, [contactId]: false }));
+        return;
+      }
+      
+      // Only make API call if not in cache (should be rare)
+      try {
         const response = await API.get(`/activities/contact/${contactIdStr}`);
         if (response.data.success) {
           const activities = response.data.data || [];
           setContactActivities(prev => ({
             ...prev,
-            [contactId]: activities
+            [contactId]: activities.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
           }));
         }
-      } else {
-        // Fallback: if no contactId, use project activities and filter by contactId in notes (less reliable)
-        const response = await API.get(`/activities/project/${id}`);
-        if (response.data.success) {
-          let activities = response.data.data || [];
-          // Only filter by email/name if contactId is not available (should be rare)
+      } catch (apiErr) {
+        // If API fails (404 or other error), try fallback to project activities
+        console.warn(`API call failed for contact ${contactIdStr}, using cached activities:`, apiErr.message);
+        const fallbackActivities = allProjectActivities.filter(activity => {
+          if (activity.contactId) {
+            const activityContactIdStr = activity.contactId.toString ? activity.contactId.toString() : activity.contactId;
+            if (activityContactIdStr === contactIdStr) return true;
+          }
+          // Fallback to notes matching only if contactId doesn't match
           if (contactEmail || contactName) {
             const emailLower = contactEmail?.toLowerCase() || '';
             const nameLower = contactName?.toLowerCase() || '';
-            activities = activities.filter(activity => {
-              // First check if contactId matches (most reliable)
-              if (activity.contactId) {
-                const activityContactIdStr = activity.contactId.toString ? activity.contactId.toString() : activity.contactId;
-                if (activityContactIdStr === contactIdStr) return true;
-              }
-              // Fallback to notes matching only if contactId doesn't match
-              const notesLower = activity.conversationNotes?.toLowerCase() || '';
-              return notesLower.includes(emailLower) || notesLower.includes(nameLower);
-            });
+            const notesLower = activity.conversationNotes?.toLowerCase() || '';
+            return notesLower.includes(emailLower) || notesLower.includes(nameLower);
           }
-          setContactActivities(prev => ({
-            ...prev,
-            [contactId]: activities
-          }));
-        }
+          return false;
+        });
+        setContactActivities(prev => ({
+          ...prev,
+          [contactId]: fallbackActivities.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        }));
       }
     } catch (err) {
       console.error('Error fetching activities:', err);
     } finally {
       setLoadingActivities(prev => ({ ...prev, [contactId]: false }));
     }
-  };
+  }, [loadingActivities, activityLookups, allProjectActivities]);
 
-  const toggleContactExpansion = async (contactId, contactEmail, contactName) => {
+  // Optimized: Use useCallback and startTransition for smooth expansion
+  const toggleContactExpansion = useCallback(async (contactId, contactEmail, contactName) => {
     const isExpanded = expandedContacts.has(contactId);
     
     if (isExpanded) {
-      setExpandedContacts(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(contactId);
-        return newSet;
+      startTransition(() => {
+        setExpandedContacts(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(contactId);
+          return newSet;
+        });
       });
     } else {
-      setExpandedContacts(prev => new Set(prev).add(contactId));
-      await fetchActivitiesForContact(contactId, contactEmail, contactName);
+      startTransition(() => {
+        setExpandedContacts(prev => new Set(prev).add(contactId));
+      });
+      // Fetch activities asynchronously - don't block UI
+      fetchActivitiesForContact(contactId, contactEmail, contactName).catch(err => {
+        console.error('Error fetching activities:', err);
+      });
     }
-  };
+  }, [expandedContacts, fetchActivitiesForContact]);
 
   const handleOpenActivityModal = (type, contact) => {
     const contactIdValue = contact._id?.toString ? contact._id.toString() : contact._id;
@@ -533,15 +618,19 @@ export default function ProjectDetail() {
           </div>
 
           {activities.length === 0 ? (
-            <div className="text-center py-8 text-gray-500 text-sm">
+            <div className="text-center py-8 text-gray-500 text-sm transition-opacity duration-300">
               No activities logged yet. Click "Log Activity" to get started.
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-4 animate-fade-in">
               {activities
                 .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-                .map((activity) => (
-                <div key={activity._id} className="flex items-start gap-4 pb-4 border-b border-gray-100 last:border-0">
+                .map((activity, index) => (
+                <div 
+                  key={activity._id} 
+                  className="flex items-start gap-4 pb-4 border-b border-gray-100 last:border-0 transition-all duration-300 hover:bg-gray-50 rounded-lg px-2 -mx-2 py-1"
+                  style={{ animationDelay: `${index * 50}ms` }}
+                >
                   <div className="flex-shrink-0 mt-1">
                     {getActivityIcon(activity.type)}
                   </div>
@@ -577,58 +666,13 @@ export default function ProjectDetail() {
     );
   };
 
-  // Pre-compute activity lookups for better performance
-  const activityLookups = useMemo(() => {
-    const lookups = {
-      byContactId: new Map(),
-      lastActivityByContactId: new Map(),
-      nextActionByContactId: new Map(),
-      latestLinkedInStatusByContactId: new Map()
-    };
-    
-    const now = new Date();
-    allProjectActivities.forEach(activity => {
-      // Index by contactId
-      if (activity.contactId) {
-        const contactIdStr = activity.contactId.toString();
-        if (!lookups.byContactId.has(contactIdStr)) {
-          lookups.byContactId.set(contactIdStr, []);
-        }
-        lookups.byContactId.get(contactIdStr).push(activity);
-        
-        // Track last activity
-        const existing = lookups.lastActivityByContactId.get(contactIdStr);
-        if (!existing || new Date(activity.createdAt) > new Date(existing.createdAt)) {
-          lookups.lastActivityByContactId.set(contactIdStr, activity);
-        }
-        
-        // Track next action
-        if (activity.nextActionDate && new Date(activity.nextActionDate) >= now) {
-          const existing = lookups.nextActionByContactId.get(contactIdStr);
-          if (!existing || new Date(activity.nextActionDate) < new Date(existing.nextActionDate)) {
-            lookups.nextActionByContactId.set(contactIdStr, activity);
-          }
-        }
-        
-        // Track latest LinkedIn activity status (for automatic stage display)
-        if (activity.type === 'linkedin' && activity.status) {
-          const existing = lookups.latestLinkedInStatusByContactId.get(contactIdStr);
-          if (!existing || new Date(activity.createdAt) > new Date(existing.createdAt)) {
-            lookups.latestLinkedInStatusByContactId.set(contactIdStr, activity.status);
-          }
-        }
-      }
-    });
-    
-    return lookups;
-  }, [allProjectActivities]);
-
   // Memoize filtered contacts to avoid recalculating on every render
+  // Use debouncedSearchQuery for better performance
   const filteredContacts = useMemo(() => {
     return contacts.filter(contact => {
-    // Search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
+    // Search filter (using debounced query)
+    if (debouncedSearchQuery) {
+      const query = debouncedSearchQuery.toLowerCase();
       const matchesSearch = 
         (contact.name && contact.name.toLowerCase().includes(query)) ||
         (contact.company && contact.company.toLowerCase().includes(query)) ||
@@ -703,7 +747,7 @@ export default function ProjectDetail() {
 
       return true;
     });
-  }, [contacts, searchQuery, quickFilter, filterStage, filterTeamMember, filterPriority, filterMatchType, allProjectActivities, project]);
+  }, [contacts, debouncedSearchQuery, quickFilter, filterStage, filterTeamMember, filterPriority, filterMatchType, allProjectActivities, project, activityLookups]);
 
   // Memoize select all checked state
   const isAllSelected = useMemo(() => {
@@ -787,70 +831,47 @@ export default function ProjectDetail() {
     }
   };
 
-  // Calculate stats based on all contacts (not filtered)
-  const stats = {
-    total: contacts.length,
-    active: contacts.filter(c => {
-      const stage = c.stage || 'New';
-      return stage === 'Qualified' || stage === 'Proposal' || stage === 'Negotiation';
-    }).length,
-    overdue: (() => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      return contacts.filter(contact => {
-        const contactIdStr = contact._id?.toString ? contact._id.toString() : contact._id;
-        const contactActivities = allProjectActivities.filter(a => {
-          // Prioritize contactId matching for data isolation
-          if (contactIdStr && a.contactId) {
-            const activityContactIdStr = a.contactId.toString ? a.contactId.toString() : a.contactId;
-            if (activityContactIdStr === contactIdStr) return true;
-          }
-          // Fallback to notes matching only if contactId is not available
-          if (!contactIdStr || !a.contactId) {
-            const notesLower = a.conversationNotes?.toLowerCase() || '';
-            const contactNameLower = contact.name?.toLowerCase() || '';
-            const contactEmailLower = contact.email?.toLowerCase() || '';
-            return notesLower.includes(contactNameLower) || notesLower.includes(contactEmailLower);
-          }
-          return false;
-        });
-        return contactActivities.some(activity => {
-          if (!activity.nextActionDate) return false;
-          const actionDate = new Date(activity.nextActionDate);
-          return actionDate < today;
-        });
-      }).length;
-    })(),
-    thisWeek: (() => {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const weekEnd = new Date(today);
-      weekEnd.setDate(weekEnd.getDate() + 7);
-      return contacts.filter(contact => {
-        const contactIdStr = contact._id?.toString ? contact._id.toString() : contact._id;
-        const contactActivities = allProjectActivities.filter(a => {
-          // Prioritize contactId matching for data isolation
-          if (contactIdStr && a.contactId) {
-            const activityContactIdStr = a.contactId.toString ? a.contactId.toString() : a.contactId;
-            if (activityContactIdStr === contactIdStr) return true;
-          }
-          // Fallback to notes matching only if contactId is not available
-          if (!contactIdStr || !a.contactId) {
-            const notesLower = a.conversationNotes?.toLowerCase() || '';
-            const contactNameLower = contact.name?.toLowerCase() || '';
-            const contactEmailLower = contact.email?.toLowerCase() || '';
-            return notesLower.includes(contactNameLower) || notesLower.includes(contactEmailLower);
-          }
-          return false;
-        });
-        return contactActivities.some(activity => {
-          if (!activity.nextActionDate) return false;
-          const actionDate = new Date(activity.nextActionDate);
-          return actionDate >= today && actionDate < weekEnd;
-        });
-      }).length;
-    })()
-  };
+  // Optimized stats calculation using activityLookups for better performance
+  const stats = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const weekEnd = new Date(today);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+    
+    let overdueCount = 0;
+    let thisWeekCount = 0;
+    
+    contacts.forEach(contact => {
+      const contactIdStr = contact._id?.toString ? contact._id.toString() : contact._id;
+      const contactActivities = contactIdStr ? (activityLookups.byContactId.get(contactIdStr) || []) : [];
+      
+      // Check for overdue actions
+      const hasOverdue = contactActivities.some(activity => {
+        if (!activity.nextActionDate) return false;
+        const actionDate = new Date(activity.nextActionDate);
+        return actionDate < today;
+      });
+      if (hasOverdue) overdueCount++;
+      
+      // Check for this week actions
+      const hasThisWeek = contactActivities.some(activity => {
+        if (!activity.nextActionDate) return false;
+        const actionDate = new Date(activity.nextActionDate);
+        return actionDate >= today && actionDate < weekEnd;
+      });
+      if (hasThisWeek) thisWeekCount++;
+    });
+    
+    return {
+      total: contacts.length,
+      active: contacts.filter(c => {
+        const stage = c.stage || 'New';
+        return stage === 'Qualified' || stage === 'Proposal' || stage === 'Negotiation';
+      }).length,
+      overdue: overdueCount,
+      thisWeek: thisWeekCount
+    };
+  }, [contacts, activityLookups]);
 
   if (loading) {
     return (
@@ -1551,7 +1572,7 @@ export default function ProjectDetail() {
                   const activities = contactActivities[contactId] || [];
                   const isLoadingActivities = loadingActivities[contactId];
                   
-                  // Get contact ID for filtering
+                  // Get contact ID for filtering (define before using)
                   const contactIdValue = contact._id?.toString ? contact._id.toString() : contact._id;
                   
                   // Get last interaction and next action using pre-computed lookups (much faster)
@@ -1855,14 +1876,19 @@ export default function ProjectDetail() {
                         </td>
                       </tr>
                       {isExpanded && (
-                        <tr>
-                          <td colSpan="8" className="px-6 py-4 bg-blue-50 border-t-2 border-blue-200">
+                        <tr className="animate-fade-in">
+                          <td colSpan="8" className="px-6 py-4 bg-blue-50 border-t-2 border-blue-200 transition-all duration-300">
                             {isLoadingActivities ? (
-                              <div className="flex items-center justify-center py-8">
-                                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                              <div className="flex items-center justify-center py-8 animate-fade-in">
+                                <div className="flex flex-col items-center gap-2">
+                                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                                  <span className="text-xs text-gray-500">Loading activities...</span>
+                                </div>
                               </div>
                             ) : (
-                              <ContactActivitySummary contact={contact} activities={activities} />
+                              <div className="animate-fade-in-up">
+                                <ContactActivitySummary contact={contact} activities={activities} />
+                              </div>
                             )}
                           </td>
                         </tr>

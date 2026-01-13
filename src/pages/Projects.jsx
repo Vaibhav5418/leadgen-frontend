@@ -10,16 +10,21 @@ export default function Projects() {
   const [error, setError] = useState(null);
   const [stats, setStats] = useState({
     total: 0,
-    active: 0,
-    draft: 0,
-    completed: 0
+    totalProspects: 0,
+    totalActivities: 0,
+    winRate: 0,
+    meetingRate: 0,
+    sqlCount: 0,
+    avgActivitiesPerProspect: 0
   });
+  const [analytics, setAnalytics] = useState(null);
   const [filterStage, setFilterStage] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [quickFilter, setQuickFilter] = useState('');
 
   useEffect(() => {
     fetchProjects();
+    fetchAnalytics();
   }, [searchQuery, filterStage, filterStatus, quickFilter]);
 
   const fetchProjects = async () => {
@@ -44,13 +49,17 @@ export default function Projects() {
         
         setProjects(filteredProjects);
         
-        // Calculate stats
+        // Calculate basic stats
         const allProjects = response.data.data || [];
+        const totalProspects = allProjects.reduce((sum, p) => sum + (p.totalProspects || 0), 0);
         setStats({
           total: allProjects.length,
-          active: allProjects.filter(p => p.status === 'active').length,
-          draft: allProjects.filter(p => p.status === 'draft').length,
-          completed: allProjects.filter(p => p.status === 'completed').length
+          totalProspects: totalProspects,
+          totalActivities: 0, // Will be updated from analytics
+          winRate: 0, // Will be updated from analytics
+          meetingRate: 0, // Will be updated from analytics
+          sqlCount: 0, // Will be updated from analytics
+          avgActivitiesPerProspect: 0 // Will be updated from analytics
         });
       }
     } catch (err) {
@@ -58,6 +67,30 @@ export default function Projects() {
       setError('Failed to load projects');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchAnalytics = async () => {
+    try {
+      const response = await API.get('/projects/analytics');
+      if (response.data.success) {
+        const data = response.data.data;
+        setAnalytics(data);
+        // Update stats with analytics data
+        setStats(prev => ({
+          ...prev,
+          totalProspects: data.overview.totalProspects || prev.totalProspects,
+          totalActivities: data.overview.totalActivities || 0,
+          winRate: data.pipeline?.conversion?.winRate || 0,
+          meetingRate: data.pipeline?.conversion?.meetingRate || 0,
+          sqlCount: data.pipeline?.conversion?.sql || 0,
+          avgActivitiesPerProspect: data.overview.totalProspects > 0 
+            ? parseFloat((data.overview.totalActivities / data.overview.totalProspects).toFixed(1))
+            : 0
+        }));
+      }
+    } catch (err) {
+      console.error('Error fetching analytics:', err);
     }
   };
 
@@ -134,52 +167,52 @@ export default function Projects() {
           <div className="text-sm text-gray-600 mt-1">Total Projects</div>
         </div>
 
-        {/* Active Projects */}
-        <div className="bg-gradient-to-br from-emerald-50 via-emerald-50 to-teal-50 rounded-xl border border-emerald-100 shadow-sm p-6">
+        {/* Total Prospects */}
+        <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl border border-purple-100 shadow-sm p-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-12 h-12 rounded-lg bg-white/80 border border-purple-100 flex items-center justify-center shadow-xs">
+              <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+              </svg>
+            </div>
+            <span className="text-xs font-semibold text-purple-700 bg-white/70 border border-purple-100 px-2 py-1 rounded-full shadow-xs">
+              Prospects
+            </span>
+          </div>
+          <div className="text-3xl font-bold text-gray-900 leading-tight">{stats.totalProspects.toLocaleString()}</div>
+          <div className="text-sm text-gray-600 mt-1">Total Prospects</div>
+        </div>
+
+        {/* Total Activities */}
+        <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-100 shadow-sm p-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="w-12 h-12 rounded-lg bg-white/80 border border-green-100 flex items-center justify-center shadow-xs">
+              <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+              </svg>
+            </div>
+            <span className="text-xs font-semibold text-green-700 bg-white/70 border border-green-100 px-2 py-1 rounded-full shadow-xs">
+              Activities
+            </span>
+          </div>
+          <div className="text-3xl font-bold text-gray-900 leading-tight">{stats.totalActivities.toLocaleString()}</div>
+          <div className="text-sm text-gray-600 mt-1">Total Activities</div>
+        </div>
+
+        {/* Win Rate */}
+        <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-100 shadow-sm p-6">
           <div className="flex items-center justify-between mb-3">
             <div className="w-12 h-12 rounded-lg bg-white/80 border border-emerald-100 flex items-center justify-center shadow-xs">
               <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
             <span className="text-xs font-semibold text-emerald-700 bg-white/70 border border-emerald-100 px-2 py-1 rounded-full shadow-xs">
-              In Flight
+              Conversion
             </span>
           </div>
-          <div className="text-3xl font-bold text-gray-900 leading-tight">{stats.active}</div>
-          <div className="text-sm text-gray-600 mt-1">Active Projects</div>
-        </div>
-
-        {/* Draft Projects */}
-        <div className="bg-gradient-to-br from-amber-50 to-orange-50 rounded-xl border border-amber-100 shadow-sm p-6">
-          <div className="flex items-center justify-between mb-3">
-            <div className="w-12 h-12 rounded-lg bg-white/80 border border-amber-100 flex items-center justify-center shadow-xs">
-              <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-            </div>
-            <span className="text-xs font-semibold text-amber-700 bg-white/70 border border-amber-100 px-2 py-1 rounded-full shadow-xs">
-              In Draft
-            </span>
-          </div>
-          <div className="text-3xl font-bold text-gray-900 leading-tight">{stats.draft}</div>
-          <div className="text-sm text-gray-600 mt-1">Draft Projects</div>
-        </div>
-
-        {/* Completed Projects */}
-        <div className="bg-gradient-to-br from-purple-50 via-indigo-50 to-blue-50 rounded-xl border border-indigo-100 shadow-sm p-6">
-          <div className="flex items-center justify-between mb-3">
-            <div className="w-12 h-12 rounded-lg bg-white/80 border border-indigo-100 flex items-center justify-center shadow-xs">
-              <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-            </div>
-            <span className="text-xs font-semibold text-indigo-700 bg-white/70 border border-indigo-100 px-2 py-1 rounded-full shadow-xs">
-              Completed
-            </span>
-          </div>
-          <div className="text-3xl font-bold text-gray-900 leading-tight">{stats.completed}</div>
-          <div className="text-sm text-gray-600 mt-1">Completed Projects</div>
+          <div className="text-3xl font-bold text-gray-900 leading-tight">{stats.winRate}%</div>
+          <div className="text-sm text-gray-600 mt-1">Win Rate</div>
         </div>
       </div>
 

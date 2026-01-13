@@ -61,8 +61,7 @@ export default function ProjectDashboard() {
     { id: 'overview', label: 'Overview', icon: 'grid' },
     { id: 'pipeline', label: 'Pipeline', icon: 'funnel' },
     { id: 'channels', label: 'Channels', icon: 'megaphone' },
-    { id: 'team', label: 'Team Performance', icon: 'users' },
-    { id: 'projects', label: 'Project Health', icon: 'health' }
+    { id: 'team', label: 'Team Performance', icon: 'users' }
   ];
 
   // Skeleton loader
@@ -138,9 +137,20 @@ export default function ProjectDashboard() {
       <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Project Analytics Dashboard</h1>
-              <p className="text-sm text-gray-600 mt-1">Comprehensive insights into your lead generation campaigns</p>
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => navigate('/projects')}
+                className="flex items-center justify-center w-10 h-10 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors"
+                title="Back to Projects"
+              >
+                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">Project Analytics Dashboard</h1>
+                <p className="text-sm text-gray-600 mt-1">Comprehensive insights into your lead generation campaigns</p>
+              </div>
             </div>
             <div className="flex items-center gap-3">
               <select
@@ -152,12 +162,6 @@ export default function ProjectDashboard() {
                 <option value="30d">Last 30 days</option>
                 <option value="90d">Last 90 days</option>
               </select>
-              <button
-                onClick={() => navigate('/projects')}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                View Projects
-              </button>
             </div>
           </div>
 
@@ -197,15 +201,50 @@ export default function ProjectDashboard() {
                 color="blue"
               />
               <MetricCard
-                title="Active Projects"
-                value={analytics.overview.activeProjects}
-                subtitle={`${analytics.overview.draftProjects} in draft`}
+                title="Win Rate"
+                value={`${analytics.pipeline.conversion.winRate}%`}
+                subtitle={`${analytics.pipeline.conversion.won} won / ${analytics.pipeline.conversion.total} total`}
                 icon={
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
                 }
                 color="green"
+              />
+              <MetricCard
+                title="Meeting Rate"
+                value={`${analytics.pipeline.conversion.meetingRate}%`}
+                subtitle={`${analytics.pipeline.conversion.meetings} meetings scheduled`}
+                icon={
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                }
+                color="blue"
+              />
+              <MetricCard
+                title="SQL Count"
+                value={analytics.pipeline.conversion.sql || 0}
+                subtitle="Sales Qualified Leads"
+                icon={
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                  </svg>
+                }
+                color="purple"
+              />
+              <MetricCard
+                title="Avg Activities/Prospect"
+                value={analytics.overview.totalProspects > 0 
+                  ? (analytics.overview.totalActivities / analytics.overview.totalProspects).toFixed(1)
+                  : '0'}
+                subtitle="Average engagement"
+                icon={
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                }
+                color="orange"
               />
               <MetricCard
                 title="Total Prospects"
@@ -607,65 +646,6 @@ export default function ProjectDashboard() {
           </div>
         )}
 
-        {activeTab === 'projects' && (
-          <div className="space-y-6">
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Project Health Score</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50 border-b border-gray-200">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Project</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Health Score</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Prospects</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Activities</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Recent Activity</th>
-                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Won/Lost</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {analytics.projects.health.map((project) => (
-                      <tr
-                        key={project.id}
-                        onClick={() => navigate(`/projects/${project.id}`)}
-                        className="hover:bg-gray-50 cursor-pointer"
-                      >
-                        <td className="px-4 py-3">
-                          <div className="text-sm font-medium text-gray-900">{project.companyName}</div>
-                          <div className="text-xs text-gray-500">{project.status}</div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <div className="flex-1 bg-gray-200 rounded-full h-2 w-24">
-                              <div
-                                className={`h-2 rounded-full ${
-                                  project.healthScore >= 70 ? 'bg-green-500' :
-                                  project.healthScore >= 40 ? 'bg-yellow-500' : 'bg-red-500'
-                                }`}
-                                style={{ width: `${project.healthScore}%` }}
-                              ></div>
-                            </div>
-                            <span className="text-sm font-semibold text-gray-900">{project.healthScore}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-sm text-gray-600">{project.contactCount}</td>
-                        <td className="px-4 py-3 text-sm text-gray-600">{project.activityCount}</td>
-                        <td className="px-4 py-3 text-sm text-gray-600">{project.recentActivity}</td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm font-semibold text-green-600">{project.wonCount}</span>
-                            <span className="text-sm text-gray-400">/</span>
-                            <span className="text-sm font-semibold text-red-600">{project.lostCount}</span>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );
