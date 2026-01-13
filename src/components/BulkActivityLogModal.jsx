@@ -27,6 +27,24 @@ export default function BulkActivityLogModal({ isOpen, onClose, type, selectedCo
   const [progress, setProgress] = useState({ current: 0, total: 0, success: 0, failed: 0 });
   const [savingField, setSavingField] = useState({ phone: false, email: false, linkedin: false });
   const [showVariations, setShowVariations] = useState(false);
+  const [linkedInAccounts, setLinkedInAccounts] = useState([]);
+  const [newAccountName, setNewAccountName] = useState('');
+  const [showAddAccount, setShowAddAccount] = useState(false);
+
+  // Load LinkedIn accounts from localStorage on component mount
+  useEffect(() => {
+    const storedAccounts = localStorage.getItem('linkedInAccounts');
+    if (storedAccounts) {
+      try {
+        setLinkedInAccounts(JSON.parse(storedAccounts));
+      } catch (error) {
+        console.error('Error parsing LinkedIn accounts:', error);
+        setLinkedInAccounts([]);
+      }
+    } else {
+      setLinkedInAccounts([]);
+    }
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -66,8 +84,21 @@ export default function BulkActivityLogModal({ isOpen, onClose, type, selectedCo
       });
       setErrors({});
       setShowVariations(false);
+      setShowAddAccount(false);
+      setNewAccountName('');
     }
   }, [isOpen, selectedContacts.size]);
+
+  const handleAddLinkedInAccount = () => {
+    if (newAccountName.trim() && !linkedInAccounts.includes(newAccountName.trim())) {
+      const updatedAccounts = [...linkedInAccounts, newAccountName.trim()];
+      setLinkedInAccounts(updatedAccounts);
+      localStorage.setItem('linkedInAccounts', JSON.stringify(updatedAccounts));
+      setFormData(prev => ({ ...prev, linkedInAccountName: newAccountName.trim() }));
+      setNewAccountName('');
+      setShowAddAccount(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -139,14 +170,7 @@ export default function BulkActivityLogModal({ isOpen, onClose, type, selectedCo
   const validate = () => {
     const newErrors = {};
 
-    // Status is required for Email and LinkedIn activities
-    if (type === 'email' && !formData.status) {
-      newErrors.status = 'Status is required';
-    }
-
-    if (type === 'linkedin' && !formData.status) {
-      newErrors.status = 'Status is required';
-    }
+    // Status is now optional for all activity types
 
     // Conversation Notes is now optional - no validation needed
 
@@ -752,26 +776,65 @@ export default function BulkActivityLogModal({ isOpen, onClose, type, selectedCo
                 <label className="block text-xs font-semibold text-gray-700 mb-2">
                   LinkedIn Account Used <span className="text-gray-400 text-xs font-normal">(Optional)</span>
                 </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
-                    </svg>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <svg className="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                      </svg>
+                    </div>
+                    <select
+                      value={formData.linkedInAccountName}
+                      onChange={(e) => handleChange('linkedInAccountName', e.target.value)}
+                      disabled={loading}
+                      className="w-full pl-10 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white hover:border-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <option value="">Select LinkedIn account</option>
+                      {linkedInAccounts.map((account, index) => (
+                        <option key={index} value={account}>{account}</option>
+                      ))}
+                    </select>
                   </div>
-                  <input
-                    type="text"
-                    value={formData.linkedInAccountName}
-                    onChange={(e) => handleChange('linkedInAccountName', e.target.value)}
+                  <button
+                    type="button"
+                    onClick={() => setShowAddAccount(!showAddAccount)}
                     disabled={loading}
-                    className="w-full pl-10 pr-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white hover:border-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
-                    placeholder="Enter LinkedIn account name used to send connection"
-                  />
+                    className="px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {showAddAccount ? 'Cancel' : '+ Add'}
+                  </button>
                 </div>
+                {showAddAccount && (
+                  <div className="mt-3 flex gap-2">
+                    <input
+                      type="text"
+                      value={newAccountName}
+                      onChange={(e) => setNewAccountName(e.target.value)}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleAddLinkedInAccount();
+                        }
+                      }}
+                      disabled={loading}
+                      className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                      placeholder="Enter new LinkedIn account name"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddLinkedInAccount}
+                      disabled={!newAccountName.trim() || linkedInAccounts.includes(newAccountName.trim()) || loading}
+                      className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                    >
+                      Add
+                    </button>
+                  </div>
+                )}
                 <p className="mt-2 text-xs text-gray-500 flex items-center gap-1">
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                   </svg>
-                  Name of the LinkedIn account that sent the connection request
+                  Select or add a LinkedIn account that sent the connection request
                 </p>
               </div>
             )}
@@ -832,7 +895,7 @@ export default function BulkActivityLogModal({ isOpen, onClose, type, selectedCo
             {(type === 'email' || type === 'linkedin') && (
               <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200">
                 <label className="block text-xs font-semibold text-gray-700 mb-2">
-                  Status <span className="text-red-500">*</span>
+                  Status <span className="text-gray-400 text-xs font-normal">(Optional)</span>
                 </label>
                 <select
                   value={formData.status}

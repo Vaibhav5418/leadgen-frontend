@@ -12,6 +12,7 @@ import Projects from './pages/Projects';
 import CreateProject from './pages/CreateProject';
 import ProjectDetail from './pages/ProjectDetail';
 import ProjectDashboard from './pages/ProjectDashboard';
+import ProspectDashboard from './pages/ProspectDashboard';
 import Report from './pages/Report';
 import LinkedInReport from './pages/LinkedInReport';
 import ColdCallingReport from './pages/ColdCallingReport';
@@ -122,6 +123,15 @@ export default function App() {
             element={
               <PrivateRoute>
                 <ProjectDashboard />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/prospects/dashboard"
+            element={
+              <PrivateRoute>
+                <ProspectDashboard />
               </PrivateRoute>
             }
           />
