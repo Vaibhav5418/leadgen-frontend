@@ -12,7 +12,7 @@ export default function Projects() {
     total: 0,
     totalProspects: 0,
     totalActivities: 0,
-    winRate: 0,
+    activeProjects: 0,
     meetingRate: 0,
     sqlCount: 0,
     avgActivitiesPerProspect: 0
@@ -53,11 +53,13 @@ export default function Projects() {
         // Calculate basic stats
         const allProjects = response.data.data || [];
         const totalProspects = allProjects.reduce((sum, p) => sum + (p.totalProspects || 0), 0);
+        // Calculate active projects count
+        const activeProjectsCount = allProjects.filter(p => p.status === 'active').length;
         setStats({
           total: allProjects.length,
           totalProspects: totalProspects,
           totalActivities: 0, // Will be updated from analytics
-          winRate: 0, // Will be updated from analytics
+          activeProjects: activeProjectsCount,
           meetingRate: 0, // Will be updated from analytics
           sqlCount: 0, // Will be updated from analytics
           avgActivitiesPerProspect: 0 // Will be updated from analytics
@@ -82,7 +84,7 @@ export default function Projects() {
           ...prev,
           totalProspects: data.overview.totalProspects || prev.totalProspects,
           totalActivities: data.overview.totalActivities || 0,
-          winRate: data.pipeline?.conversion?.winRate || 0,
+          activeProjects: data.overview.activeProjects || prev.activeProjects,
           meetingRate: data.pipeline?.conversion?.meetingRate || 0,
           sqlCount: data.pipeline?.conversion?.sql || 0,
           avgActivitiesPerProspect: data.overview.totalProspects > 0 
@@ -227,20 +229,20 @@ export default function Projects() {
           <div className="text-sm text-gray-600 mt-1">Total Activities</div>
         </div>
 
-        {/* Win Rate */}
+        {/* Active Projects */}
         <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-100 shadow-sm p-6">
           <div className="flex items-center justify-between mb-3">
             <div className="w-12 h-12 rounded-lg bg-white/80 border border-emerald-100 flex items-center justify-center shadow-xs">
               <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
               </svg>
             </div>
             <span className="text-xs font-semibold text-emerald-700 bg-white/70 border border-emerald-100 px-2 py-1 rounded-full shadow-xs">
-              Conversion
+              Projects
             </span>
           </div>
-          <div className="text-3xl font-bold text-gray-900 leading-tight">{stats.winRate}%</div>
-          <div className="text-sm text-gray-600 mt-1">Win Rate</div>
+          <div className="text-3xl font-bold text-gray-900 leading-tight">{stats.activeProjects}</div>
+          <div className="text-sm text-gray-600 mt-1">Active Projects</div>
         </div>
       </div>
 

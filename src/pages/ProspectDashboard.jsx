@@ -178,11 +178,6 @@ export default function ProspectDashboard() {
                  a.status === 'SQL')
               );
               break;
-            case 'won':
-              filteredActivities = activities.filter(a => 
-                a.type === 'call' && a.status === 'WON'
-              );
-              break;
             // Legacy stages (for backward compatibility)
             case 'followups':
               const callCounts = {};
@@ -453,8 +448,7 @@ export default function ProspectDashboard() {
         { key: 'detailsShared', label: 'Details Shared', clickable: true },
         { key: 'demoBooked', label: 'Demo Booked', clickable: true },
         { key: 'demoCompleted', label: 'Demo Completed', clickable: true },
-        { key: 'sql', label: 'SQL', clickable: true },
-        { key: 'won', label: 'WON', clickable: true }
+        { key: 'sql', label: 'SQL', clickable: true }
       ];
       // Fallback to old structure if new keys don't exist
       if (data.callSent !== undefined && data.callsAttempted === undefined) {
