@@ -71,11 +71,11 @@ export default function ProjectDetail() {
       fetchProject().then(() => {
         // Fetch contacts and activities in parallel for better performance
         Promise.all([
-          fetchAllProjectActivities().catch(err => {
-            console.error('Error fetching activities:', err);
+        fetchAllProjectActivities().catch(err => {
+          console.error('Error fetching activities:', err);
           }),
-          fetchImportedContacts().catch(err => {
-            console.error('Error fetching imported contacts:', err);
+        fetchImportedContacts().catch(err => {
+          console.error('Error fetching imported contacts:', err);
           })
         ]);
       });
@@ -247,8 +247,10 @@ export default function ProjectDetail() {
         
         // Track latest activity status (for all activity types - call, email, linkedin)
         // This determines the stage based on the most recent activity status
+        // Only track activities that have a status - find the most recent one with a status
         if (activity.status) {
           const existing = lookups.latestActivityStatusByContactId.get(contactIdStr);
+          // Only update if this activity is more recent than the existing one
           if (!existing || new Date(activity.createdAt) > new Date(existing.createdAt)) {
             lookups.latestActivityStatusByContactId.set(contactIdStr, {
               status: activity.status,
@@ -273,7 +275,11 @@ export default function ProjectDetail() {
       setLoadingActivities(prev => ({ ...prev, [contactId]: true }));
       
       // First, try to get from cached activities (much faster)
-      const cachedActivities = activityLookups.byContactId.get(contactIdStr) || [];
+      // Filter cached activities by projectId to ensure project-specific activities
+      const allCachedActivities = activityLookups.byContactId.get(contactIdStr) || [];
+      const cachedActivities = allCachedActivities.filter(act => 
+        act.projectId && act.projectId.toString() === id
+      );
       
       if (cachedActivities.length > 0) {
         // Use cached data - no API call needed
@@ -287,7 +293,8 @@ export default function ProjectDetail() {
       
       // Only make API call if not in cache (should be rare)
       try {
-        const response = await API.get(`/activities/contact/${contactIdStr}`);
+        // Include projectId in query to ensure we only get activities for this specific project
+        const response = await API.get(`/activities/contact/${contactIdStr}?projectId=${id}`);
         if (response.data.success) {
           const activities = response.data.data || [];
           setContactActivities(prev => ({
@@ -297,25 +304,30 @@ export default function ProjectDetail() {
         }
       } catch (apiErr) {
         // If API fails (404 or other error), try fallback to project activities
+        // Ensure we only use activities from the current project
         console.warn(`API call failed for contact ${contactIdStr}, using cached activities:`, apiErr.message);
         const fallbackActivities = allProjectActivities.filter(activity => {
-          if (activity.contactId) {
-            const activityContactIdStr = activity.contactId.toString ? activity.contactId.toString() : activity.contactId;
-            if (activityContactIdStr === contactIdStr) return true;
-          }
-          // Fallback to notes matching only if contactId doesn't match
+          // First, ensure activity belongs to current project
+          const activityProjectId = activity.projectId?.toString ? activity.projectId.toString() : activity.projectId;
+          if (activityProjectId !== id) return false; // Skip activities from other projects
+          
+              if (activity.contactId) {
+                const activityContactIdStr = activity.contactId.toString ? activity.contactId.toString() : activity.contactId;
+                if (activityContactIdStr === contactIdStr) return true;
+              }
+              // Fallback to notes matching only if contactId doesn't match
           if (contactEmail || contactName) {
             const emailLower = contactEmail?.toLowerCase() || '';
             const nameLower = contactName?.toLowerCase() || '';
-            const notesLower = activity.conversationNotes?.toLowerCase() || '';
-            return notesLower.includes(emailLower) || notesLower.includes(nameLower);
+              const notesLower = activity.conversationNotes?.toLowerCase() || '';
+              return notesLower.includes(emailLower) || notesLower.includes(nameLower);
           }
           return false;
         });
-        setContactActivities(prev => ({
-          ...prev,
+          setContactActivities(prev => ({
+            ...prev,
           [contactId]: fallbackActivities.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-        }));
+          }));
       }
     } catch (err) {
       console.error('Error fetching activities:', err);
@@ -330,15 +342,15 @@ export default function ProjectDetail() {
     
     if (isExpanded) {
       startTransition(() => {
-        setExpandedContacts(prev => {
-          const newSet = new Set(prev);
-          newSet.delete(contactId);
-          return newSet;
+      setExpandedContacts(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(contactId);
+        return newSet;
         });
       });
     } else {
       startTransition(() => {
-        setExpandedContacts(prev => new Set(prev).add(contactId));
+      setExpandedContacts(prev => new Set(prev).add(contactId));
       });
       // Fetch activities asynchronously - don't block UI
       fetchActivitiesForContact(contactId, contactEmail, contactName).catch(err => {
@@ -737,7 +749,11 @@ export default function ProjectDetail() {
       
       const contactId = contact._id || contact.name;
       const contactIdStr = contact._id?.toString ? contact._id.toString() : contact._id;
+      // Filter activities by contactId and ensure they belong to current project
       const contactActivities = allProjectActivities.filter(a => {
+        // Ensure activity belongs to current project
+        const activityProjectId = a.projectId?.toString ? a.projectId.toString() : a.projectId;
+        if (activityProjectId !== id) return false; // Skip activities from other projects
         // Prioritize contactId matching for data isolation
         if (contactIdStr && a.contactId) {
           const activityContactIdStr = a.contactId.toString ? a.contactId.toString() : a.contactId;
@@ -857,8 +873,8 @@ export default function ProjectDetail() {
 
   // Optimized stats calculation using activityLookups for better performance
   const stats = useMemo(() => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
     const weekEnd = new Date(today);
     weekEnd.setDate(weekEnd.getDate() + 7);
     
@@ -866,23 +882,23 @@ export default function ProjectDetail() {
     let thisWeekCount = 0;
     
     contacts.forEach(contact => {
-      const contactIdStr = contact._id?.toString ? contact._id.toString() : contact._id;
+        const contactIdStr = contact._id?.toString ? contact._id.toString() : contact._id;
       const contactActivities = contactIdStr ? (activityLookups.byContactId.get(contactIdStr) || []) : [];
       
       // Check for overdue actions
       const hasOverdue = contactActivities.some(activity => {
-        if (!activity.nextActionDate) return false;
-        const actionDate = new Date(activity.nextActionDate);
-        return actionDate < today;
-      });
+          if (!activity.nextActionDate) return false;
+          const actionDate = new Date(activity.nextActionDate);
+          return actionDate < today;
+        });
       if (hasOverdue) overdueCount++;
       
       // Check for this week actions
       const hasThisWeek = contactActivities.some(activity => {
-        if (!activity.nextActionDate) return false;
-        const actionDate = new Date(activity.nextActionDate);
-        return actionDate >= today && actionDate < weekEnd;
-      });
+          if (!activity.nextActionDate) return false;
+          const actionDate = new Date(activity.nextActionDate);
+          return actionDate >= today && actionDate < weekEnd;
+        });
       if (hasThisWeek) thisWeekCount++;
     });
     
@@ -935,21 +951,21 @@ export default function ProjectDetail() {
           </div>
         </div>
         <div className="flex items-center gap-3 flex-wrap justify-end">
-          <button
+            <button
             onClick={() => navigate(`/prospects/dashboard?projectId=${id}`)}
             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg hover:from-indigo-700 hover:to-purple-700 transition-colors font-medium text-sm shadow-sm"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
+              </svg>
             Prospect Analytics
-          </button>
+            </button>
           <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm text-gray-700">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
+              </svg>
             Export
-          </button>
+            </button>
           <button 
             onClick={handleToggleProspectSuggestions}
             disabled={!hasICP}
@@ -1907,13 +1923,13 @@ export default function ProjectDetail() {
                             {isLoadingActivities ? (
                               <div className="flex items-center justify-center py-8 animate-fade-in">
                                 <div className="flex flex-col items-center gap-2">
-                                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
                                   <span className="text-xs text-gray-500">Loading activities...</span>
                                 </div>
                               </div>
                             ) : (
                               <div className="animate-fade-in-up">
-                                <ContactActivitySummary contact={contact} activities={activities} />
+                              <ContactActivitySummary contact={contact} activities={activities} />
                               </div>
                             )}
                           </td>

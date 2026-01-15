@@ -94,6 +94,27 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
     }
   };
 
+  // Fetch the most recent activity of the same type for date pre-filling
+  const fetchLastActivityByType = async () => {
+    if (!contactId || !type) return null;
+    try {
+      const response = await API.get(`/activities/contact/${contactId}`);
+      if (response.data.success && response.data.data) {
+        // Filter activities by the current type and get the most recent one
+        const activities = response.data.data;
+        const sameTypeActivities = activities.filter(act => act.type === type);
+        if (sameTypeActivities.length > 0) {
+          // Sort by createdAt descending and get the first one
+          sameTypeActivities.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+          return sameTypeActivities[0];
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching last activity by type:', error);
+    }
+    return null;
+  };
+
   useEffect(() => {
     if (isOpen && !hasInitializedRef.current) {
       // Trigger animation after modal is mounted
@@ -135,6 +156,26 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
           email: activity.email || email || null,
           linkedin: activity.linkedInUrl || linkedInProfileUrl || null
         });
+
+        // If lastActivity is not of the same type, fetch the most recent activity of the same type for date pre-filling
+        if (activity.type !== type) {
+          fetchLastActivityByType().then(lastActivityByType => {
+            if (lastActivityByType) {
+              setFormData(prev => {
+                const updated = { ...prev };
+                // Pre-fill the date based on the activity type
+                if (type === 'call' && lastActivityByType.callDate) {
+                  updated.callDate = new Date(lastActivityByType.callDate).toISOString().split('T')[0];
+                } else if (type === 'email' && lastActivityByType.emailDate) {
+                  updated.emailDate = new Date(lastActivityByType.emailDate).toISOString().split('T')[0];
+                } else if (type === 'linkedin' && lastActivityByType.linkedinDate) {
+                  updated.linkedinDate = new Date(lastActivityByType.linkedinDate).toISOString().split('T')[0];
+                }
+                return updated;
+              });
+            }
+          });
+        }
       } else {
         // Initialize form data with props from database (if they exist) and set current date
         setFormData(prev => ({
@@ -151,15 +192,33 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
           email: email || null,
           linkedin: linkedInProfileUrl || null
         });
+
+        // Fetch the most recent activity of the same type to pre-fill the date
+        fetchLastActivityByType().then(lastActivityByType => {
+          if (lastActivityByType) {
+            setFormData(prev => {
+              const updated = { ...prev };
+              // Pre-fill the date based on the activity type
+              if (type === 'call' && lastActivityByType.callDate) {
+                updated.callDate = new Date(lastActivityByType.callDate).toISOString().split('T')[0];
+              } else if (type === 'email' && lastActivityByType.emailDate) {
+                updated.emailDate = new Date(lastActivityByType.emailDate).toISOString().split('T')[0];
+              } else if (type === 'linkedin' && lastActivityByType.linkedinDate) {
+                updated.linkedinDate = new Date(lastActivityByType.linkedinDate).toISOString().split('T')[0];
+              }
+              return updated;
+            });
+          }
+        });
       }
     } else if (!isOpen) {
       setIsVisible(false);
       // Reset initialization flag when modal closes
       hasInitializedRef.current = false;
     }
-    // Use a stable key for lastActivity to avoid dependency array size changes
+    // Use a stable key for lastActivity and contactId to avoid dependency array size changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, editMode, activityId, type, phoneNumber, email, linkedInProfileUrl, lastActivity?._id]);
+  }, [isOpen, editMode, activityId, type, phoneNumber, email, linkedInProfileUrl, contactId || null, lastActivity?._id]);
 
   if (!isOpen) return null;
 

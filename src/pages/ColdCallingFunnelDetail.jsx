@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import API from '../api/axios';
 
+// Version: 2.0 - Updated funnel stages (10 stages)
 export default function ColdCallingFunnelDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -11,14 +12,15 @@ export default function ColdCallingFunnelDetail() {
   const [loading, setLoading] = useState(true);
   const [funnelData, setFunnelData] = useState({
     prospectData: 0,
-    callSent: 0,
-    accepted: 0,
-    followups: 0,
-    cip: 0,
-    meetingProposed: 0,
-    scheduled: 0,
-    completed: 0,
-    sql: 0
+    callsAttempted: 0,
+    callsConnected: 0,
+    decisionMakerReached: 0,
+    interested: 0,
+    detailsShared: 0,
+    demoBooked: 0,
+    demoCompleted: 0,
+    sql: 0,
+    won: 0
   });
 
   useEffect(() => {
@@ -28,10 +30,24 @@ export default function ColdCallingFunnelDetail() {
   }, [id]);
 
   useEffect(() => {
-    if (contacts.length > 0 || activities.length > 0) {
+    if (id && (contacts.length > 0 || activities.length > 0)) {
       calculateFunnelData();
+    } else if (id && contacts.length === 0 && activities.length === 0) {
+      // Initialize with zero values if no data
+      setFunnelData({
+        prospectData: 0,
+        callsAttempted: 0,
+        callsConnected: 0,
+        decisionMakerReached: 0,
+        interested: 0,
+        detailsShared: 0,
+        demoBooked: 0,
+        demoCompleted: 0,
+        sql: 0,
+        won: 0
+      });
     }
-  }, [contacts, activities]);
+  }, [id, contacts, activities]);
 
   const fetchData = async () => {
     try {
@@ -64,114 +80,137 @@ export default function ColdCallingFunnelDetail() {
   };
 
   const calculateFunnelData = () => {
+    console.log('Calculating funnel data...', { contactsCount: contacts.length, activitiesCount: activities.length });
+    
     const data = {
       prospectData: contacts.length, // Total prospects from project
-      callSent: 0,
-      accepted: 0,
-      followups: 0,
-      cip: 0,
-      meetingProposed: 0,
-      scheduled: 0,
-      completed: 0,
-      sql: 0
+      callsAttempted: 0,
+      callsConnected: 0,
+      decisionMakerReached: 0,
+      interested: 0,
+      detailsShared: 0,
+      demoBooked: 0,
+      demoCompleted: 0,
+      sql: 0,
+      won: 0
     };
 
-    // Group activities by contact
-    const contactActivities = {};
-    activities.forEach(activity => {
-      if (!activity.contactId) return;
-      const contactId = activity.contactId.toString();
-      if (!contactActivities[contactId]) {
-        contactActivities[contactId] = [];
-      }
-      contactActivities[contactId].push(activity);
-    });
+    if (activities.length === 0) {
+      console.log('No activities found, setting default data');
+      setFunnelData(data);
+      return;
+    }
 
-    // Calculate metrics
-    const callSentSet = new Set();
-    const acceptedSet = new Set();
-    const cipSet = new Set();
-    const meetingProposedSet = new Set();
-    const scheduledSet = new Set();
-    const completedSet = new Set();
+    // Calculate metrics using Sets to track unique contacts at each stage
+    const callsAttemptedSet = new Set();
+    const callsConnectedSet = new Set();
+    const decisionMakerReachedSet = new Set();
+    const interestedSet = new Set();
+    const detailsSharedSet = new Set();
+    const demoBookedSet = new Set();
+    const demoCompletedSet = new Set();
     const sqlSet = new Set();
+    const wonSet = new Set();
 
     activities.forEach(activity => {
       const contactId = activity.contactId?.toString();
       if (!contactId) return;
 
-      // Call Sent - if callDate exists, it means a call was made
+      // Calls Attempted - if callDate exists, it means a call was attempted
       if (activity.callDate) {
-        callSentSet.add(contactId);
+        callsAttemptedSet.add(contactId);
       }
 
-      // Accepted - if callStatus is 'Interested' or 'Details Shared' or 'Demo Booked'
-      if (activity.callStatus === 'Interested' || activity.callStatus === 'Details Shared' || activity.callStatus === 'Demo Booked') {
-        acceptedSet.add(contactId);
+      // Calls Connected - if callStatus indicates a connection (not Ring, Busy, Hang Up, Switch Off, Invalid)
+      const connectedStatuses = ['Interested', 'Not Interested', 'Call Back', 'Future', 'Details Shared', 'Demo Booked', 'Demo Completed', 'Existing'];
+      if (activity.callStatus && connectedStatuses.includes(activity.callStatus)) {
+        callsConnectedSet.add(contactId);
       }
 
-      // Conversations in Progress (CIP) - if callStatus indicates ongoing conversation
-      if (activity.callStatus === 'Interested' || activity.callStatus === 'Call Back' || activity.callStatus === 'Future') {
-        cipSet.add(contactId);
+      // Decision Maker Reached - if callStatus indicates decision maker engagement
+      const decisionMakerStatuses = ['Interested', 'Details Shared', 'Demo Booked', 'Demo Completed'];
+      if (activity.callStatus && decisionMakerStatuses.includes(activity.callStatus)) {
+        decisionMakerReachedSet.add(contactId);
       }
 
-      // Meeting Proposed - if nextAction contains meeting-related terms or status indicates meeting
-      if (activity.nextAction && (
-        activity.nextAction.toLowerCase().includes('meeting') ||
-        activity.nextAction.toLowerCase().includes('demo') ||
-        activity.nextAction.toLowerCase().includes('call')
-      )) {
-        meetingProposedSet.add(contactId);
+      // Interested - if callStatus is 'Interested'
+      if (activity.callStatus === 'Interested') {
+        interestedSet.add(contactId);
       }
 
-      // Meeting Scheduled - if callStatus is 'Demo Booked' or nextActionDate is set
-      if (activity.callStatus === 'Demo Booked' || activity.nextActionDate) {
-        scheduledSet.add(contactId);
+      // Details Shared - if callStatus is 'Details Shared'
+      if (activity.callStatus === 'Details Shared') {
+        detailsSharedSet.add(contactId);
       }
 
-      // Meeting Completed - if callStatus is 'Demo Completed'
+      // Demo Booked - if callStatus is 'Demo Booked'
+      if (activity.callStatus === 'Demo Booked') {
+        demoBookedSet.add(contactId);
+      }
+
+      // Demo Completed - if callStatus is 'Demo Completed'
       if (activity.callStatus === 'Demo Completed') {
-        completedSet.add(contactId);
+        demoCompletedSet.add(contactId);
       }
 
       // SQL (Sales Qualified Lead) - if callStatus is 'Demo Completed' or 'Interested' with high engagement
       if (activity.callStatus === 'Demo Completed' || 
-          (activity.callStatus === 'Interested' && activity.conversationNotes && activity.conversationNotes.length > 50)) {
+          (activity.callStatus === 'Interested' && activity.conversationNotes && activity.conversationNotes.length > 50) ||
+          activity.status === 'SQL') {
         sqlSet.add(contactId);
       }
-    });
 
-    // Calculate followups (contacts with more than one call)
-    Object.keys(contactActivities).forEach(contactId => {
-      const contactActs = contactActivities[contactId];
-      const callsWithNotes = contactActs.filter(a => a.conversationNotes && a.conversationNotes.trim() !== '');
-      if (callsWithNotes.length > 1 || contactActs.length > 1) {
-        data.followups++;
+      // WON - if status is 'WON'
+      if (activity.status === 'WON') {
+        wonSet.add(contactId);
       }
     });
 
-    data.callSent = callSentSet.size;
-    data.accepted = acceptedSet.size;
-    data.cip = cipSet.size;
-    data.meetingProposed = meetingProposedSet.size;
-    data.scheduled = scheduledSet.size;
-    data.completed = completedSet.size;
+    // Set final counts
+    data.callsAttempted = callsAttemptedSet.size;
+    data.callsConnected = callsConnectedSet.size;
+    data.decisionMakerReached = decisionMakerReachedSet.size;
+    data.interested = interestedSet.size;
+    data.detailsShared = detailsSharedSet.size;
+    data.demoBooked = demoBookedSet.size;
+    data.demoCompleted = demoCompletedSet.size;
     data.sql = sqlSet.size;
+    data.won = wonSet.size;
 
+    console.log('Funnel data calculated:', data);
+    console.log('Stage breakdown:', {
+      callsAttempted: data.callsAttempted,
+      callsConnected: data.callsConnected,
+      decisionMakerReached: data.decisionMakerReached,
+      interested: data.interested,
+      detailsShared: data.detailsShared,
+      demoBooked: data.demoBooked,
+      demoCompleted: data.demoCompleted,
+      sql: data.sql,
+      won: data.won
+    });
     setFunnelData(data);
   };
 
+  // Updated 10-stage funnel configuration
   const funnelRows = [
     { key: 'prospectData', label: 'Prospect Data', description: 'Total prospects from this project' },
-    { key: 'callSent', label: 'Call Sent', description: 'Calls made to prospects' },
-    { key: 'accepted', label: 'Accepted', description: 'Calls accepted/answered' },
-    { key: 'followups', label: 'Followups', description: 'Contacts with multiple calls' },
-    { key: 'cip', label: 'CIP', description: 'Conversations in Progress' },
-    { key: 'meetingProposed', label: 'Meeting Proposed', description: 'Meetings proposed' },
-    { key: 'scheduled', label: 'Scheduled', description: 'Meetings scheduled' },
-    { key: 'completed', label: 'Completed', description: 'Meetings completed' },
-    { key: 'sql', label: 'SQL', description: 'Sales Qualified Leads' }
+    { key: 'callsAttempted', label: 'Calls Attempted', description: 'Total calls made to prospects' },
+    { key: 'callsConnected', label: 'Calls Connected', description: 'Calls where contact answered' },
+    { key: 'decisionMakerReached', label: 'Decision Maker Reached', description: 'Reached decision maker' },
+    { key: 'interested', label: 'Interested', description: 'Prospects showing interest' },
+    { key: 'detailsShared', label: 'Details Shared', description: 'Product/service details shared' },
+    { key: 'demoBooked', label: 'Demo Booked', description: 'Demos scheduled' },
+    { key: 'demoCompleted', label: 'Demo Completed', description: 'Demos successfully completed' },
+    { key: 'sql', label: 'SQL', description: 'Sales Qualified Leads' },
+    { key: 'won', label: 'WON', description: 'Deals closed successfully' }
   ];
+
+  // Debug: Log funnel rows to verify they're correct
+  useEffect(() => {
+    console.log('Funnel rows configured:', funnelRows.length, 'stages');
+    console.log('Stage labels:', funnelRows.map(r => r.label));
+  }, []);
 
   if (loading) {
     return (
@@ -222,19 +261,30 @@ export default function ColdCallingFunnelDetail() {
         {/* Enterprise Funnel Visualization - Compact */}
         <div className="bg-gradient-to-br from-gray-50 via-white to-gray-50 border border-gray-200 rounded-lg shadow-lg p-4 backdrop-blur-sm">
           <div className="mb-3 text-center">
-            <h2 className="text-base font-bold text-gray-800 mb-0.5">Sales Funnel Performance</h2>
-            <p className="text-[10px] text-gray-600">Conversion metrics and pipeline health</p>
+            <h2 className="text-base font-bold text-gray-800 mb-0.5">Cold Calling Funnel Performance</h2>
+            <p className="text-[10px] text-gray-600">Updated: 10-Stage Funnel • Conversion metrics and pipeline health</p>
+            <div className="mt-1 text-[9px] text-blue-600 font-semibold">
+              Stages: {funnelRows.length} | Total Prospects: {funnelData.prospectData}
+            </div>
+            {funnelData.prospectData === 0 && (
+              <p className="text-xs text-amber-600 mt-2 font-medium">⚠️ No prospects found. Add contacts to see funnel data.</p>
+            )}
           </div>
           
-          <div className="flex flex-col items-center space-y-0.5">
+          <div className="flex flex-col items-center space-y-0.5" key={`funnel-${funnelRows.length}`}>
             {funnelRows.map((row, index) => {
-              const value = funnelData[row.key] || 0;
+              const value = funnelData[row.key] !== undefined ? funnelData[row.key] : 0;
               const maxValue = funnelData.prospectData || 1;
               const percentage = maxValue > 0 ? ((value / maxValue) * 100) : 0;
               
+              // Debug log for each stage
+              if (index === 0) {
+                console.log(`Rendering stage ${index}: ${row.label} = ${value} (key: ${row.key})`);
+              }
+              
               // Calculate width based on funnel position (wider at top, narrower at bottom)
-              const funnelWidths = [96, 88, 78, 68, 58, 48, 38, 28, 20]; // Progressive narrowing
-              const actualWidth = funnelWidths[index] || 15;
+              const funnelWidths = [96, 88, 80, 72, 64, 56, 48, 40, 32, 24]; // Progressive narrowing for 10 stages
+              const actualWidth = funnelWidths[index] || 20;
               
               // Enterprise color scheme based on stage
               let bgGradient = '';
@@ -243,27 +293,60 @@ export default function ColdCallingFunnelDetail() {
               let shadowColor = '';
               let iconBg = '';
               
+              // Color scheme based on stage progression
               if (index === 0) {
+                // Prospect Data - Blue
                 bgGradient = 'from-blue-600 via-blue-500 to-cyan-500';
                 borderColor = 'border-blue-400';
                 shadowColor = 'shadow-blue-500/30';
                 iconBg = 'bg-blue-400/30';
-              } else if (index >= 5) {
+              } else if (index === 1 || index === 2) {
+                // Calls Attempted/Connected - Purple
+                bgGradient = 'from-purple-600 via-purple-500 to-indigo-500';
+                borderColor = 'border-purple-400';
+                shadowColor = 'shadow-purple-500/30';
+                iconBg = 'bg-purple-400/30';
+              } else if (index === 3 || index === 4) {
+                // Decision Maker/Interested - Orange
+                bgGradient = 'from-orange-600 via-orange-500 to-amber-500';
+                borderColor = 'border-orange-400';
+                shadowColor = 'shadow-orange-500/30';
+                iconBg = 'bg-orange-400/30';
+              } else if (index === 5 || index === 6) {
+                // Details Shared/Demo Booked - Yellow
+                bgGradient = 'from-yellow-600 via-yellow-500 to-amber-500';
+                borderColor = 'border-yellow-400';
+                shadowColor = 'shadow-yellow-500/30';
+                iconBg = 'bg-yellow-400/30';
+              } else if (index === 7 || index === 8) {
+                // Demo Completed/SQL - Green
                 bgGradient = 'from-emerald-600 via-emerald-500 to-teal-500';
                 borderColor = 'border-emerald-400';
                 shadowColor = 'shadow-emerald-500/30';
                 iconBg = 'bg-emerald-400/30';
               } else {
-                bgGradient = 'from-slate-600 via-slate-500 to-gray-500';
-                borderColor = 'border-slate-400';
-                shadowColor = 'shadow-slate-500/30';
-                iconBg = 'bg-slate-400/30';
+                // WON - Gold
+                bgGradient = 'from-amber-600 via-amber-500 to-yellow-500';
+                borderColor = 'border-amber-400';
+                shadowColor = 'shadow-amber-500/30';
+                iconBg = 'bg-amber-400/30';
               }
               
-              // Icons for each stage
+              // Icons for each stage - Updated for 10 stages
               const icons = [
-                '👥', '📞', '✅', '🔄', '💬', '📅', '📆', '✓', '🎯'
+                '👥', // Prospect Data
+                '📞', // Calls Attempted
+                '📱', // Calls Connected
+                '👔', // Decision Maker Reached
+                '💡', // Interested
+                '📋', // Details Shared
+                '📅', // Demo Booked
+                '✅', // Demo Completed
+                '🎯', // SQL
+                '🏆'  // WON
               ];
+              
+              const stageIcon = icons[index] || '📊';
               
               return (
                 <div
@@ -292,7 +375,7 @@ export default function ColdCallingFunnelDetail() {
                       <div className="flex items-center justify-between mb-0.5">
                         <div className="flex items-center gap-1.5">
                           <div className={`${iconBg} backdrop-blur-sm rounded p-1 shadow-sm`}>
-                            <span className="text-sm">{icons[index]}</span>
+                            <span className="text-sm">{icons[index] || '📊'}</span>
                           </div>
                           <div>
                             <span className={`${textColor} text-[10px] font-bold uppercase tracking-wide block leading-tight`}>
@@ -397,10 +480,10 @@ export default function ColdCallingFunnelDetail() {
               </div>
               <div className="text-3xl font-extrabold text-white mb-0.5 drop-shadow-lg">
                 {funnelData.prospectData > 0 
-                  ? ((funnelData.completed / funnelData.prospectData) * 100).toFixed(1) 
+                  ? ((funnelData.demoCompleted / funnelData.prospectData) * 100).toFixed(1) 
                   : 0}%
               </div>
-              <div className="text-[10px] text-white/80 font-medium">Meetings completed</div>
+              <div className="text-[10px] text-white/80 font-medium">Demos completed</div>
             </div>
             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-white/30"></div>
           </div>

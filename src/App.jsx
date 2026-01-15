@@ -13,6 +13,7 @@ import CreateProject from './pages/CreateProject';
 import ProjectDetail from './pages/ProjectDetail';
 import ProjectDashboard from './pages/ProjectDashboard';
 import ProspectDashboard from './pages/ProspectDashboard';
+import MasterDashboard from './pages/MasterDashboard';
 import Report from './pages/Report';
 import LinkedInReport from './pages/LinkedInReport';
 import ColdCallingReport from './pages/ColdCallingReport';
@@ -51,6 +52,15 @@ export default function App() {
             element={
               <PrivateRoute>
                 <Dashboard />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/master-dashboard"
+            element={
+              <PrivateRoute>
+                <MasterDashboard />
               </PrivateRoute>
             }
           />

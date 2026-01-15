@@ -128,17 +128,63 @@ export default function ProspectDashboard() {
 
         if (funnelType === 'call') {
           switch (stage) {
-            case 'callSent':
+            // New 10-stage structure
+            case 'callsAttempted':
+            case 'callSent': // Legacy support
               filteredActivities = activities.filter(a => a.type === 'call' && a.callDate);
               break;
-            case 'accepted':
+            case 'callsConnected':
+            case 'accepted': // Legacy support
+              const connectedStatuses = ['Interested', 'Not Interested', 'Call Back', 'Future', 'Details Shared', 'Demo Booked', 'Demo Completed', 'Existing'];
               filteredActivities = activities.filter(a => 
                 a.type === 'call' && 
-                ['Interested', 'Details Shared', 'Demo Booked'].includes(a.callStatus)
+                a.callStatus && connectedStatuses.includes(a.callStatus)
               );
               break;
+            case 'decisionMakerReached':
+              const decisionMakerStatuses = ['Interested', 'Details Shared', 'Demo Booked', 'Demo Completed'];
+              filteredActivities = activities.filter(a => 
+                a.type === 'call' && 
+                a.callStatus && decisionMakerStatuses.includes(a.callStatus)
+              );
+              break;
+            case 'interested':
+              filteredActivities = activities.filter(a => 
+                a.type === 'call' && a.callStatus === 'Interested'
+              );
+              break;
+            case 'detailsShared':
+              filteredActivities = activities.filter(a => 
+                a.type === 'call' && a.callStatus === 'Details Shared'
+              );
+              break;
+            case 'demoBooked':
+            case 'scheduled': // Legacy support
+              filteredActivities = activities.filter(a => 
+                a.type === 'call' && a.callStatus === 'Demo Booked'
+              );
+              break;
+            case 'demoCompleted':
+            case 'completed': // Legacy support
+              filteredActivities = activities.filter(a => 
+                a.type === 'call' && a.callStatus === 'Demo Completed'
+              );
+              break;
+            case 'sql':
+              filteredActivities = activities.filter(a => 
+                a.type === 'call' && 
+                (a.callStatus === 'Demo Completed' || 
+                 (a.callStatus === 'Interested' && a.conversationNotes && a.conversationNotes.length > 50) ||
+                 a.status === 'SQL')
+              );
+              break;
+            case 'won':
+              filteredActivities = activities.filter(a => 
+                a.type === 'call' && a.status === 'WON'
+              );
+              break;
+            // Legacy stages (for backward compatibility)
             case 'followups':
-              // Get contacts with multiple calls
               const callCounts = {};
               activities.filter(a => a.type === 'call' && a.callDate).forEach(a => {
                 const contactId = a.contactId?.toString();
@@ -166,24 +212,6 @@ export default function ProspectDashboard() {
                   a.nextAction.toLowerCase().includes('demo') ||
                   a.nextAction.toLowerCase().includes('call')
                 )
-              );
-              break;
-            case 'scheduled':
-              filteredActivities = activities.filter(a => 
-                a.type === 'call' && 
-                (a.callStatus === 'Demo Booked' || a.nextActionDate)
-              );
-              break;
-            case 'completed':
-              filteredActivities = activities.filter(a => 
-                a.type === 'call' && a.callStatus === 'Demo Completed'
-              );
-              break;
-            case 'sql':
-              filteredActivities = activities.filter(a => 
-                a.type === 'call' && 
-                (a.callStatus === 'Demo Completed' || 
-                 (a.callStatus === 'Interested' && a.conversationNotes && a.conversationNotes.length > 50))
               );
               break;
           }
@@ -413,18 +441,35 @@ export default function ProspectDashboard() {
   const FunnelVisualization = ({ title, data, color = 'blue', funnelType = 'call' }) => {
     // Determine which stages to show based on funnel type
     let stages = [];
-    if (data.callSent !== undefined) {
+    // Updated 10-stage Cold Calling Funnel
+    if (data.callsAttempted !== undefined || data.callSent !== undefined) {
+      // Support both new and old data structure for backward compatibility
       stages = [
         { key: 'prospectData', label: 'Prospect Data', clickable: true },
-        { key: 'callSent', label: 'Call Sent', clickable: true },
-        { key: 'accepted', label: 'Accepted', clickable: true },
-        { key: 'followups', label: 'Followups', clickable: true },
-        { key: 'cip', label: 'CIP', clickable: true },
-        { key: 'meetingProposed', label: 'Meeting Proposed', clickable: true },
-        { key: 'scheduled', label: 'Scheduled', clickable: true },
-        { key: 'completed', label: 'Completed', clickable: true },
-        { key: 'sql', label: 'SQL', clickable: true }
+        { key: 'callsAttempted', label: 'Calls Attempted', clickable: true },
+        { key: 'callsConnected', label: 'Calls Connected', clickable: true },
+        { key: 'decisionMakerReached', label: 'Decision Maker Reached', clickable: true },
+        { key: 'interested', label: 'Interested', clickable: true },
+        { key: 'detailsShared', label: 'Details Shared', clickable: true },
+        { key: 'demoBooked', label: 'Demo Booked', clickable: true },
+        { key: 'demoCompleted', label: 'Demo Completed', clickable: true },
+        { key: 'sql', label: 'SQL', clickable: true },
+        { key: 'won', label: 'WON', clickable: true }
       ];
+      // Fallback to old structure if new keys don't exist
+      if (data.callSent !== undefined && data.callsAttempted === undefined) {
+        stages = [
+          { key: 'prospectData', label: 'Prospect Data', clickable: true },
+          { key: 'callSent', label: 'Call Sent', clickable: true },
+          { key: 'accepted', label: 'Accepted', clickable: true },
+          { key: 'followups', label: 'Followups', clickable: true },
+          { key: 'cip', label: 'CIP', clickable: true },
+          { key: 'meetingProposed', label: 'Meeting Proposed', clickable: true },
+          { key: 'scheduled', label: 'Scheduled', clickable: true },
+          { key: 'completed', label: 'Completed', clickable: true },
+          { key: 'sql', label: 'SQL', clickable: true }
+        ];
+      }
     } else if (data.emailSent !== undefined) {
       stages = [
         { key: 'prospectData', label: 'Prospect Data', clickable: true },

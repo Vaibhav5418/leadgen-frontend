@@ -62,11 +62,26 @@ export default function Sidebar() {
   ];
 
 
+  const masterDashboardItem = {
+    id: 'master-dashboard',
+    label: 'Master Dashboard',
+    path: '/master-dashboard',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+      </svg>
+    )
+  };
+
   const menuItems = [];
 
   const isActive = (path) => {
     if (path === '/dashboard' || path === '/') {
       return location.pathname === '/dashboard' || location.pathname === '/';
+    }
+    // For master dashboard, check exact match
+    if (path === '/master-dashboard') {
+      return location.pathname === '/master-dashboard';
     }
     // For projects/dashboard, check exact match
     if (path === '/projects/dashboard') {
@@ -225,6 +240,25 @@ export default function Sidebar() {
                 })}
               </div>
             )}
+          </div>
+
+          {/* Master Dashboard - After Projects */}
+          <div className="mt-2">
+            <button
+              onClick={() => navigate(masterDashboardItem.path)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
+                isActive(masterDashboardItem.path)
+                  ? 'bg-blue-50 text-blue-600'
+                  : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+              }`}
+            >
+              <span className={isActive(masterDashboardItem.path) ? 'text-blue-600' : 'text-gray-500'}>
+                {masterDashboardItem.icon}
+              </span>
+              <span className={`text-sm font-medium ${isActive(masterDashboardItem.path) ? 'text-blue-600' : 'text-gray-700'}`}>
+                {masterDashboardItem.label}
+              </span>
+            </button>
           </div>
 
         </div>
