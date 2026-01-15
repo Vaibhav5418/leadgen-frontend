@@ -433,9 +433,15 @@ export default function ProspectDashboard() {
     );
   };
 
-  const FunnelVisualization = ({ title, data, color = 'blue', funnelType = 'call' }) => {
+  const FunnelVisualization = ({ title, data, color = 'blue', funnelType = 'call', totalProspects = null }) => {
     // Determine which stages to show based on funnel type
     let stages = [];
+    
+    // Ensure prospectData exists in data, use totalProspects as fallback
+    if (data.prospectData === undefined && totalProspects !== null) {
+      data = { ...data, prospectData: totalProspects };
+    }
+    
     // Updated 10-stage Cold Calling Funnel
     if (data.callsAttempted !== undefined || data.callSent !== undefined) {
       // Support both new and old data structure for backward compatibility
@@ -490,9 +496,12 @@ export default function ProspectDashboard() {
       ];
     }
     
-    stages = stages.filter(s => s.key && data[s.key] !== undefined);
+    // Always include all stages that are defined - don't filter based on data presence
+    // This ensures the funnel always shows the complete structure
+    stages = stages.filter(s => s.key); // Only filter out stages without a key
 
-    const maxValue = data.prospectData || 1;
+    // Ensure prospectData is always in the data for maxValue calculation
+    const maxValue = data.prospectData || (data.prospectData === 0 ? 0 : 1);
     const colorMap = {
       blue: { 
         primary: 'rgb(59, 130, 246)', 
@@ -544,7 +553,10 @@ export default function ProspectDashboard() {
         <h3 className="text-sm font-semibold text-gray-900 mb-4 text-center">{title}</h3>
         <div className="flex flex-col items-center space-y-0">
           {stages.map((stage, index) => {
-            const value = data[stage.key] || 0;
+            // For prospectData, use the value from data or fallback to maxValue
+            const value = stage.key === 'prospectData' 
+              ? (data[stage.key] !== undefined ? data[stage.key] : maxValue)
+              : (data[stage.key] || 0);
             const percentage = maxValue > 0 ? ((value / maxValue) * 100).toFixed(1) : 0;
             const funnelWidth = calculateWidth(index, stages.length);
             const actualWidth = maxValue > 0 ? (value / maxValue) * funnelWidth : 0;
@@ -659,7 +671,7 @@ export default function ProspectDashboard() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm backdrop-blur-sm bg-white/95">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-4">
@@ -783,7 +795,7 @@ export default function ProspectDashboard() {
       `}</style>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-0">
         {activeTab === 'overview' && (
           <div className="space-y-6">
             {/* Key Metrics - Compact */}
@@ -902,6 +914,7 @@ export default function ProspectDashboard() {
                       data={analytics.funnels.coldCalling}
                       color="green"
                       funnelType="call"
+                      totalProspects={analytics.overview?.totalProspects}
                     />
                   </div>
                   <div className="flex-shrink-0 w-80">
@@ -910,6 +923,7 @@ export default function ProspectDashboard() {
                       data={analytics.funnels.email}
                       color="blue"
                       funnelType="email"
+                      totalProspects={analytics.overview?.totalProspects}
                     />
                   </div>
                   <div className="flex-shrink-0 w-80">
@@ -918,6 +932,7 @@ export default function ProspectDashboard() {
                       data={analytics.funnels.linkedin}
                       color="purple"
                       funnelType="linkedin"
+                      totalProspects={analytics.overview?.totalProspects}
                     />
                   </div>
                 </div>
@@ -1092,18 +1107,21 @@ export default function ProspectDashboard() {
                 data={analytics.funnels.coldCalling}
                 color="green"
                 funnelType="call"
+                totalProspects={analytics.overview?.totalProspects}
               />
               <FunnelVisualization
                 title="Email Funnel"
                 data={analytics.funnels.email}
                 color="blue"
                 funnelType="email"
+                totalProspects={analytics.overview?.totalProspects}
               />
               <FunnelVisualization
                 title="LinkedIn Funnel"
                 data={analytics.funnels.linkedin}
                 color="purple"
                 funnelType="linkedin"
+                totalProspects={analytics.overview?.totalProspects}
               />
             </div>
             {selectedStage && (

@@ -406,156 +406,204 @@ export default function MasterDashboard() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">Master Dashboard</h1>
-              <p className="text-sm text-gray-600 mt-1">All Projects Summary & Analytics</p>
+      <div className="bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm backdrop-blur-sm bg-white/95">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={() => window.history.back()}
+                className="flex items-center justify-center w-10 h-10 rounded-lg border border-gray-300 bg-white hover:bg-gray-50 transition-colors"
+                title="Go Back"
+              >
+                <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">Master Dashboard</h1>
+                <p className="text-sm text-gray-600 mt-1">All Projects Summary & Analytics</p>
+              </div>
             </div>
-            <button
-              onClick={fetchData}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Refresh
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={fetchData}
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm text-gray-700"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Refresh
+              </button>
+              <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm text-gray-700">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Export
+              </button>
+            </div>
           </div>
-        </div>
-      </div>
 
-      <div className="max-w-7xl mx-auto px-6 py-6">
-        {/* Section Navigation */}
-        <div className="mb-8 bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-          <div className="flex flex-wrap gap-2.5">
+          {/* Section Navigation */}
+          <div className="flex items-center gap-6 overflow-x-auto pb-2 border-b border-gray-200">
             {sections.map(section => (
               <button
                 key={section.id}
                 onClick={() => setActiveSection(section.id)}
-                className={`px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                className={`flex items-center gap-2 px-3 py-2 text-sm font-medium whitespace-nowrap transition-colors ${
                   activeSection === section.id
-                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md scale-105'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:scale-102'
+                    ? 'text-blue-600 border-b-2 border-blue-600'
+                    : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
-                <span className="mr-2 text-base">{section.icon}</span>
+                <span className="text-base">{section.icon}</span>
                 {section.label}
               </button>
             ))}
           </div>
         </div>
+      </div>
 
+      {/* Main Content */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-0">
         {/* Executive Summary */}
         {activeSection === 'executive' && (
-          <div className="space-y-4">
+          <div className="space-y-6">
             {/* Executive Tiles */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-200">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-gray-700">Active Projects</h3>
-                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {/* Active Projects */}
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-12 h-12 rounded-lg bg-white/80 border border-blue-100 flex items-center justify-center shadow-xs">
+                    <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                     </svg>
                   </div>
+                  <span className="text-xs font-semibold text-blue-700 bg-white/70 border border-blue-100 px-2 py-1 rounded-full shadow-xs">
+                    Projects
+                  </span>
                 </div>
-                <p className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">{executive?.activeProjects || 0}</p>
+                <div className="text-3xl font-bold text-gray-900 leading-tight">{executive?.activeProjects || 0}</div>
+                <div className="text-sm text-gray-600 mt-1">Active Projects</div>
               </div>
 
-              <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-200 rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-200">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-gray-700">Total Leads in Play</h3>
-                  <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {/* Total Leads in Play */}
+              <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl border border-purple-100 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-12 h-12 rounded-lg bg-white/80 border border-purple-100 flex items-center justify-center shadow-xs">
+                    <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                     </svg>
                   </div>
+                  <span className="text-xs font-semibold text-purple-700 bg-white/70 border border-purple-100 px-2 py-1 rounded-full shadow-xs">
+                    Leads
+                  </span>
                 </div>
-                <p className="text-4xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">{(executive?.totalLeadsInPlay || 0).toLocaleString()}</p>
+                <div className="text-3xl font-bold text-gray-900 leading-tight">{(executive?.totalLeadsInPlay || 0).toLocaleString()}</div>
+                <div className="text-sm text-gray-600 mt-1">Total Leads in Play</div>
               </div>
 
-              <div className="bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200 rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-200">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-gray-700">Touches This Week</h3>
-                  <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-600 rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {/* Touches This Week */}
+              <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border border-green-100 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-12 h-12 rounded-lg bg-white/80 border border-green-100 flex items-center justify-center shadow-xs">
+                    <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
                   </div>
+                  <span className="text-xs font-semibold text-green-700 bg-white/70 border border-green-100 px-2 py-1 rounded-full shadow-xs">
+                    Activity
+                  </span>
                 </div>
-                <p className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">{(executive?.totalTouchesThisWeek || 0).toLocaleString()}</p>
+                <div className="text-3xl font-bold text-gray-900 leading-tight">{(executive?.totalTouchesThisWeek || 0).toLocaleString()}</div>
+                <div className="text-sm text-gray-600 mt-1">Touches This Week</div>
               </div>
 
-              <div className="bg-gradient-to-br from-amber-50 to-yellow-50 border-2 border-amber-200 rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-200">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-gray-700">Meetings This Week</h3>
-                  <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-yellow-600 rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {/* Meetings This Week */}
+              <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-100 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-12 h-12 rounded-lg bg-white/80 border border-emerald-100 flex items-center justify-center shadow-xs">
+                    <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
                   </div>
+                  <span className="text-xs font-semibold text-emerald-700 bg-white/70 border border-emerald-100 px-2 py-1 rounded-full shadow-xs">
+                    Meetings
+                  </span>
                 </div>
-                <p className="text-4xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">{executive?.totalMeetingsBookedThisWeek || 0}</p>
+                <div className="text-3xl font-bold text-gray-900 leading-tight">{executive?.totalMeetingsBookedThisWeek || 0}</div>
+                <div className="text-sm text-gray-600 mt-1">Meetings This Week</div>
               </div>
 
-              <div className="bg-gradient-to-br from-indigo-50 to-blue-50 border-2 border-indigo-200 rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-200">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-gray-700">Touches This Month</h3>
-                  <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {/* Touches This Month */}
+              <div className="bg-gradient-to-br from-indigo-50 to-blue-50 rounded-xl border border-indigo-100 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-12 h-12 rounded-lg bg-white/80 border border-indigo-100 flex items-center justify-center shadow-xs">
+                    <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                     </svg>
                   </div>
+                  <span className="text-xs font-semibold text-indigo-700 bg-white/70 border border-indigo-100 px-2 py-1 rounded-full shadow-xs">
+                    Activity
+                  </span>
                 </div>
-                <p className="text-4xl font-bold bg-gradient-to-r from-indigo-600 to-blue-600 bg-clip-text text-transparent">{(executive?.totalTouchesThisMonth || 0).toLocaleString()}</p>
+                <div className="text-3xl font-bold text-gray-900 leading-tight">{(executive?.totalTouchesThisMonth || 0).toLocaleString()}</div>
+                <div className="text-sm text-gray-600 mt-1">Touches This Month</div>
               </div>
 
-              <div className="bg-gradient-to-br from-rose-50 to-pink-50 border-2 border-rose-200 rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-200">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-gray-700">Meetings This Month</h3>
-                  <div className="w-10 h-10 bg-gradient-to-br from-rose-500 to-pink-600 rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {/* Meetings This Month */}
+              <div className="bg-gradient-to-br from-rose-50 to-pink-50 rounded-xl border border-rose-100 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-12 h-12 rounded-lg bg-white/80 border border-rose-100 flex items-center justify-center shadow-xs">
+                    <svg className="w-6 h-6 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
                   </div>
+                  <span className="text-xs font-semibold text-rose-700 bg-white/70 border border-rose-100 px-2 py-1 rounded-full shadow-xs">
+                    Meetings
+                  </span>
                 </div>
-                <p className="text-4xl font-bold bg-gradient-to-r from-rose-600 to-pink-600 bg-clip-text text-transparent">{executive?.totalMeetingsBookedThisMonth || 0}</p>
+                <div className="text-3xl font-bold text-gray-900 leading-tight">{executive?.totalMeetingsBookedThisMonth || 0}</div>
+                <div className="text-sm text-gray-600 mt-1">Meetings This Month</div>
               </div>
 
-              <div className="bg-gradient-to-br from-teal-50 to-cyan-50 border-2 border-teal-200 rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-200">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-gray-700">Weighted Conversion Rate</h3>
-                  <div className="w-10 h-10 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {/* Weighted Conversion Rate */}
+              <div className="bg-gradient-to-br from-teal-50 to-cyan-50 rounded-xl border border-teal-100 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-12 h-12 rounded-lg bg-white/80 border border-teal-100 flex items-center justify-center shadow-xs">
+                    <svg className="w-6 h-6 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                     </svg>
                   </div>
+                  <span className="text-xs font-semibold text-teal-700 bg-white/70 border border-teal-100 px-2 py-1 rounded-full shadow-xs">
+                    Conversion
+                  </span>
                 </div>
-                <p className="text-4xl font-bold bg-gradient-to-r from-teal-600 to-cyan-600 bg-clip-text text-transparent">{clampPercentage(executive?.weightedConversionRate || 0).toFixed(1)}%</p>
+                <div className="text-3xl font-bold text-gray-900 leading-tight">{clampPercentage(executive?.weightedConversionRate || 0).toFixed(1)}%</div>
+                <div className="text-sm text-gray-600 mt-1">Weighted Conversion Rate</div>
               </div>
 
-              <div className="bg-gradient-to-br from-red-50 to-orange-50 border-2 border-red-200 rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-200">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-gray-700">SLA Compliance</h3>
-                  <div className="w-10 h-10 bg-gradient-to-br from-red-500 to-orange-600 rounded-lg flex items-center justify-center">
-                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {/* SLA Compliance */}
+              <div className="bg-gradient-to-br from-orange-50 to-amber-50 rounded-xl border border-orange-100 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-12 h-12 rounded-lg bg-white/80 border border-orange-100 flex items-center justify-center shadow-xs">
+                    <svg className="w-6 h-6 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
+                  <span className="text-xs font-semibold text-orange-700 bg-white/70 border border-orange-100 px-2 py-1 rounded-full shadow-xs">
+                    Compliance
+                  </span>
                 </div>
-                <p className="text-4xl font-bold bg-gradient-to-r from-red-600 to-orange-600 bg-clip-text text-transparent">{clampPercentage(executive?.slaCompliance || 0).toFixed(1)}%</p>
+                <div className="text-3xl font-bold text-gray-900 leading-tight">{clampPercentage(executive?.slaCompliance || 0).toFixed(1)}%</div>
+                <div className="text-sm text-gray-600 mt-1">SLA Compliance</div>
               </div>
             </div>
 
             {/* Charts Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Week vs Month Comparison */}
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
-                    <span className="text-xl">📊</span>
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900">Week vs Month Performance</h3>
-                </div>
+              <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 mb-6">Week vs Month Performance</h3>
                 <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
                   <div className="h-64">
                     <Bar
@@ -617,13 +665,8 @@ export default function MasterDashboard() {
               </div>
 
               {/* Channel Distribution */}
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-600 rounded-lg flex items-center justify-center">
-                    <span className="text-xl">📈</span>
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900">Activity by Channel</h3>
-                </div>
+              <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 mb-6">Activity by Channel</h3>
                 <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
                   <div className="h-64 flex items-center justify-center">
                     <Doughnut
@@ -665,13 +708,8 @@ export default function MasterDashboard() {
               </div>
 
               {/* Overall Funnel */}
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center">
-                    <span className="text-xl">🎯</span>
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900">Overall Sales Funnel</h3>
-                </div>
+              <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 mb-6">Overall Sales Funnel</h3>
                 <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
                   <div className="h-64">
                     <Bar
@@ -730,13 +768,8 @@ export default function MasterDashboard() {
               </div>
 
               {/* Conversion & SLA Metrics */}
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-lg flex items-center justify-center">
-                    <span className="text-xl">✅</span>
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900">Key Performance Metrics</h3>
-                </div>
+              <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 mb-6">Key Performance Metrics</h3>
                 <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
                   <div className="h-64">
                     <Bar
@@ -797,16 +830,11 @@ export default function MasterDashboard() {
 
         {/* Rankings */}
         {activeSection === 'rankings' && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Best Performing Projects */}
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-lg flex items-center justify-center">
-                    <span className="text-xl">🏆</span>
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900">Best Performing Projects</h3>
-                </div>
+              <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 mb-6">Best Performing Projects</h3>
                 <div className="space-y-3">
                   {(rankings?.bestPerformingProjects || []).slice(0, 10).map((project, index) => (
                     <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
@@ -834,13 +862,8 @@ export default function MasterDashboard() {
               </div>
 
               {/* Channel Efficiency */}
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
-                    <span className="text-xl">📊</span>
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900">Channel Efficiency Leaderboard</h3>
-                </div>
+              <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 mb-6">Channel Efficiency Leaderboard</h3>
                 <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
                   <div className="h-64">
                     <Bar
@@ -919,13 +942,8 @@ export default function MasterDashboard() {
               </div>
 
               {/* Team Leaderboard */}
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200 lg:col-span-2">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-600 rounded-lg flex items-center justify-center">
-                    <span className="text-xl">👥</span>
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900">Team Leaderboard</h3>
-                </div>
+              <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm lg:col-span-2">
+                <h3 className="text-lg font-semibold text-gray-900 mb-6">Team Leaderboard</h3>
                 <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
                   <div className="h-64">
                     <Bar
@@ -1011,14 +1029,7 @@ export default function MasterDashboard() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Low Activity Projects */}
               <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center">
-                    <svg className="w-5 h-5 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                    </svg>
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900">Low Activity (Last 3 Days)</h3>
-                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Low Activity (Last 3 Days)</h3>
                 <div className="space-y-2">
                   {(alerts?.lowActivityProjects || []).length > 0 ? (
                     (alerts?.lowActivityProjects || []).map((project, index) => (
@@ -1063,14 +1074,7 @@ export default function MasterDashboard() {
 
               {/* Missing Follow-ups */}
               <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
-                    <svg className="w-5 h-5 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900">Missing Follow-ups</h3>
-                </div>
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Missing Follow-ups</h3>
                 <div className="space-y-2">
                   {(alerts?.missingFollowUps || []).length > 0 ? (
                     (alerts?.missingFollowUps || []).map((project, index) => (
@@ -1092,43 +1096,106 @@ export default function MasterDashboard() {
 
         {/* Data Quality */}
         {activeSection === 'data' && (
-          <div className="space-y-4">
+          <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-200">
-                <h3 className="text-sm font-semibold text-gray-700 mb-2">Leads Added (Daily)</h3>
-                <p className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">{dataQuality?.leadsAddedDaily || 0}</p>
+              {/* Leads Added Daily */}
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-12 h-12 rounded-lg bg-white/80 border border-blue-100 flex items-center justify-center shadow-xs">
+                    <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-blue-700 bg-white/70 border border-blue-100 px-2 py-1 rounded-full shadow-xs">
+                    Daily
+                  </span>
+                </div>
+                <div className="text-3xl font-bold text-gray-900 leading-tight">{dataQuality?.leadsAddedDaily || 0}</div>
+                <div className="text-sm text-gray-600 mt-1">Leads Added (Daily)</div>
               </div>
-              <div className="bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200 rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-200">
-                <h3 className="text-sm font-semibold text-gray-700 mb-2">Leads Added (Weekly)</h3>
-                <p className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">{dataQuality?.leadsAddedWeekly || 0}</p>
+
+              {/* Leads Added Weekly */}
+              <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl border border-purple-100 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-12 h-12 rounded-lg bg-white/80 border border-purple-100 flex items-center justify-center shadow-xs">
+                    <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-purple-700 bg-white/70 border border-purple-100 px-2 py-1 rounded-full shadow-xs">
+                    Weekly
+                  </span>
+                </div>
+                <div className="text-3xl font-bold text-gray-900 leading-tight">{dataQuality?.leadsAddedWeekly || 0}</div>
+                <div className="text-sm text-gray-600 mt-1">Leads Added (Weekly)</div>
               </div>
-              <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-200 rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-200">
-                <h3 className="text-sm font-semibold text-gray-700 mb-2">Valid Email %</h3>
-                <p className="text-4xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">{clampPercentage(dataQuality?.validEmailPercent || 0).toFixed(1)}%</p>
-                <p className="text-xs text-gray-600 mt-2 font-medium">{(dataQuality?.validEmailCount || 0).toLocaleString()} of {(dataQuality?.totalProspects || 0).toLocaleString()}</p>
+
+              {/* Valid Email % */}
+              <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-100 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-12 h-12 rounded-lg bg-white/80 border border-emerald-100 flex items-center justify-center shadow-xs">
+                    <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-emerald-700 bg-white/70 border border-emerald-100 px-2 py-1 rounded-full shadow-xs">
+                    Quality
+                  </span>
+                </div>
+                <div className="text-3xl font-bold text-gray-900 leading-tight">{clampPercentage(dataQuality?.validEmailPercent || 0).toFixed(1)}%</div>
+                <div className="text-sm text-gray-600 mt-1">{(dataQuality?.validEmailCount || 0).toLocaleString()} of {(dataQuality?.totalProspects || 0).toLocaleString()}</div>
               </div>
-              <div className="bg-gradient-to-br from-cyan-50 to-blue-50 border-2 border-cyan-200 rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-200">
-                <h3 className="text-sm font-semibold text-gray-700 mb-2">Valid Phone %</h3>
-                <p className="text-4xl font-bold bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">{clampPercentage(dataQuality?.validPhonePercent || 0).toFixed(1)}%</p>
-                <p className="text-xs text-gray-600 mt-2 font-medium">{(dataQuality?.validPhoneCount || 0).toLocaleString()} of {(dataQuality?.totalProspects || 0).toLocaleString()}</p>
+
+              {/* Valid Phone % */}
+              <div className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-xl border border-cyan-100 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-12 h-12 rounded-lg bg-white/80 border border-cyan-100 flex items-center justify-center shadow-xs">
+                    <svg className="w-6 h-6 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-cyan-700 bg-white/70 border border-cyan-100 px-2 py-1 rounded-full shadow-xs">
+                    Quality
+                  </span>
+                </div>
+                <div className="text-3xl font-bold text-gray-900 leading-tight">{clampPercentage(dataQuality?.validPhonePercent || 0).toFixed(1)}%</div>
+                <div className="text-sm text-gray-600 mt-1">{(dataQuality?.validPhoneCount || 0).toLocaleString()} of {(dataQuality?.totalProspects || 0).toLocaleString()}</div>
               </div>
-              <div className="bg-gradient-to-br from-red-50 to-orange-50 border-2 border-red-200 rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-200">
-                <h3 className="text-sm font-semibold text-gray-700 mb-2">Duplicate %</h3>
-                <p className="text-4xl font-bold bg-gradient-to-r from-red-600 to-orange-600 bg-clip-text text-transparent">{clampPercentage(dataQuality?.duplicatePercent || 0).toFixed(1)}%</p>
-                <p className="text-xs text-gray-600 mt-2 font-medium">{(dataQuality?.duplicateCount || 0).toLocaleString()} duplicates</p>
+
+              {/* Duplicate % */}
+              <div className="bg-gradient-to-br from-red-50 to-orange-50 rounded-xl border border-red-100 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-12 h-12 rounded-lg bg-white/80 border border-red-100 flex items-center justify-center shadow-xs">
+                    <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-red-700 bg-white/70 border border-red-100 px-2 py-1 rounded-full shadow-xs">
+                    Duplicates
+                  </span>
+                </div>
+                <div className="text-3xl font-bold text-gray-900 leading-tight">{clampPercentage(dataQuality?.duplicatePercent || 0).toFixed(1)}%</div>
+                <div className="text-sm text-gray-600 mt-1">{(dataQuality?.duplicateCount || 0).toLocaleString()} duplicates</div>
               </div>
-              <div className="bg-gradient-to-br from-amber-50 to-yellow-50 border-2 border-amber-200 rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-200">
-                <h3 className="text-sm font-semibold text-gray-700 mb-2">Data Quality Score</h3>
-                <p className="text-4xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">{clampPercentage(dataQuality?.dataQualityScore || 0).toFixed(1)}%</p>
+
+              {/* Data Quality Score */}
+              <div className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-xl border border-amber-100 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-12 h-12 rounded-lg bg-white/80 border border-amber-100 flex items-center justify-center shadow-xs">
+                    <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-amber-700 bg-white/70 border border-amber-100 px-2 py-1 rounded-full shadow-xs">
+                    Score
+                  </span>
+                </div>
+                <div className="text-3xl font-bold text-gray-900 leading-tight">{clampPercentage(dataQuality?.dataQualityScore || 0).toFixed(1)}%</div>
+                <div className="text-sm text-gray-600 mt-1">Data Quality Score</div>
               </div>
             </div>
-            <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200">
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center">
-                  <span className="text-xl">📈</span>
-                </div>
-                <h3 className="text-xl font-bold text-gray-900">Data Quality Overview</h3>
-              </div>
+            <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+              <h3 className="text-lg font-semibold text-gray-900 mb-6">Data Quality Overview</h3>
               <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
                 <div className="h-80 flex items-center justify-center">
                   <Doughnut
@@ -1179,41 +1246,93 @@ export default function MasterDashboard() {
 
         {/* LinkedIn */}
         {activeSection === 'linkedin' && (
-          <div className="space-y-4">
+          <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-200">
-                <h3 className="text-sm font-semibold text-gray-700 mb-2">Connection Requests Sent</h3>
-                <p className="text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">{(linkedin?.connectionRequestsSent || 0).toLocaleString()}</p>
+              {/* Connection Requests Sent */}
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-12 h-12 rounded-lg bg-white/80 border border-blue-100 flex items-center justify-center shadow-xs">
+                    <svg className="w-6 h-6 text-indigo-600" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-blue-700 bg-white/70 border border-blue-100 px-2 py-1 rounded-full shadow-xs">
+                    LinkedIn
+                  </span>
+                </div>
+                <div className="text-3xl font-bold text-gray-900 leading-tight">{(linkedin?.connectionRequestsSent || 0).toLocaleString()}</div>
+                <div className="text-sm text-gray-600 mt-1">Connection Requests Sent</div>
               </div>
-              <div className="bg-gradient-to-br from-emerald-50 to-teal-50 border-2 border-emerald-200 rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-200">
-                <h3 className="text-sm font-semibold text-gray-700 mb-2">Acceptance Rate</h3>
-                <p className="text-4xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">{clampPercentage(linkedin?.acceptanceRate || 0).toFixed(1)}%</p>
-                <p className="text-xs text-gray-600 mt-2 font-medium">{(linkedin?.accepted || 0).toLocaleString()} accepted</p>
+
+              {/* Acceptance Rate */}
+              <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-100 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-12 h-12 rounded-lg bg-white/80 border border-emerald-100 flex items-center justify-center shadow-xs">
+                    <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-emerald-700 bg-white/70 border border-emerald-100 px-2 py-1 rounded-full shadow-xs">
+                    Rate
+                  </span>
+                </div>
+                <div className="text-3xl font-bold text-gray-900 leading-tight">{clampPercentage(linkedin?.acceptanceRate || 0).toFixed(1)}%</div>
+                <div className="text-sm text-gray-600 mt-1">{(linkedin?.accepted || 0).toLocaleString()} accepted</div>
               </div>
-              <div className="bg-gradient-to-br from-purple-50 to-pink-50 border-2 border-purple-200 rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-200">
-                <h3 className="text-sm font-semibold text-gray-700 mb-2">Messages Sent</h3>
-                <p className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">{(linkedin?.messagesSent || 0).toLocaleString()}</p>
+
+              {/* Messages Sent */}
+              <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl border border-purple-100 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-12 h-12 rounded-lg bg-white/80 border border-purple-100 flex items-center justify-center shadow-xs">
+                    <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-purple-700 bg-white/70 border border-purple-100 px-2 py-1 rounded-full shadow-xs">
+                    Messages
+                  </span>
+                </div>
+                <div className="text-3xl font-bold text-gray-900 leading-tight">{(linkedin?.messagesSent || 0).toLocaleString()}</div>
+                <div className="text-sm text-gray-600 mt-1">Messages Sent</div>
               </div>
-              <div className="bg-gradient-to-br from-cyan-50 to-blue-50 border-2 border-cyan-200 rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-200">
-                <h3 className="text-sm font-semibold text-gray-700 mb-2">Reply Rate</h3>
-                <p className="text-4xl font-bold bg-gradient-to-r from-cyan-600 to-blue-600 bg-clip-text text-transparent">{clampPercentage(linkedin?.replyRate || 0).toFixed(1)}%</p>
-                <p className="text-xs text-gray-600 mt-2 font-medium">{(linkedin?.replies || 0).toLocaleString()} replies</p>
+
+              {/* Reply Rate */}
+              <div className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-xl border border-cyan-100 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-12 h-12 rounded-lg bg-white/80 border border-cyan-100 flex items-center justify-center shadow-xs">
+                    <svg className="w-6 h-6 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-cyan-700 bg-white/70 border border-cyan-100 px-2 py-1 rounded-full shadow-xs">
+                    Rate
+                  </span>
+                </div>
+                <div className="text-3xl font-bold text-gray-900 leading-tight">{clampPercentage(linkedin?.replyRate || 0).toFixed(1)}%</div>
+                <div className="text-sm text-gray-600 mt-1">{(linkedin?.replies || 0).toLocaleString()} replies</div>
               </div>
-              <div className="bg-gradient-to-br from-amber-50 to-yellow-50 border-2 border-amber-200 rounded-xl p-6 shadow-md hover:shadow-lg transition-all duration-200">
-                <h3 className="text-sm font-semibold text-gray-700 mb-2">Meetings Booked</h3>
-                <p className="text-4xl font-bold bg-gradient-to-r from-amber-600 to-yellow-600 bg-clip-text text-transparent">{linkedin?.meetingsBooked || 0}</p>
+
+              {/* Meetings Booked */}
+              <div className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-xl border border-amber-100 shadow-sm p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-12 h-12 rounded-lg bg-white/80 border border-amber-100 flex items-center justify-center shadow-xs">
+                    <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-amber-700 bg-white/70 border border-amber-100 px-2 py-1 rounded-full shadow-xs">
+                    Meetings
+                  </span>
+                </div>
+                <div className="text-3xl font-bold text-gray-900 leading-tight">{linkedin?.meetingsBooked || 0}</div>
+                <div className="text-sm text-gray-600 mt-1">Meetings Booked</div>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* LinkedIn Funnel Chart */}
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
-                    <span className="text-xl">📊</span>
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900">LinkedIn Funnel Overview</h3>
-                </div>
+              <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 mb-6">LinkedIn Funnel Overview</h3>
                 <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
                   <div className="h-64">
                     <Bar
@@ -1272,13 +1391,8 @@ export default function MasterDashboard() {
               </div>
 
               {/* LinkedIn Acceptance Chart */}
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center">
-                    <span className="text-xl">📈</span>
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900">Connection Acceptance Rate</h3>
-                </div>
+              <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 mb-6">Connection Acceptance Rate</h3>
                 <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
                   <div className="h-64 flex items-center justify-center">
                     <Doughnut
@@ -1350,13 +1464,8 @@ export default function MasterDashboard() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Cold Call Funnel Chart */}
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
-                    <span className="text-xl">📞</span>
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900">Cold Call Funnel Overview</h3>
-                </div>
+              <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 mb-6">Cold Call Funnel Overview</h3>
                 <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
                   <div className="h-64">
                     <Bar
@@ -1415,13 +1524,8 @@ export default function MasterDashboard() {
               </div>
 
               {/* Cold Call Connect Rate Chart */}
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center">
-                    <span className="text-xl">📈</span>
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900">Call Connection Rate</h3>
-                </div>
+              <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 mb-6">Call Connection Rate</h3>
                 <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
                   <div className="h-64 flex items-center justify-center">
                     <Doughnut
@@ -1494,13 +1598,8 @@ export default function MasterDashboard() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Email Funnel Chart */}
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-600 rounded-lg flex items-center justify-center">
-                    <span className="text-xl">📧</span>
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900">Email Funnel Overview</h3>
-                </div>
+              <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 mb-6">Email Funnel Overview</h3>
                 <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
                   <div className="h-64">
                     <Bar
@@ -1559,13 +1658,8 @@ export default function MasterDashboard() {
               </div>
 
               {/* Email Status Chart */}
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-lg hover:shadow-xl transition-shadow duration-200">
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center">
-                    <span className="text-xl">📊</span>
-                  </div>
-                  <h3 className="text-xl font-bold text-gray-900">Email Status Breakdown</h3>
-                </div>
+              <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 mb-6">Email Status Breakdown</h3>
                 <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
                   <div className="h-64 flex items-center justify-center">
                     <Doughnut
