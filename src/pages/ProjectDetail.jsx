@@ -20,6 +20,31 @@ const getActivityDate = (activity) => {
   return new Date(activity.createdAt);
 };
 
+// Helper function to get the import date from a contact
+// Uses the ObjectId timestamp (first 8 hex characters) to get creation date
+const getContactImportDate = (contact) => {
+  if (!contact._id) return null;
+  
+  try {
+    // If _id is an ObjectId, extract timestamp
+    const idStr = contact._id.toString ? contact._id.toString() : String(contact._id);
+    if (idStr.length >= 8) {
+      // ObjectId timestamp is in the first 8 hex characters
+      const timestamp = parseInt(idStr.substring(0, 8), 16) * 1000; // Convert to milliseconds
+      return new Date(timestamp);
+    }
+  } catch (e) {
+    console.error('Error extracting import date from contact ID:', e);
+  }
+  
+  // Fallback: if contact has createdAt, use it
+  if (contact.createdAt) {
+    return new Date(contact.createdAt);
+  }
+  
+  return null;
+};
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -38,6 +63,9 @@ export default function ProjectDetail() {
   const [filterLastInteraction, setFilterLastInteraction] = useState('');
   const [filterLastInteractionFrom, setFilterLastInteractionFrom] = useState('');
   const [filterLastInteractionTo, setFilterLastInteractionTo] = useState('');
+  const [filterImportDate, setFilterImportDate] = useState('');
+  const [filterImportDateFrom, setFilterImportDateFrom] = useState('');
+  const [filterImportDateTo, setFilterImportDateTo] = useState('');
   const [filterNoActivity, setFilterNoActivity] = useState(false);
   const [filterMatchType, setFilterMatchType] = useState('');
   const [matchStats, setMatchStats] = useState(null);
@@ -68,6 +96,7 @@ export default function ProjectDetail() {
   const [savingContactInfo, setSavingContactInfo] = useState({});
   const [showRemoveConfirmation, setShowRemoveConfirmation] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [deletedContactIds, setDeletedContactIds] = useState(new Set()); // Track deleted contact IDs to prevent reappearance
 
   // Debounce search query for better performance
   useEffect(() => {
@@ -124,7 +153,55 @@ export default function ProjectDetail() {
       // Fetch all prospects by setting a high limit
       const response = await API.get(`/projects/${id}/project-contacts?limit=10000`);
       if (response.data.success) {
-        setContacts(response.data.data || []);
+        const contactsData = response.data.data || [];
+        
+        // Deduplicate contacts by _id (contact ID) - ensure each contact appears only once
+        // This fixes the issue where the same prospect appears multiple times with different activity dates
+        const contactsMap = new Map();
+        contactsData.forEach(contact => {
+          const contactId = contact._id?.toString ? contact._id.toString() : String(contact._id);
+          if (!contactId) return; // Skip contacts without IDs
+          
+          const existing = contactsMap.get(contactId);
+          if (!existing) {
+            // First occurrence - add it
+            contactsMap.set(contactId, contact);
+          } else {
+            // Duplicate found - prefer the one with projectContactId (imported) over activity-based
+            // If both are same type, keep the first one encountered
+            const existingHasProjectContact = existing.projectContactId !== null && existing.projectContactId !== undefined;
+            const newHasProjectContact = contact.projectContactId !== null && contact.projectContactId !== undefined;
+            
+            if (newHasProjectContact && !existingHasProjectContact) {
+              // New one is imported (has projectContactId), existing is activity-based - replace
+              contactsMap.set(contactId, contact);
+            }
+            // Otherwise keep existing (first one wins, or both are same type)
+          }
+        });
+        
+        // Convert map back to array - this ensures each contact appears only once
+        let uniqueContacts = Array.from(contactsMap.values());
+        
+        // Also filter out any contacts that were previously deleted (prevent reappearance)
+        if (deletedContactIds.size > 0) {
+          const beforeFilter = uniqueContacts.length;
+          uniqueContacts = uniqueContacts.filter(contact => {
+            if (!contact._id) return true;
+            const contactIdStr = contact._id.toString ? contact._id.toString() : String(contact._id);
+            return !deletedContactIds.has(contactIdStr);
+          });
+          if (beforeFilter !== uniqueContacts.length) {
+            console.log(`Filtered out ${beforeFilter - uniqueContacts.length} previously deleted contact(s) from refresh`);
+          }
+        }
+        
+        setContacts(uniqueContacts);
+        
+        // Log if duplicates were found and removed
+        if (contactsData.length !== uniqueContacts.length) {
+          console.log(`Removed ${contactsData.length - uniqueContacts.length} duplicate contact(s) - same contact appeared multiple times`);
+        }
       }
     } catch (err) {
       console.error('Error fetching imported contacts:', err);
@@ -136,7 +213,22 @@ export default function ProjectDetail() {
     try {
       const response = await API.get(`/projects/${id}/similar-contacts`);
       if (response.data.success) {
-        setContacts(response.data.data || []);
+        let contactsData = response.data.data || [];
+        
+        // Filter out any contacts that were previously deleted (prevent reappearance)
+        if (deletedContactIds.size > 0) {
+          const beforeFilter = contactsData.length;
+          contactsData = contactsData.filter(contact => {
+            if (!contact._id) return true;
+            const contactIdStr = contact._id.toString ? contact._id.toString() : String(contact._id);
+            return !deletedContactIds.has(contactIdStr);
+          });
+          if (beforeFilter !== contactsData.length) {
+            console.log(`Filtered out ${beforeFilter - contactsData.length} previously deleted contact(s) from similar contacts`);
+          }
+        }
+        
+        setContacts(contactsData);
         if (response.data.matchStats) {
           setMatchStats(response.data.matchStats);
         }
@@ -884,6 +976,55 @@ export default function ProjectDetail() {
       }
     }
 
+    // Import Date filter - filter by when prospect was imported/created
+    if (filterImportDate || filterImportDateFrom || filterImportDateTo) {
+      const importDate = getContactImportDate(contact);
+      
+      if (!importDate) {
+        // If no import date available, exclude from results
+        return false;
+      }
+      
+      // Handle custom date range
+      if (filterImportDate === 'custom' && (filterImportDateFrom || filterImportDateTo)) {
+        const contactImportDate = new Date(importDate);
+        contactImportDate.setHours(0, 0, 0, 0);
+        
+        if (filterImportDateFrom) {
+          const fromDate = new Date(filterImportDateFrom);
+          fromDate.setHours(0, 0, 0, 0);
+          if (contactImportDate < fromDate) return false;
+        }
+        
+        if (filterImportDateTo) {
+          const toDate = new Date(filterImportDateTo);
+          toDate.setHours(23, 59, 59, 999);
+          if (contactImportDate > toDate) return false;
+        }
+      } else if (filterImportDate && filterImportDate !== 'custom') {
+        // Handle preset date ranges
+        const contactImportDate = new Date(importDate);
+        contactImportDate.setHours(0, 0, 0, 0);
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        
+        switch (filterImportDate) {
+          case 'today':
+            if (contactImportDate < today || contactImportDate >= tomorrow) return false;
+            break;
+          case 'yesterday':
+            if (contactImportDate < yesterday || contactImportDate >= today) return false;
+            break;
+          default:
+            break;
+        }
+      }
+    }
+
     // No Activity filter - show only prospects with no last interaction
     if (filterNoActivity) {
       const contactIdStr = (contact._id?.toString ? contact._id.toString() : contact._id) || '';
@@ -963,7 +1104,7 @@ export default function ProjectDetail() {
 
       return true;
     });
-  }, [contacts, debouncedSearchQuery, quickFilter, filterStatus, filterActionDate, filterActionDateFrom, filterActionDateTo, filterLastInteraction, filterLastInteractionFrom, filterLastInteractionTo, filterNoActivity, filterMatchType, allProjectActivities, project, activityLookups, id]);
+  }, [contacts, debouncedSearchQuery, quickFilter, filterStatus, filterActionDate, filterActionDateFrom, filterActionDateTo, filterLastInteraction, filterLastInteractionFrom, filterLastInteractionTo, filterImportDate, filterImportDateFrom, filterImportDateTo, filterNoActivity, filterMatchType, allProjectActivities, project, activityLookups, id]);
 
   // Memoize select all checked state
   const isAllSelected = useMemo(() => {
@@ -1025,19 +1166,118 @@ export default function ProjectDetail() {
       });
 
       if (response.data.success) {
+        // Verify deletion was successful
+        const deletedCount = response.data.data?.deletedCount || 0;
+        if (deletedCount === 0) {
+          alert('No prospects were removed. They may have already been deleted.');
+          setRemoving(false);
+          return;
+        }
+        
         // Clear selection
         setSelectedContacts(new Set());
         setShowRemoveConfirmation(false);
         
-        // Refresh contacts list
-        if (showProspectSuggestions) {
-          await fetchSimilarContacts();
-        } else {
-          await fetchImportedContacts();
-        }
+        // Remove deleted contacts from local state immediately for better UX
+        // Normalize all IDs to strings for comparison - handle both string and ObjectId formats
+        const contactIdsSet = new Set();
+        contactIdsArray.forEach(id => {
+          const idStr = String(id);
+          contactIdsSet.add(idStr);
+          // Also add normalized versions for robust matching
+          if (id && typeof id === 'object' && id.toString) {
+            contactIdsSet.add(id.toString());
+          }
+        });
         
-        // Show success message (you can add a toast notification here if needed)
-        console.log(`Successfully removed ${response.data.data.deletedCount} prospect(s)`);
+        // Track deleted contact IDs to prevent them from reappearing in background refresh
+        const deletedContactIdsSet = new Set(contactIdsSet);
+        setDeletedContactIds(prev => {
+          const newSet = new Set(prev);
+          contactIdsSet.forEach(id => newSet.add(id));
+          return newSet;
+        });
+        
+        setContacts(prevContacts => {
+          const filtered = prevContacts.filter(contact => {
+            if (!contact._id) return true; // Keep contacts without IDs (shouldn't happen, but safe)
+            
+            // Try multiple ID formats for robust matching
+            const contactIdStr = contact._id.toString ? contact._id.toString() : String(contact._id);
+            const contactIdObj = contact._id;
+            
+            // Check if this contact should be removed
+            if (contactIdsSet.has(contactIdStr)) return false;
+            if (contactIdObj && contactIdsSet.has(String(contactIdObj))) return false;
+            
+            return true;
+          });
+          
+          console.log(`Removed ${prevContacts.length - filtered.length} contact(s) from UI`);
+          return filtered;
+        });
+        
+        // Also remove from expanded contacts if any were expanded
+        setExpandedContacts(prev => {
+          const newSet = new Set(prev);
+          contactIdsSet.forEach(idStr => {
+            newSet.delete(idStr);
+          });
+          return newSet;
+        });
+        
+        // Clear activities for deleted contacts
+        setContactActivities(prev => {
+          const newActivities = { ...prev };
+          contactIdsSet.forEach(idStr => {
+            delete newActivities[idStr];
+          });
+          return newActivities;
+        });
+        
+        // Remove activities from allProjectActivities for deleted contacts
+        setAllProjectActivities(prevActivities => {
+          return prevActivities.filter(activity => {
+            if (!activity.contactId) return true;
+            const activityContactId = activity.contactId.toString ? activity.contactId.toString() : String(activity.contactId);
+            return !contactIdsSet.has(activityContactId);
+          });
+        });
+        
+        // Don't refresh immediately - we've already updated local state
+        // Only refresh in background after a delay, but filter out deleted contacts
+        setTimeout(async () => {
+          try {
+            // Refresh contacts from server
+            if (showProspectSuggestions) {
+              await fetchSimilarContacts();
+            } else {
+              await fetchImportedContacts();
+            }
+            
+            // After refresh, ensure deleted contacts are still removed (in case they came back)
+            setContacts(prevContacts => {
+              const filtered = prevContacts.filter(contact => {
+                if (!contact._id) return true;
+                const contactIdStr = contact._id.toString ? contact._id.toString() : String(contact._id);
+                return !deletedContactIdsSet.has(contactIdStr);
+              });
+              
+              if (prevContacts.length !== filtered.length) {
+                console.log(`Removed ${prevContacts.length - filtered.length} contact(s) that reappeared after refresh`);
+              }
+              return filtered;
+            });
+            
+            await fetchAllProjectActivities();
+          } catch (err) {
+            // Silently handle refresh errors - local state is already updated
+            console.error('Background refresh after deletion:', err);
+          }
+        }, 1000); // Increased delay to ensure backend deletion is complete
+        
+        // Show success message
+        console.log(`Successfully removed ${deletedCount} prospect(s)`);
       }
     } catch (err) {
       console.error('Error removing prospects:', err);
@@ -1355,6 +1595,53 @@ export default function ProjectDetail() {
                 />
               </div>
             )}
+            <select
+              value={filterImportDate}
+              onChange={(e) => {
+                setFilterImportDate(e.target.value);
+                if (e.target.value !== 'custom') {
+                  setFilterImportDateFrom('');
+                  setFilterImportDateTo('');
+                }
+              }}
+              className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white hover:border-gray-400 transition-colors cursor-pointer"
+            >
+              <option value="">Import Date</option>
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="custom">Custom Range</option>
+            </select>
+            {filterImportDate === 'custom' && (
+              <div className="flex items-center gap-1">
+                <input
+                  type="date"
+                  value={filterImportDateFrom}
+                  onChange={(e) => {
+                    setFilterImportDateFrom(e.target.value);
+                    if (e.target.value && filterImportDateTo && new Date(e.target.value) > new Date(filterImportDateTo)) {
+                      setFilterImportDateTo(e.target.value);
+                    }
+                  }}
+                  max={filterImportDateTo || undefined}
+                  className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white hover:border-gray-400 transition-colors"
+                  placeholder="From"
+                />
+                <span className="text-xs text-gray-500">to</span>
+                <input
+                  type="date"
+                  value={filterImportDateTo}
+                  onChange={(e) => {
+                    setFilterImportDateTo(e.target.value);
+                    if (e.target.value && filterImportDateFrom && new Date(e.target.value) < new Date(filterImportDateFrom)) {
+                      setFilterImportDateFrom(e.target.value);
+                    }
+                  }}
+                  min={filterImportDateFrom || undefined}
+                  className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white hover:border-gray-400 transition-colors"
+                  placeholder="To"
+                />
+              </div>
+            )}
             <label className="flex items-center gap-2 px-3 py-1.5 text-xs border border-gray-300 rounded-lg bg-white hover:border-gray-400 transition-colors cursor-pointer">
               <input
                 type="checkbox"
@@ -1368,7 +1655,7 @@ export default function ProjectDetail() {
         </div>
 
         {/* Active Filters Display */}
-        {(searchQuery || quickFilter || filterStatus || filterActionDate || filterActionDateFrom || filterActionDateTo || filterLastInteraction || filterLastInteractionFrom || filterLastInteractionTo || filterNoActivity || filterMatchType) && (
+        {(searchQuery || quickFilter || filterStatus || filterActionDate || filterActionDateFrom || filterActionDateTo || filterLastInteraction || filterLastInteractionFrom || filterLastInteractionTo || filterImportDate || filterImportDateFrom || filterImportDateTo || filterNoActivity || filterMatchType) && (
           <div className="mt-3 pt-3 border-t border-gray-200 flex items-center gap-2 flex-wrap">
             <span className="text-xs font-medium text-gray-500">Active filters:</span>
             {searchQuery && (
@@ -1470,6 +1757,27 @@ export default function ProjectDetail() {
                 </button>
               </span>
             )}
+            {(filterImportDate || filterImportDateFrom || filterImportDateTo) && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded border border-blue-200">
+                Import Date: {filterImportDate === 'custom' && (filterImportDateFrom || filterImportDateTo)
+                  ? `${filterImportDateFrom ? formatDate(filterImportDateFrom) : '...'} to ${filterImportDateTo ? formatDate(filterImportDateTo) : '...'}`
+                  : filterImportDate === 'today' ? 'Today'
+                  : filterImportDate === 'yesterday' ? 'Yesterday'
+                  : filterImportDate}
+                <button
+                  onClick={() => {
+                    setFilterImportDate('');
+                    setFilterImportDateFrom('');
+                    setFilterImportDateTo('');
+                  }}
+                  className="hover:text-blue-900"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </span>
+            )}
             {filterNoActivity && (
               <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded border border-blue-200">
                 No Activity
@@ -1507,6 +1815,9 @@ export default function ProjectDetail() {
                 setFilterLastInteraction('');
                 setFilterLastInteractionFrom('');
                 setFilterLastInteractionTo('');
+                setFilterImportDate('');
+                setFilterImportDateFrom('');
+                setFilterImportDateTo('');
                 setFilterNoActivity(false);
                 setFilterMatchType('');
               }}
@@ -1523,7 +1834,7 @@ export default function ProjectDetail() {
         <div className="flex items-center gap-4 flex-wrap">
           <p className="text-sm text-gray-600">
             Showing <span className="font-semibold text-gray-900">{filteredContacts.length}</span> of <span className="font-semibold text-gray-900">{contacts.length}</span> prospects
-            {(searchQuery || quickFilter || filterStatus || filterActionDate || filterActionDateFrom || filterActionDateTo || filterLastInteraction || filterLastInteractionFrom || filterLastInteractionTo || filterMatchType) && (
+            {(searchQuery || quickFilter || filterStatus || filterActionDate || filterActionDateFrom || filterActionDateTo || filterLastInteraction || filterLastInteractionFrom || filterLastInteractionTo || filterImportDate || filterImportDateFrom || filterImportDateTo || filterNoActivity || filterMatchType) && (
               <span className="ml-2 text-gray-500">
                 (filtered)
               </span>
