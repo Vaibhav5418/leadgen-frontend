@@ -371,16 +371,25 @@ export default function ProjectDetail() {
         
         // Track latest activity status (for all activity types - call, email, linkedin)
         // This determines the stage based on the most recent activity status from Activity History
-        // Only track activities that have a status - find the most recent one with a status
+        // For call activities, use callStatus; for others, use status
         // Use activity-specific date (callDate, emailDate, linkedinDate) to determine most recent status
-        if (activity.status && activity.status.trim() !== '') {
+        let activityStatus = null;
+        if (activity.type === 'call' && activity.callStatus && activity.callStatus.trim() !== '') {
+          // For call activities, use callStatus
+          activityStatus = activity.callStatus;
+        } else if (activity.status && activity.status.trim() !== '') {
+          // For email and LinkedIn activities, use status
+          activityStatus = activity.status;
+        }
+        
+        if (activityStatus) {
           const existing = lookups.latestActivityStatusByContactId.get(contactIdStr);
           // Get the activity date (prioritize activity-specific dates over createdAt)
           const activityDate = getActivityDate(activity);
           // Only update if this activity is more recent than the existing one
           if (!existing) {
             lookups.latestActivityStatusByContactId.set(contactIdStr, {
-              status: activity.status,
+              status: activityStatus,
               createdAt: activityDate,
               activityDate: activityDate
             });
@@ -388,7 +397,7 @@ export default function ProjectDetail() {
             const existingDate = existing.activityDate ? new Date(existing.activityDate) : new Date(existing.createdAt);
             if (activityDate > existingDate) {
               lookups.latestActivityStatusByContactId.set(contactIdStr, {
-                status: activity.status,
+                status: activityStatus,
                 createdAt: activityDate,
                 activityDate: activityDate
               });
@@ -610,9 +619,24 @@ export default function ProjectDetail() {
 
   const getStageBadge = (stage) => {
     const stageConfig = {
+      // Call statuses
+      'Ring': { bg: 'bg-yellow-100', text: 'text-yellow-800' },
+      'Busy': { bg: 'bg-orange-100', text: 'text-orange-800' },
+      'Call Back': { bg: 'bg-amber-100', text: 'text-amber-800' },
+      'Hang Up': { bg: 'bg-red-100', text: 'text-red-800' },
+      'Switch Off': { bg: 'bg-gray-100', text: 'text-gray-800' },
+      'Invalid': { bg: 'bg-red-100', text: 'text-red-800' },
+      'Future': { bg: 'bg-blue-100', text: 'text-blue-800' },
+      'Existing': { bg: 'bg-indigo-100', text: 'text-indigo-800' },
+      'Interested': { bg: 'bg-green-100', text: 'text-green-800' },
+      'Not Interested': { bg: 'bg-red-100', text: 'text-red-800' },
+      'Details Shared': { bg: 'bg-cyan-100', text: 'text-cyan-800' },
+      'Demo Booked': { bg: 'bg-purple-100', text: 'text-purple-800' },
+      'Demo Completed': { bg: 'bg-emerald-100', text: 'text-emerald-800' },
+      // Email and LinkedIn statuses
       'CIP': { bg: 'bg-blue-100', text: 'text-blue-800' },
       'No Reply': { bg: 'bg-gray-100', text: 'text-gray-800' },
-      'Not Interested': { bg: 'bg-red-100', text: 'text-red-800' },
+      'Out of Office': { bg: 'bg-gray-100', text: 'text-gray-800' },
       'Meeting Proposed': { bg: 'bg-yellow-100', text: 'text-yellow-800' },
       'Meeting Scheduled': { bg: 'bg-cyan-100', text: 'text-cyan-800' },
       'In-Person Meeting': { bg: 'bg-indigo-100', text: 'text-indigo-800' },
@@ -623,6 +647,9 @@ export default function ProjectDetail() {
       'Lost': { bg: 'bg-red-200', text: 'text-red-900', border: 'border-2 border-red-400' },
       'Low Potential - Open': { bg: 'bg-orange-100', text: 'text-orange-800' },
       'Potential Future': { bg: 'bg-teal-100', text: 'text-teal-800' },
+      'Wrong Person': { bg: 'bg-red-100', text: 'text-red-800' },
+      'Bounce': { bg: 'bg-red-100', text: 'text-red-800' },
+      'Opt-Out': { bg: 'bg-red-100', text: 'text-red-800' },
       // Legacy stages for backward compatibility
       'New': { bg: 'bg-blue-100', text: 'text-blue-800' },
       'Contacted': { bg: 'bg-purple-100', text: 'text-purple-800' },
@@ -1485,19 +1512,41 @@ export default function ProjectDetail() {
               className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white hover:border-gray-400 transition-colors cursor-pointer"
             >
               <option value="">Filter by status</option>
-              <option value="CIP">CIP</option>
-              <option value="No Reply">No Reply</option>
-              <option value="Not Interested">Not Interested</option>
-              <option value="Meeting Proposed">Meeting Proposed</option>
-              <option value="Meeting Scheduled">Meeting Scheduled</option>
-              <option value="In-Person Meeting">In-Person Meeting</option>
-              <option value="Meeting Completed">Meeting Completed</option>
-              <option value="SQL">SQL</option>
-              <option value="Tech Discussion">Tech Discussion</option>
-              <option value="WON">WON</option>
-              <option value="Lost">Lost</option>
-              <option value="Low Potential - Open">Low Potential - Open</option>
-              <option value="Potential Future">Potential Future</option>
+              {/* Call-related statuses */}
+              <optgroup label="Call Statuses">
+                <option value="Ring">Ring</option>
+                <option value="Busy">Busy</option>
+                <option value="Call Back">Call Back</option>
+                <option value="Hang Up">Hang Up</option>
+                <option value="Switch Off">Switch Off</option>
+                <option value="Invalid">Invalid</option>
+                <option value="Future">Future</option>
+                <option value="Existing">Existing</option>
+                <option value="Interested">Interested</option>
+                <option value="Not Interested">Not Interested</option>
+                <option value="Details Shared">Details Shared</option>
+                <option value="Demo Booked">Demo Booked</option>
+                <option value="Demo Completed">Demo Completed</option>
+              </optgroup>
+              {/* Email and LinkedIn statuses */}
+              <optgroup label="Email & LinkedIn Statuses">
+                <option value="CIP">CIP</option>
+                <option value="No Reply">No Reply</option>
+                <option value="Out of Office">Out of Office</option>
+                <option value="Meeting Proposed">Meeting Proposed</option>
+                <option value="Meeting Scheduled">Meeting Scheduled</option>
+                <option value="In-Person Meeting">In-Person Meeting</option>
+                <option value="Meeting Completed">Meeting Completed</option>
+                <option value="SQL">SQL</option>
+                <option value="Tech Discussion">Tech Discussion</option>
+                <option value="WON">WON</option>
+                <option value="Lost">Lost</option>
+                <option value="Low Potential - Open">Low Potential - Open</option>
+                <option value="Potential Future">Potential Future</option>
+                <option value="Wrong Person">Wrong Person</option>
+                <option value="Bounce">Bounce</option>
+                <option value="Opt-Out">Opt-Out</option>
+              </optgroup>
             </select>
             <select
               value={filterActionDate}
@@ -2223,14 +2272,19 @@ export default function ProjectDetail() {
                         .filter(a => {
                           // Only use notes matching if contactId is not set in activity
                           if (a.contactId) return false;
-                          if (!a.status || a.status.trim() === '') return false;
+                          // For call activities, check callStatus; for others, check status
+                          const hasStatus = (a.type === 'call' && a.callStatus && a.callStatus.trim() !== '') ||
+                                           (a.status && a.status.trim() !== '');
+                          if (!hasStatus) return false;
                           const notesLower = a.conversationNotes?.toLowerCase() || '';
                           return notesLower.includes(contactNameLower) || notesLower.includes(contactEmailLower);
                         })
                         .sort((a, b) => getActivityDate(b) - getActivityDate(a));
                       
                       if (activitiesWithStatus.length > 0) {
-                        latestStatus = activitiesWithStatus[0].status;
+                        // Use callStatus for call activities, status for others
+                        const activity = activitiesWithStatus[0];
+                        latestStatus = (activity.type === 'call' && activity.callStatus) ? activity.callStatus : activity.status;
                       }
                     }
                   }
