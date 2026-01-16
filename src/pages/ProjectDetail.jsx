@@ -5,6 +5,21 @@ import ActivityLogModal from '../components/ActivityLogModal';
 import BulkImportModal from '../components/BulkImportModal';
 import BulkActivityLogModal from '../components/BulkActivityLogModal';
 
+// Helper function to get the activity date (prioritize activity-specific dates over createdAt)
+const getActivityDate = (activity) => {
+  if (activity.type === 'call' && activity.callDate) {
+    return new Date(activity.callDate);
+  }
+  if (activity.type === 'email' && activity.emailDate) {
+    return new Date(activity.emailDate);
+  }
+  if (activity.type === 'linkedin' && activity.linkedinDate) {
+    return new Date(activity.linkedinDate);
+  }
+  // Fallback to createdAt if activity-specific date is not available
+  return new Date(activity.createdAt);
+};
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -17,8 +32,13 @@ export default function ProjectDetail() {
   const searchTimeoutRef = useRef(null);
   const [quickFilter, setQuickFilter] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
-  const [filterTeamMember, setFilterTeamMember] = useState('');
-  const [filterPriority, setFilterPriority] = useState('');
+  const [filterActionDate, setFilterActionDate] = useState('');
+  const [filterActionDateFrom, setFilterActionDateFrom] = useState('');
+  const [filterActionDateTo, setFilterActionDateTo] = useState('');
+  const [filterLastInteraction, setFilterLastInteraction] = useState('');
+  const [filterLastInteractionFrom, setFilterLastInteractionFrom] = useState('');
+  const [filterLastInteractionTo, setFilterLastInteractionTo] = useState('');
+  const [filterNoActivity, setFilterNoActivity] = useState(false);
   const [filterMatchType, setFilterMatchType] = useState('');
   const [matchStats, setMatchStats] = useState(null);
   const [expandedContacts, setExpandedContacts] = useState(new Set());
@@ -203,9 +223,15 @@ export default function ProjectDetail() {
 
   const fetchAllProjectActivities = async () => {
     try {
-      const response = await API.get(`/activities/project/${id}?limit=1000`); // Limit activities
+      const response = await API.get(`/activities/project/${id}?limit=10000`); // Increased limit to ensure all activities are fetched
       if (response.data.success) {
-        setAllProjectActivities(response.data.data || []);
+        const activities = response.data.data || [];
+        setAllProjectActivities(activities);
+        // Debug: Log activities with status to verify they're being fetched
+        const activitiesWithStatus = activities.filter(a => a.status);
+        if (activitiesWithStatus.length > 0) {
+          console.log(`Found ${activitiesWithStatus.length} activities with status out of ${activities.length} total activities`);
+        }
       }
     } catch (err) {
       console.error('Error fetching project activities:', err);
@@ -231,10 +257,16 @@ export default function ProjectDetail() {
         }
         lookups.byContactId.get(contactIdStr).push(activity);
         
-        // Track last activity
+        // Track last activity - use activity-specific date (callDate, emailDate, linkedinDate) or createdAt
         const existing = lookups.lastActivityByContactId.get(contactIdStr);
-        if (!existing || new Date(activity.createdAt) > new Date(existing.createdAt)) {
+        const activityDate = getActivityDate(activity);
+        if (!existing) {
           lookups.lastActivityByContactId.set(contactIdStr, activity);
+        } else {
+          const existingDate = getActivityDate(existing);
+          if (activityDate > existingDate) {
+            lookups.lastActivityByContactId.set(contactIdStr, activity);
+          }
         }
         
         // Track next action
@@ -246,16 +278,29 @@ export default function ProjectDetail() {
         }
         
         // Track latest activity status (for all activity types - call, email, linkedin)
-        // This determines the stage based on the most recent activity status
+        // This determines the stage based on the most recent activity status from Activity History
         // Only track activities that have a status - find the most recent one with a status
-        if (activity.status) {
+        // Use activity-specific date (callDate, emailDate, linkedinDate) to determine most recent status
+        if (activity.status && activity.status.trim() !== '') {
           const existing = lookups.latestActivityStatusByContactId.get(contactIdStr);
+          // Get the activity date (prioritize activity-specific dates over createdAt)
+          const activityDate = getActivityDate(activity);
           // Only update if this activity is more recent than the existing one
-          if (!existing || new Date(activity.createdAt) > new Date(existing.createdAt)) {
+          if (!existing) {
             lookups.latestActivityStatusByContactId.set(contactIdStr, {
               status: activity.status,
-              createdAt: activity.createdAt
+              createdAt: activityDate,
+              activityDate: activityDate
             });
+          } else {
+            const existingDate = existing.activityDate ? new Date(existing.activityDate) : new Date(existing.createdAt);
+            if (activityDate > existingDate) {
+              lookups.latestActivityStatusByContactId.set(contactIdStr, {
+                status: activity.status,
+                createdAt: activityDate,
+                activityDate: activityDate
+              });
+            }
           }
         }
       }
@@ -390,7 +435,7 @@ export default function ProjectDetail() {
     });
   };
 
-  const handleCloseActivityModal = () => {
+  const handleCloseActivityModal = async () => {
     setActivityModal({
       isOpen: false,
       type: null,
@@ -403,13 +448,16 @@ export default function ProjectDetail() {
       linkedInProfileUrl: null,
       lastActivity: null
     });
-    // Refresh all project activities (this will update the stage display automatically)
-    fetchAllProjectActivities();
+    // Refresh all project activities first (this will update the status display automatically)
+    // Wait for activities to be fetched before refreshing contacts
+    await fetchAllProjectActivities();
+    // Small delay to ensure activities state is updated
+    await new Promise(resolve => setTimeout(resolve, 100));
     // Refresh contacts to get updated stage from ProjectContact
     if (showProspectSuggestions) {
-      fetchSimilarContacts();
+      await fetchSimilarContacts();
     } else {
-      fetchImportedContacts();
+      await fetchImportedContacts();
     }
     // Refresh activities for expanded contacts
     expandedContacts.forEach(contactId => {
@@ -420,20 +468,23 @@ export default function ProjectDetail() {
     });
   };
 
-  const handleCloseBulkActivityModal = () => {
+  const handleCloseBulkActivityModal = async () => {
     setBulkActivityModal({
       isOpen: false,
       type: null
     });
     // Clear selection after bulk logging
     setSelectedContacts(new Set());
-    // Refresh all project activities (this will update the stage display automatically)
-    fetchAllProjectActivities();
+    // Refresh all project activities first (this will update the status display automatically)
+    // Wait for activities to be fetched before refreshing contacts
+    await fetchAllProjectActivities();
+    // Small delay to ensure activities state is updated
+    await new Promise(resolve => setTimeout(resolve, 100));
     // Refresh contacts to get updated stage from ProjectContact
     if (showProspectSuggestions) {
-      fetchSimilarContacts();
+      await fetchSimilarContacts();
     } else {
-      fetchImportedContacts();
+      await fetchImportedContacts();
     }
     // Refresh activities for expanded contacts
     expandedContacts.forEach(contactId => {
@@ -724,23 +775,148 @@ export default function ProjectDetail() {
       if (contactStatus !== filterStatus) return false;
     }
 
-    // Team member filter
-    if (filterTeamMember) {
-      const contactAssignedTo = contact.assignedTo || project?.assignedTo || '';
-      if (contactAssignedTo !== filterTeamMember) return false;
+    // Action Date filter (Next Action Date)
+    if (filterActionDate || filterActionDateFrom || filterActionDateTo) {
+      const contactId = contact._id || contact.name;
+      const contactIdStr = contact._id?.toString ? contact._id.toString() : contact._id;
+      const nextActionActivity = contactIdStr ? activityLookups.nextActionByContactId.get(contactIdStr) : null;
+      
+      // Handle custom date range
+      if (filterActionDate === 'custom' && (filterActionDateFrom || filterActionDateTo)) {
+        if (!nextActionActivity || !nextActionActivity.nextActionDate) return false;
+        const actionDate = new Date(nextActionActivity.nextActionDate);
+        actionDate.setHours(0, 0, 0, 0);
+        
+        if (filterActionDateFrom) {
+          const fromDate = new Date(filterActionDateFrom);
+          fromDate.setHours(0, 0, 0, 0);
+          if (actionDate < fromDate) return false;
+        }
+        
+        if (filterActionDateTo) {
+          const toDate = new Date(filterActionDateTo);
+          toDate.setHours(23, 59, 59, 999);
+          if (actionDate > toDate) return false;
+        }
+      } else if (filterActionDate && filterActionDate !== 'custom') {
+        // Handle preset date ranges
+        if (!nextActionActivity || !nextActionActivity.nextActionDate) return false;
+        const actionDate = new Date(nextActionActivity.nextActionDate);
+        actionDate.setHours(0, 0, 0, 0);
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        
+        switch (filterActionDate) {
+          case 'today':
+            if (actionDate < today || actionDate >= tomorrow) return false;
+            break;
+          case 'this-week':
+            const weekStart = new Date(today);
+            weekStart.setDate(today.getDate() - today.getDay());
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekStart.getDate() + 7);
+            if (actionDate < weekStart || actionDate >= weekEnd) return false;
+            break;
+          case 'this-month':
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+            if (actionDate < monthStart || actionDate >= monthEnd) return false;
+            break;
+          default:
+            break;
+        }
+      }
     }
 
-    // Priority filter
-    if (filterPriority) {
-      const contactPriority = contact.priority || 'Medium';
-      if (contactPriority !== filterPriority) return false;
+    // Last Interaction Date filter
+    if (filterLastInteraction || filterLastInteractionFrom || filterLastInteractionTo) {
+      const contactIdStr = (contact._id?.toString ? contact._id.toString() : contact._id) || '';
+      const contactLastActivity = contactIdStr ? activityLookups.lastActivityByContactId.get(contactIdStr) : null;
+      
+      // Handle custom date range
+      if (filterLastInteraction === 'custom' && (filterLastInteractionFrom || filterLastInteractionTo)) {
+        if (!contactLastActivity) return false;
+        const interactionDate = getActivityDate(contactLastActivity);
+        interactionDate.setHours(0, 0, 0, 0);
+        
+        if (filterLastInteractionFrom) {
+          const fromDate = new Date(filterLastInteractionFrom);
+          fromDate.setHours(0, 0, 0, 0);
+          if (interactionDate < fromDate) return false;
+        }
+        
+        if (filterLastInteractionTo) {
+          const toDate = new Date(filterLastInteractionTo);
+          toDate.setHours(23, 59, 59, 999);
+          if (interactionDate > toDate) return false;
+        }
+      } else if (filterLastInteraction && filterLastInteraction !== 'custom') {
+        // Handle preset date ranges
+        if (!contactLastActivity) return false;
+        const interactionDate = getActivityDate(contactLastActivity);
+        interactionDate.setHours(0, 0, 0, 0);
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        
+        switch (filterLastInteraction) {
+          case 'today':
+            if (interactionDate < today || interactionDate >= tomorrow) return false;
+            break;
+          case 'this-week':
+            const weekStart = new Date(today);
+            weekStart.setDate(today.getDate() - today.getDay());
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekStart.getDate() + 7);
+            if (interactionDate < weekStart || interactionDate >= weekEnd) return false;
+            break;
+          case 'this-month':
+            const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+            if (interactionDate < monthStart || interactionDate >= monthEnd) return false;
+            break;
+          default:
+            break;
+        }
+      }
+    }
+
+    // No Activity filter - show only prospects with no last interaction
+    if (filterNoActivity) {
+      const contactIdStr = (contact._id?.toString ? contact._id.toString() : contact._id) || '';
+      const contactLastActivity = contactIdStr ? activityLookups.lastActivityByContactId.get(contactIdStr) : null;
+      
+      // If there's any activity in the lookup, exclude this contact
+      if (contactLastActivity) return false;
+      
+      // Also check if there are any activities for this contact in allProjectActivities
+      // This handles cases where contactId might not match exactly
+      const hasAnyActivity = allProjectActivities.some(activity => {
+        if (!activity.contactId) return false;
+        const activityContactIdStr = activity.contactId.toString ? activity.contactId.toString() : activity.contactId;
+        if (activityContactIdStr === contactIdStr) return true;
+        
+        // Fallback: check by email or name in conversation notes
+        if (!contactIdStr) {
+          const contactEmail = contact.email?.toLowerCase() || '';
+          const contactName = contact.name?.toLowerCase() || '';
+          const notesLower = activity.conversationNotes?.toLowerCase() || '';
+          const activityEmail = activity.email?.toLowerCase() || '';
+          return (contactEmail && (notesLower.includes(contactEmail) || activityEmail === contactEmail)) ||
+                 (contactName && notesLower.includes(contactName));
+        }
+        return false;
+      });
+      
+      // If any activity is found, exclude this contact
+      if (hasAnyActivity) return false;
     }
 
     // Quick filters
-    if (quickFilter === 'high-priority') {
-      const contactPriority = contact.priority || 'Medium';
-      if (contactPriority !== 'High') return false;
-    } else if (quickFilter === 'due-today') {
+    if (quickFilter === 'due-today') {
       // Find activities with nextActionDate due today
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -787,7 +963,7 @@ export default function ProjectDetail() {
 
       return true;
     });
-  }, [contacts, debouncedSearchQuery, quickFilter, filterStatus, filterTeamMember, filterPriority, filterMatchType, allProjectActivities, project, activityLookups]);
+  }, [contacts, debouncedSearchQuery, quickFilter, filterStatus, filterActionDate, filterActionDateFrom, filterActionDateTo, filterLastInteraction, filterLastInteractionFrom, filterLastInteractionTo, filterNoActivity, filterMatchType, allProjectActivities, project, activityLookups, id]);
 
   // Memoize select all checked state
   const isAllSelected = useMemo(() => {
@@ -960,12 +1136,6 @@ export default function ProjectDetail() {
               </svg>
             Prospect Analytics
             </button>
-          <button className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm text-gray-700">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-            Export
-            </button>
           <button 
             onClick={handleToggleProspectSuggestions}
             disabled={!hasICP}
@@ -1031,25 +1201,6 @@ export default function ProjectDetail() {
           <div className="text-xs font-medium text-gray-500">Quick Filters:</div>
           <button
             onClick={() => {
-              const newFilter = quickFilter === 'high-priority' ? '' : 'high-priority';
-              setQuickFilter(newFilter);
-              // Clear other filters when quick filter is applied
-              if (newFilter === 'high-priority') {
-                setFilterPriority('High');
-              } else {
-                setFilterPriority('');
-              }
-            }}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all duration-200 ${
-              quickFilter === 'high-priority'
-                ? 'bg-blue-600 text-white border border-blue-600 shadow-sm'
-                : 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200 hover:border-gray-400'
-            }`}
-          >
-            High Priority
-          </button>
-          <button
-            onClick={() => {
               const newFilter = quickFilter === 'due-today' ? '' : 'due-today';
               setQuickFilter(newFilter);
             }}
@@ -1109,39 +1260,115 @@ export default function ProjectDetail() {
               <option value="Potential Future">Potential Future</option>
             </select>
             <select
-              value={filterTeamMember}
-              onChange={(e) => setFilterTeamMember(e.target.value)}
-              className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white hover:border-gray-400 transition-colors cursor-pointer"
-            >
-              <option value="">Filter by team member</option>
-              <option value="Sarah Johnson">Sarah Johnson</option>
-              <option value="Michael Chen">Michael Chen</option>
-              <option value="Emily Rodriguez">Emily Rodriguez</option>
-              <option value="David Kim">David Kim</option>
-            </select>
-            <select
-              value={filterPriority}
+              value={filterActionDate}
               onChange={(e) => {
-                setFilterPriority(e.target.value);
-                // Clear high-priority quick filter if priority changes
-                if (e.target.value !== 'High' && quickFilter === 'high-priority') {
-                  setQuickFilter('');
-                } else if (e.target.value === 'High') {
-                  setQuickFilter('high-priority');
+                setFilterActionDate(e.target.value);
+                if (e.target.value !== 'custom') {
+                  setFilterActionDateFrom('');
+                  setFilterActionDateTo('');
                 }
               }}
               className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white hover:border-gray-400 transition-colors cursor-pointer"
             >
-              <option value="">Filter by priority</option>
-              <option value="High">High</option>
-              <option value="Medium">Medium</option>
-              <option value="Low">Low</option>
+              <option value="">Action Date</option>
+              <option value="today">Today</option>
+              <option value="this-week">This Week</option>
+              <option value="this-month">This Month</option>
+              <option value="custom">Custom Range</option>
             </select>
+            {filterActionDate === 'custom' && (
+              <div className="flex items-center gap-1">
+                <input
+                  type="date"
+                  value={filterActionDateFrom}
+                  onChange={(e) => {
+                    setFilterActionDateFrom(e.target.value);
+                    if (e.target.value && filterActionDateTo && new Date(e.target.value) > new Date(filterActionDateTo)) {
+                      setFilterActionDateTo(e.target.value);
+                    }
+                  }}
+                  max={filterActionDateTo || undefined}
+                  className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white hover:border-gray-400 transition-colors"
+                  placeholder="From"
+                />
+                <span className="text-xs text-gray-500">to</span>
+                <input
+                  type="date"
+                  value={filterActionDateTo}
+                  onChange={(e) => {
+                    setFilterActionDateTo(e.target.value);
+                    if (e.target.value && filterActionDateFrom && new Date(e.target.value) < new Date(filterActionDateFrom)) {
+                      setFilterActionDateFrom(e.target.value);
+                    }
+                  }}
+                  min={filterActionDateFrom || undefined}
+                  className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white hover:border-gray-400 transition-colors"
+                  placeholder="To"
+                />
+              </div>
+            )}
+            <select
+              value={filterLastInteraction}
+              onChange={(e) => {
+                setFilterLastInteraction(e.target.value);
+                if (e.target.value !== 'custom') {
+                  setFilterLastInteractionFrom('');
+                  setFilterLastInteractionTo('');
+                }
+              }}
+              className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white hover:border-gray-400 transition-colors cursor-pointer"
+            >
+              <option value="">Last Interaction</option>
+              <option value="today">Today</option>
+              <option value="this-week">This Week</option>
+              <option value="this-month">This Month</option>
+              <option value="custom">Custom Range</option>
+            </select>
+            {filterLastInteraction === 'custom' && (
+              <div className="flex items-center gap-1">
+                <input
+                  type="date"
+                  value={filterLastInteractionFrom}
+                  onChange={(e) => {
+                    setFilterLastInteractionFrom(e.target.value);
+                    if (e.target.value && filterLastInteractionTo && new Date(e.target.value) > new Date(filterLastInteractionTo)) {
+                      setFilterLastInteractionTo(e.target.value);
+                    }
+                  }}
+                  max={filterLastInteractionTo || undefined}
+                  className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white hover:border-gray-400 transition-colors"
+                  placeholder="From"
+                />
+                <span className="text-xs text-gray-500">to</span>
+                <input
+                  type="date"
+                  value={filterLastInteractionTo}
+                  onChange={(e) => {
+                    setFilterLastInteractionTo(e.target.value);
+                    if (e.target.value && filterLastInteractionFrom && new Date(e.target.value) < new Date(filterLastInteractionFrom)) {
+                      setFilterLastInteractionFrom(e.target.value);
+                    }
+                  }}
+                  min={filterLastInteractionFrom || undefined}
+                  className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white hover:border-gray-400 transition-colors"
+                  placeholder="To"
+                />
+              </div>
+            )}
+            <label className="flex items-center gap-2 px-3 py-1.5 text-xs border border-gray-300 rounded-lg bg-white hover:border-gray-400 transition-colors cursor-pointer">
+              <input
+                type="checkbox"
+                checked={filterNoActivity}
+                onChange={(e) => setFilterNoActivity(e.target.checked)}
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-2 focus:ring-blue-500 cursor-pointer"
+              />
+              <span className="text-gray-700">No Activity</span>
+            </label>
           </div>
         </div>
 
         {/* Active Filters Display */}
-        {(searchQuery || quickFilter || filterStatus || filterTeamMember || filterPriority) && (
+        {(searchQuery || quickFilter || filterStatus || filterActionDate || filterActionDateFrom || filterActionDateTo || filterLastInteraction || filterLastInteractionFrom || filterLastInteractionTo || filterNoActivity || filterMatchType) && (
           <div className="mt-3 pt-3 border-t border-gray-200 flex items-center gap-2 flex-wrap">
             <span className="text-xs font-medium text-gray-500">Active filters:</span>
             {searchQuery && (
@@ -1149,22 +1376,6 @@ export default function ProjectDetail() {
                 Search: "{searchQuery}"
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="hover:text-blue-900"
-                >
-                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </span>
-            )}
-            {quickFilter === 'high-priority' && (
-              <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded border border-blue-200">
-                High Priority
-                <button
-                  onClick={() => {
-                    setQuickFilter('');
-                    setFilterPriority('');
-                  }}
                   className="hover:text-blue-900"
                 >
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1215,11 +1426,20 @@ export default function ProjectDetail() {
                 </button>
               </span>
             )}
-            {filterTeamMember && (
+            {(filterActionDate || filterActionDateFrom || filterActionDateTo) && (
               <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded border border-blue-200">
-                Team: {filterTeamMember}
+                Action Date: {filterActionDate === 'custom' && (filterActionDateFrom || filterActionDateTo)
+                  ? `${filterActionDateFrom ? formatDate(filterActionDateFrom) : '...'} to ${filterActionDateTo ? formatDate(filterActionDateTo) : '...'}`
+                  : filterActionDate === 'today' ? 'Today'
+                  : filterActionDate === 'this-week' ? 'This Week'
+                  : filterActionDate === 'this-month' ? 'This Month'
+                  : filterActionDate}
                 <button
-                  onClick={() => setFilterTeamMember('')}
+                  onClick={() => {
+                    setFilterActionDate('');
+                    setFilterActionDateFrom('');
+                    setFilterActionDateTo('');
+                  }}
                   className="hover:text-blue-900"
                 >
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1228,11 +1448,33 @@ export default function ProjectDetail() {
                 </button>
               </span>
             )}
-            {filterPriority && !quickFilter && (
+            {(filterLastInteraction || filterLastInteractionFrom || filterLastInteractionTo) && (
               <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded border border-blue-200">
-                Priority: {filterPriority}
+                Last Interaction: {filterLastInteraction === 'custom' && (filterLastInteractionFrom || filterLastInteractionTo)
+                  ? `${filterLastInteractionFrom ? formatDate(filterLastInteractionFrom) : '...'} to ${filterLastInteractionTo ? formatDate(filterLastInteractionTo) : '...'}`
+                  : filterLastInteraction === 'today' ? 'Today'
+                  : filterLastInteraction === 'this-week' ? 'This Week'
+                  : filterLastInteraction === 'this-month' ? 'This Month'
+                  : filterLastInteraction}
                 <button
-                  onClick={() => setFilterPriority('')}
+                  onClick={() => {
+                    setFilterLastInteraction('');
+                    setFilterLastInteractionFrom('');
+                    setFilterLastInteractionTo('');
+                  }}
+                  className="hover:text-blue-900"
+                >
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </span>
+            )}
+            {filterNoActivity && (
+              <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 text-xs rounded border border-blue-200">
+                No Activity
+                <button
+                  onClick={() => setFilterNoActivity(false)}
                   className="hover:text-blue-900"
                 >
                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1259,8 +1501,13 @@ export default function ProjectDetail() {
                 setSearchQuery('');
                 setQuickFilter('');
                 setFilterStatus('');
-                setFilterTeamMember('');
-                setFilterPriority('');
+                setFilterActionDate('');
+                setFilterActionDateFrom('');
+                setFilterActionDateTo('');
+                setFilterLastInteraction('');
+                setFilterLastInteractionFrom('');
+                setFilterLastInteractionTo('');
+                setFilterNoActivity(false);
                 setFilterMatchType('');
               }}
               className="text-xs text-gray-600 hover:text-gray-900 font-medium ml-2"
@@ -1276,7 +1523,7 @@ export default function ProjectDetail() {
         <div className="flex items-center gap-4 flex-wrap">
           <p className="text-sm text-gray-600">
             Showing <span className="font-semibold text-gray-900">{filteredContacts.length}</span> of <span className="font-semibold text-gray-900">{contacts.length}</span> prospects
-            {(searchQuery || quickFilter || filterStatus || filterTeamMember || filterPriority || filterMatchType) && (
+            {(searchQuery || quickFilter || filterStatus || filterActionDate || filterActionDateFrom || filterActionDateTo || filterLastInteraction || filterLastInteractionFrom || filterLastInteractionTo || filterMatchType) && (
               <span className="ml-2 text-gray-500">
                 (filtered)
               </span>
@@ -1627,11 +1874,11 @@ export default function ProjectDetail() {
                     nextActionActivity = activityLookups.nextActionByContactId.get(contactIdStr) || null;
                     latestStatusData = activityLookups.latestActivityStatusByContactId.get(contactIdStr) || null;
                   }
-                  const latestStatus = latestStatusData?.status || null;
+                  let latestStatus = latestStatusData?.status || null;
                   
                   // Fallback to name/email matching only if contactId lookup failed AND contactId is not available
                   // This ensures data isolation - only use fallback when absolutely necessary
-                  if ((!contactLastActivity || !nextActionActivity) && !contactIdValue) {
+                  if ((!contactLastActivity || !nextActionActivity || !latestStatusData) && !contactIdValue) {
                     const contactNameLower = contact.name?.toLowerCase() || '';
                     const contactEmailLower = contact.email?.toLowerCase() || '';
                     
@@ -1643,7 +1890,7 @@ export default function ProjectDetail() {
                           const notesLower = a.conversationNotes?.toLowerCase() || '';
                           return notesLower.includes(contactNameLower) || notesLower.includes(contactEmailLower);
                         })
-                        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+                        .sort((a, b) => getActivityDate(b) - getActivityDate(a))[0];
                     }
                     
                     if (!nextActionActivity && (contactNameLower || contactEmailLower)) {
@@ -1657,6 +1904,23 @@ export default function ProjectDetail() {
                           return notesLower.includes(contactNameLower) || notesLower.includes(contactEmailLower);
                         })
                         .sort((a, b) => new Date(a.nextActionDate) - new Date(b.nextActionDate))[0];
+                    }
+                    
+                    // Fallback for status: find most recent activity with status by name/email matching
+                    if (!latestStatusData && (contactNameLower || contactEmailLower)) {
+                      const activitiesWithStatus = allProjectActivities
+                        .filter(a => {
+                          // Only use notes matching if contactId is not set in activity
+                          if (a.contactId) return false;
+                          if (!a.status || a.status.trim() === '') return false;
+                          const notesLower = a.conversationNotes?.toLowerCase() || '';
+                          return notesLower.includes(contactNameLower) || notesLower.includes(contactEmailLower);
+                        })
+                        .sort((a, b) => getActivityDate(b) - getActivityDate(a));
+                      
+                      if (activitiesWithStatus.length > 0) {
+                        latestStatus = activitiesWithStatus[0].status;
+                      }
                     }
                   }
                   
@@ -1837,7 +2101,9 @@ export default function ProjectDetail() {
                         <td className="px-6 py-4">
                           {contactLastActivity ? (
                             <div>
-                              <div className="text-sm text-gray-900 font-medium">{formatDate(contactLastActivity.createdAt)}</div>
+                              <div className="text-sm text-gray-900 font-medium">
+                                {formatDate(getActivityDate(contactLastActivity))}
+                              </div>
                               <div className="text-xs text-gray-500 mt-1">
                                 {contactLastActivity.type === 'call' ? 'Call' : 
                                  contactLastActivity.type === 'email' ? 'Email' : 

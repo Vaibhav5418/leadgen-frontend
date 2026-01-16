@@ -32,6 +32,21 @@ ChartJS.register(
   Legend
 );
 
+// Helper function to get the activity date (prioritize activity-specific dates over createdAt)
+const getActivityDate = (activity) => {
+  if (activity.type === 'call' && activity.callDate) {
+    return new Date(activity.callDate);
+  }
+  if (activity.type === 'email' && activity.emailDate) {
+    return new Date(activity.emailDate);
+  }
+  if (activity.type === 'linkedin' && activity.linkedinDate) {
+    return new Date(activity.linkedinDate);
+  }
+  // Fallback to createdAt if activity-specific date is not available
+  return new Date(activity.createdAt);
+};
+
 export default function ProspectDashboard() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -44,6 +59,18 @@ export default function ProspectDashboard() {
   const [stageData, setStageData] = useState([]);
   const [loadingStageData, setLoadingStageData] = useState(false);
   const [notification, setNotification] = useState(null);
+
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (selectedStage) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'unset';
+    }
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [selectedStage]);
 
   useEffect(() => {
     fetchProjects();
@@ -93,7 +120,7 @@ export default function ProspectDashboard() {
       setLoadingStageData(true);
       setSelectedStage({ stage, funnelType, funnelData });
       
-      // Handle Prospect Data stage - fetch all prospects
+      // Handle Prospect Data stage - fetch all prospects with their latest activity status
       if (stage === 'prospectData') {
         if (!selectedProject) {
           setNotification({ type: 'info', message: 'Please select a project to view prospects' });
@@ -101,13 +128,46 @@ export default function ProspectDashboard() {
           return;
         }
         
-        const response = await API.get(`/projects/${selectedProject}/project-contacts`);
-        if (response.data.success) {
-          const prospects = response.data.data || [];
-          setStageData(prospects.map(prospect => ({
-            ...prospect,
-            isProspect: true
-          })));
+        // Fetch both prospects and activities in parallel
+        const [prospectsResponse, activitiesResponse] = await Promise.all([
+          API.get(`/projects/${selectedProject}/project-contacts`),
+          API.get(`/activities/project/${selectedProject}?limit=10000`)
+        ]);
+        
+        if (prospectsResponse.data.success) {
+          const prospects = prospectsResponse.data.data || [];
+          const activities = activitiesResponse.data.success ? (activitiesResponse.data.data || []) : [];
+          
+          // Build activity status lookup by contactId - find most recent status for each contact
+          const latestStatusByContactId = new Map();
+          activities.forEach(activity => {
+            if (activity.contactId && activity.status && activity.status.trim() !== '') {
+              const contactIdStr = activity.contactId.toString ? activity.contactId.toString() : String(activity.contactId);
+              const activityDate = getActivityDate(activity);
+              const existing = latestStatusByContactId.get(contactIdStr);
+              
+              if (!existing || activityDate > existing.activityDate) {
+                latestStatusByContactId.set(contactIdStr, {
+                  status: activity.status,
+                  activityDate: activityDate
+                });
+              }
+            }
+          });
+          
+          // Map prospects with their latest status from Activity History
+          setStageData(prospects.map(prospect => {
+            const prospectIdStr = prospect._id?.toString ? prospect._id.toString() : String(prospect._id);
+            const latestStatusData = latestStatusByContactId.get(prospectIdStr);
+            // Use latest status from Activity History, fallback to database stage, then 'New'
+            const displayStatus = latestStatusData?.status || prospect.stage || 'New';
+            
+            return {
+              ...prospect,
+              isProspect: true,
+              displayStatus: displayStatus // Store the calculated status
+            };
+          }));
         }
         setLoadingStageData(false);
         return;
@@ -669,7 +729,7 @@ export default function ProspectDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 relative">
       {/* Header */}
       <div className="bg-white border-b border-gray-200 sticky top-0 z-20 shadow-sm backdrop-blur-sm bg-white/95">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
@@ -1132,175 +1192,6 @@ export default function ProspectDashboard() {
           </div>
         )}
 
-        {/* Stage Data Modal */}
-        {selectedStage && (
-          <div 
-            className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
-            onClick={() => setSelectedStage(null)}
-          >
-            <div 
-              className="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Modal Header */}
-              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-gray-50 to-white">
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900">
-                    {selectedStage.stage === 'prospectData' 
-                      ? 'All Prospects' 
-                      : selectedStage.stage.charAt(0).toUpperCase() + selectedStage.stage.slice(1) + ' - ' + (selectedStage.funnelType === 'call' ? 'Cold Calling' : selectedStage.funnelType === 'email' ? 'Email' : 'LinkedIn') + ' Funnel'}
-                  </h3>
-                  <p className="text-sm text-gray-600 mt-1">
-                    {stageData.length} {selectedStage.stage === 'prospectData' ? 'prospect' : 'record'}{stageData.length !== 1 ? 's' : ''} found
-                  </p>
-                </div>
-                <button
-                  onClick={() => {
-                    setSelectedStage(null);
-                    setStageData([]);
-                  }}
-                  className="text-gray-400 hover:text-gray-600 transition-colors p-1 hover:bg-gray-100 rounded-lg"
-                >
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Modal Content */}
-              <div className="flex-1 overflow-y-auto p-6">
-                {loadingStageData ? (
-                  <div className="flex items-center justify-center py-12">
-                    <div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-200 border-t-blue-600"></div>
-                  </div>
-                ) : stageData.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="w-full">
-                      <thead className="bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-200 sticky top-0">
-                        <tr>
-                          <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
-                            {selectedStage.stage === 'prospectData' ? 'Prospect' : 'Contact'}
-                          </th>
-                          <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Company</th>
-                          {selectedStage.stage === 'prospectData' ? (
-                            <>
-                              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Email</th>
-                              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Phone</th>
-                              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Stage</th>
-                              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Priority</th>
-                            </>
-                          ) : (
-                            <>
-                              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Date</th>
-                              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
-                              <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Notes</th>
-                            </>
-                          )}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200">
-                        {stageData.map((item, idx) => {
-                          // If it's prospect data, display prospect information
-                          if (item.isProspect || selectedStage.stage === 'prospectData') {
-                            return (
-                              <tr key={idx} className="hover:bg-blue-50/50 transition-colors">
-                                <td className="px-4 py-3 text-sm font-semibold text-gray-900">
-                                  {item.name || 'Unknown'}
-                                </td>
-                                <td className="px-4 py-3 text-sm text-gray-700 font-medium">
-                                  {item.company || 'N/A'}
-                                </td>
-                                <td className="px-4 py-3 text-sm text-gray-600">
-                                  {item.email || 'N/A'}
-                                </td>
-                                <td className="px-4 py-3 text-sm text-gray-600">
-                                  {item.firstPhone || 'N/A'}
-                                </td>
-                                <td className="px-4 py-3 text-sm">
-                                  {item.stage && (
-                                    <span className="px-2 py-1 text-xs font-semibold bg-purple-100 text-purple-800 rounded-full border border-purple-200">
-                                      {item.stage}
-                                    </span>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3 text-sm">
-                                  {item.priority && (
-                                    <span className={`px-2 py-1 text-xs font-semibold rounded-full border ${
-                                      item.priority === 'High' ? 'bg-red-100 text-red-800 border-red-200' :
-                                      item.priority === 'Medium' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
-                                      'bg-gray-100 text-gray-800 border-gray-200'
-                                    }`}>
-                                      {item.priority}
-                                    </span>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          }
-                          
-                          // Otherwise, display activity information
-                          return (
-                            <tr key={idx} className="hover:bg-blue-50/50 transition-colors">
-                              <td className="px-4 py-3 text-sm font-semibold text-gray-900">
-                                {item.contact?.name || 'Unknown'}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-700 font-medium">
-                                {item.contact?.company || 'N/A'}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-600">
-                                {item.callDate || item.emailDate || item.linkedinDate
-                                  ? new Date(item.callDate || item.emailDate || item.linkedinDate).toLocaleDateString('en-US', {
-                                      year: 'numeric',
-                                      month: 'short',
-                                      day: 'numeric'
-                                    })
-                                  : item.createdAt
-                                  ? new Date(item.createdAt).toLocaleDateString('en-US', {
-                                      year: 'numeric',
-                                      month: 'short',
-                                      day: 'numeric'
-                                    })
-                                  : 'N/A'}
-                              </td>
-                              <td className="px-4 py-3 text-sm">
-                                {item.status && (
-                                  <span className="px-2 py-1 text-xs font-semibold bg-blue-100 text-blue-800 rounded-full border border-blue-200">
-                                    {item.status}
-                                  </span>
-                                )}
-                                {item.callStatus && (
-                                  <span className="px-2 py-1 text-xs font-semibold bg-green-100 text-green-800 rounded-full border border-green-200">
-                                    {item.callStatus}
-                                  </span>
-                                )}
-                                {!item.status && !item.callStatus && (
-                                  <span className="text-xs text-gray-400">-</span>
-                                )}
-                              </td>
-                              <td className="px-4 py-3 text-sm text-gray-600 max-w-xs">
-                                <div className="truncate" title={item.conversationNotes || 'No notes'}>
-                                  {item.conversationNotes || 'No notes'}
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <div className="text-center py-12 text-gray-500">
-                    <svg className="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    <p className="text-sm font-medium">No records found for this stage</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
         {activeTab === 'pipeline' && (
           <div className="space-y-6">
             {/* Pipeline Analysis Header */}
@@ -1429,6 +1320,180 @@ export default function ProspectDashboard() {
           </div>
         )}
       </div>
+
+      {/* Stage Data Modal - Outside main content container */}
+      {selectedStage && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-50 z-[100] flex items-center justify-center p-4"
+          onClick={() => {
+            setSelectedStage(null);
+            setStageData([]);
+          }}
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }}
+        >
+          <div 
+            className="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] flex flex-col relative z-[101]"
+            onClick={(e) => e.stopPropagation()}
+            style={{ position: 'relative', zIndex: 101 }}
+          >
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-gray-50 to-white">
+              <div>
+                <h3 className="text-xl font-bold text-gray-900">
+                  {selectedStage.stage === 'prospectData' 
+                    ? 'All Prospects' 
+                    : selectedStage.stage.charAt(0).toUpperCase() + selectedStage.stage.slice(1) + ' - ' + (selectedStage.funnelType === 'call' ? 'Cold Calling' : selectedStage.funnelType === 'email' ? 'Email' : 'LinkedIn') + ' Funnel'}
+                </h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  {stageData.length} {selectedStage.stage === 'prospectData' ? 'prospect' : 'record'}{stageData.length !== 1 ? 's' : ''} found
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setSelectedStage(null);
+                  setStageData([]);
+                }}
+                className="text-gray-400 hover:text-gray-600 transition-colors p-1 hover:bg-gray-100 rounded-lg"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {loadingStageData ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-200 border-t-blue-600"></div>
+                </div>
+              ) : stageData.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-200 sticky top-0">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
+                          {selectedStage.stage === 'prospectData' ? 'Prospect' : 'Contact'}
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Company</th>
+                        {selectedStage.stage === 'prospectData' ? (
+                          <>
+                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Email</th>
+                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Phone</th>
+                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Stage</th>
+                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Priority</th>
+                          </>
+                        ) : (
+                          <>
+                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Date</th>
+                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
+                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Notes</th>
+                          </>
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {stageData.map((item, idx) => {
+                        // If it's prospect data, display prospect information
+                        if (item.isProspect || selectedStage.stage === 'prospectData') {
+                          return (
+                            <tr key={idx} className="hover:bg-blue-50/50 transition-colors">
+                              <td className="px-4 py-3 text-sm font-semibold text-gray-900">
+                                {item.name || 'Unknown'}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-700 font-medium">
+                                {item.company || 'N/A'}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-600">
+                                {item.email || 'N/A'}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-600">
+                                {item.firstPhone || 'N/A'}
+                              </td>
+                              <td className="px-4 py-3 text-sm">
+                                {(item.displayStatus || item.stage) && (
+                                  <span className="px-2 py-1 text-xs font-semibold bg-purple-100 text-purple-800 rounded-full border border-purple-200">
+                                    {item.displayStatus || item.stage}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 text-sm">
+                                {item.priority && (
+                                  <span className={`px-2 py-1 text-xs font-semibold rounded-full border ${
+                                    item.priority === 'High' ? 'bg-red-100 text-red-800 border-red-200' :
+                                    item.priority === 'Medium' ? 'bg-yellow-100 text-yellow-800 border-yellow-200' :
+                                    'bg-gray-100 text-gray-800 border-gray-200'
+                                  }`}>
+                                    {item.priority}
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        }
+                        
+                        // Otherwise, display activity information
+                        return (
+                          <tr key={idx} className="hover:bg-blue-50/50 transition-colors">
+                            <td className="px-4 py-3 text-sm font-semibold text-gray-900">
+                              {item.contact?.name || 'Unknown'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-700 font-medium">
+                              {item.contact?.company || 'N/A'}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600">
+                              {item.callDate || item.emailDate || item.linkedinDate
+                                ? new Date(item.callDate || item.emailDate || item.linkedinDate).toLocaleDateString('en-US', {
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric'
+                                  })
+                                : item.createdAt
+                                ? new Date(item.createdAt).toLocaleDateString('en-US', {
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric'
+                                  })
+                                : 'N/A'}
+                            </td>
+                            <td className="px-4 py-3 text-sm">
+                              {item.status && (
+                                <span className="px-2 py-1 text-xs font-semibold bg-blue-100 text-blue-800 rounded-full border border-blue-200">
+                                  {item.status}
+                                </span>
+                              )}
+                              {item.callStatus && (
+                                <span className="px-2 py-1 text-xs font-semibold bg-green-100 text-green-800 rounded-full border border-green-200">
+                                  {item.callStatus}
+                                </span>
+                              )}
+                              {!item.status && !item.callStatus && (
+                                <span className="text-xs text-gray-400">-</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-600 max-w-xs">
+                              <div className="truncate" title={item.conversationNotes || 'No notes'}>
+                                {item.conversationNotes || 'No notes'}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-12 text-gray-500">
+                  <svg className="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p className="text-sm font-medium">No records found for this stage</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
