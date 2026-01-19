@@ -42,11 +42,12 @@ export default function Contacts() {
   
   const [categories, setCategories] = useState(['All']);
 
-  // Fetch categories from API
+  // Fetch categories from API (includes projects)
   const fetchCategories = async () => {
     try {
       const response = await API.get('/categories');
       const categoryList = response.data?.data || [];
+      // Categories now include both regular categories and projects (prefixed with "Project: ")
       setCategories(['All', ...categoryList]);
     } catch (err) {
       console.error('Error fetching categories:', err);
@@ -488,21 +489,21 @@ export default function Contacts() {
   }
 
   return (
-    <div className="min-h-screen bg-white py-8">
-      <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-white py-4 sm:py-8">
+      <div className="max-w-full mx-auto px-3 sm:px-4 lg:px-8">
         {/* Header Section */}
         <div className="mb-8 animate-fade-in-down">
           {/* Title and Stats Row */}
           <div className="mb-6">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
               <div className="flex-1">
-                <div className="flex items-center justify-between mb-4">
-                  <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Contacts</h1>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+                  <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Contacts</h1>
                   {/* View Mode Toggle */}
-                  <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
+                  <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1 self-start sm:self-auto">
                     <button
                       onClick={() => setViewMode('details')}
-                      className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+                      className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-medium transition-all duration-200 ${
                         viewMode === 'details'
                           ? 'bg-white text-gray-900 shadow-sm'
                           : 'text-gray-600 hover:text-gray-900'
@@ -513,7 +514,7 @@ export default function Contacts() {
                     </button>
                     <button
                       onClick={() => setViewMode('company')}
-                      className={`px-4 py-2 rounded-md text-sm font-medium transition-all duration-200 ${
+                      className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-md text-xs sm:text-sm font-medium transition-all duration-200 ${
                         viewMode === 'company'
                           ? 'bg-white text-gray-900 shadow-sm'
                           : 'text-gray-600 hover:text-gray-900'
@@ -524,32 +525,33 @@ export default function Contacts() {
                     </button>
                   </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <span className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold bg-gray-50 text-gray-700 border border-gray-200 shadow-sm">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                  <span className="inline-flex items-center px-2 sm:px-4 py-1 sm:py-2 rounded-lg text-xs sm:text-sm font-semibold bg-gray-50 text-gray-700 border border-gray-200 shadow-sm">
                     {pagination.total.toLocaleString()} {pagination.total === 1 ? 'contact' : 'contacts'}
                   </span>
                   {pagination.totalPages > 1 && (
-                    <span className="inline-flex items-center px-4 py-2 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 shadow-sm">
+                    <span className="inline-flex items-center px-2 sm:px-4 py-1 sm:py-2 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 shadow-sm">
                       Page {currentPage} of {pagination.totalPages}
                     </span>
                   )}
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-gray-500 font-medium">Category:</span>
-                    <span className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold bg-blue-100 text-blue-800 border border-blue-200 shadow-sm">
+                  <div className="flex items-center gap-1 sm:gap-2">
+                    <span className="text-xs sm:text-sm text-gray-500 font-medium hidden sm:inline">Category:</span>
+                    <span className="inline-flex items-center px-2 sm:px-4 py-1 sm:py-2 rounded-lg text-xs sm:text-sm font-semibold bg-blue-100 text-blue-800 border border-blue-200 shadow-sm truncate max-w-[150px] sm:max-w-none">
                       {category}
                     </span>
                   </div>
                   {viewMode === 'company' && allCompaniesData.length > 0 && (
-                    <span className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm">
+                    <span className="inline-flex items-center px-2 sm:px-4 py-1 sm:py-2 rounded-lg text-xs sm:text-sm font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm">
                       {allCompaniesData.length} {allCompaniesData.length === 1 ? 'company' : 'companies'}
                     </span>
                   )}
                   {hasActiveFilters() && (
-                    <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-semibold bg-yellow-50 text-yellow-700 border border-yellow-200 shadow-sm">
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <span className="inline-flex items-center gap-1 px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-xs font-semibold bg-yellow-50 text-yellow-700 border border-yellow-200 shadow-sm">
+                      <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
                       </svg>
-                      Filters Active
+                      <span className="hidden sm:inline">Filters Active</span>
+                      <span className="sm:hidden">Filters</span>
                     </span>
                   )}
                 </div>
@@ -558,10 +560,10 @@ export default function Contacts() {
           </div>
 
           {/* Search and Category Section */}
-          <div className="bg-gray-50 rounded-xl p-5 border border-gray-200 shadow-sm mb-6">
-            <div className="flex flex-col lg:flex-row gap-4 items-end">
+          <div className="bg-gray-50 rounded-xl p-3 sm:p-5 border border-gray-200 shadow-sm mb-4 sm:mb-6">
+            <div className="flex flex-col lg:flex-row gap-3 sm:gap-4 items-stretch lg:items-end">
               {/* Search and Category on Same Line */}
-              <div className="flex-1 flex flex-col sm:flex-row gap-3 w-full">
+              <div className="flex-1 flex flex-col sm:flex-row gap-2 sm:gap-3 w-full">
                 {/* Search Input */}
                 <form onSubmit={handleSearch} className="flex-1 flex gap-2">
                   <div className="relative flex-1 group">
@@ -603,7 +605,7 @@ export default function Contacts() {
                 </form>
 
                 {/* Category Dropdown */}
-                <div className="relative group sm:w-64">
+                <div className="relative group w-full sm:w-64">
                   <select
                     value={category}
                     onChange={(e) => {
@@ -624,14 +626,14 @@ export default function Contacts() {
                       if (filterHasPhone) params.filterHasPhone = filterHasPhone;
                       setSearchParams(params, { replace: true });
                     }}
-                    className="appearance-none bg-white border border-gray-300 rounded-lg px-4 py-3 pr-10 w-full text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 cursor-pointer shadow-sm hover:border-gray-400 hover:shadow-md"
+                    className="appearance-none bg-white border border-gray-300 rounded-lg px-3 sm:px-4 py-2 sm:py-3 pr-8 sm:pr-10 w-full text-xs sm:text-sm font-medium text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 cursor-pointer shadow-sm hover:border-gray-400 hover:shadow-md"
                   >
                     {categories.map((c) => (
                       <option key={c} value={c}>{c}</option>
                     ))}
                   </select>
-                  <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
-                    <svg className="w-5 h-5 text-gray-500 group-hover:text-gray-700 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="absolute inset-y-0 right-0 flex items-center pr-2 sm:pr-3 pointer-events-none">
+                    <svg className="w-4 h-4 sm:w-5 sm:h-5 text-gray-500 group-hover:text-gray-700 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </div>
@@ -647,7 +649,7 @@ export default function Contacts() {
               </div>
 
               {/* Action Buttons */}
-              <div className="flex gap-3 w-full sm:w-auto">
+              <div className="flex gap-2 sm:gap-3 w-full sm:w-auto flex-wrap sm:flex-nowrap">
                 {selectedContacts.length > 0 && (
                   <button
                     onClick={handleDeleteSelected}
@@ -866,7 +868,9 @@ export default function Contacts() {
                 scrollBehavior: 'auto'
               }}
             >
-              <table className="min-w-full divide-y divide-gray-200" style={{ minWidth: '1400px' }}>
+              {/* Desktop Table View */}
+              <div className="hidden md:block">
+                <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
                     <th scope="col" className="w-12 px-4 py-3 whitespace-nowrap">
@@ -1029,17 +1033,119 @@ export default function Contacts() {
                   ))}
                 </tbody>
               </table>
+              </div>
+              
+              {/* Mobile Card View */}
+              <div className="md:hidden space-y-3 p-3">
+                {sortedContacts.map((contact) => (
+                  <div
+                    key={contact._id}
+                    onClick={() => handleContactClick(contact._id)}
+                    className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={selectedContacts.includes(contact._id)}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            handleSelectContact(contact._id);
+                          }}
+                          className="h-4 w-4 text-gray-900 focus:ring-gray-900 border-gray-300 rounded cursor-pointer flex-shrink-0 mt-1"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-sm font-semibold text-gray-900 truncate">{contact.name || '-'}</h3>
+                          <p className="text-xs text-gray-500 truncate">{contact.title || '-'}</p>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-2 text-xs">
+                      {contact.company && (
+                        <div className="flex items-center gap-2">
+                          <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                          </svg>
+                          <span className="text-gray-700 truncate">{contact.company}</span>
+                        </div>
+                      )}
+                      
+                      {contact.email && (
+                        <div className="flex items-center gap-2">
+                          <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                          </svg>
+                          <a
+                            href={`mailto:${contact.email}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-blue-600 hover:underline truncate"
+                          >
+                            {contact.email}
+                          </a>
+                        </div>
+                      )}
+                      
+                      {contact.firstPhone && (
+                        <div className="flex items-center gap-2">
+                          <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                          </svg>
+                          <a
+                            href={`tel:${contact.firstPhone}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-blue-600 hover:underline"
+                          >
+                            {contact.firstPhone}
+                          </a>
+                        </div>
+                      )}
+                      
+                      {(contact.personLinkedinUrl || contact.companyLinkedinUrl) && (
+                        <div className="flex items-center gap-2">
+                          <svg className="w-4 h-4 text-blue-600 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                          </svg>
+                          <a
+                            href={contact.personLinkedinUrl || contact.companyLinkedinUrl}
+                            onClick={(e) => e.stopPropagation()}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline text-xs"
+                          >
+                            LinkedIn Profile
+                          </a>
+                        </div>
+                      )}
+                      
+                      {contact.industry && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-400 text-xs">Industry:</span>
+                          <span className="text-gray-700">{contact.industry}</span>
+                        </div>
+                      )}
+                      
+                      {contact.keywords && (
+                        <div className="pt-2 border-t border-gray-100">
+                          <span className="text-gray-400 text-xs">Keywords: </span>
+                          <span className="text-gray-700 text-xs">{formatKeywords(contact)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
             
             {/* Pagination Controls */}
             {pagination.totalPages > 1 && (
-              <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex items-center justify-between">
+              <div className="px-3 sm:px-6 py-3 sm:py-4 border-t border-gray-200 bg-gray-50 flex flex-col sm:flex-row items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-gray-700">
+                  <span className="text-xs sm:text-sm text-gray-700">
                     Showing {((currentPage - 1) * pagination.limit) + 1} to {Math.min(currentPage * pagination.limit, pagination.total)} of {pagination.total.toLocaleString()} contacts
                   </span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1 sm:gap-2">
                   <button
                     onClick={() => {
                       if (currentPage > 1) {
@@ -1053,11 +1159,12 @@ export default function Contacts() {
                       }
                     }}
                     disabled={currentPage === 1}
-                    className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    Previous
+                    <span className="hidden sm:inline">Previous</span>
+                    <span className="sm:hidden">Prev</span>
                   </button>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-0.5 sm:gap-1">
                     {Array.from({ length: Math.min(5, pagination.totalPages) }, (_, i) => {
                       let pageNum;
                       if (pagination.totalPages <= 5) {
@@ -1081,7 +1188,7 @@ export default function Contacts() {
                             if (searchParam) params.search = searchParam;
                             setSearchParams(params, { replace: true });
                           }}
-                          className={`px-3 py-2 text-sm font-medium rounded transition-colors ${
+                          className={`px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium rounded transition-colors ${
                             currentPage === pageNum
                               ? 'bg-gray-900 text-white'
                               : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
@@ -1105,7 +1212,7 @@ export default function Contacts() {
                       }
                     }}
                     disabled={currentPage >= pagination.totalPages}
-                    className="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="px-2 sm:px-3 py-1.5 sm:py-2 text-xs sm:text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                     Next
                   </button>

@@ -24,7 +24,7 @@ const projectsItems = [
   }
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ isOpen = false, onClose }) {
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -125,10 +125,23 @@ export default function Sidebar() {
     }
   }, [location.pathname]);
 
+  // Close sidebar when navigating on mobile
+  const handleNavigation = (path) => {
+    navigate(path);
+    if (onClose) {
+      onClose();
+    }
+  };
+
   return (
-    <div className="w-64 bg-white border-r border-gray-200 h-screen flex flex-col fixed left-0 top-0">
+    <div className={`
+      w-64 bg-white border-r border-gray-200 h-screen flex flex-col fixed left-0 top-0 z-50
+      transform transition-transform duration-300 ease-in-out
+      lg:translate-x-0
+      ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+    `}>
       {/* Header */}
-      <div className="px-6 py-4 border-b border-gray-200">
+      <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center flex-shrink-0">
             <div className="w-5 h-5 bg-white rounded-full flex items-center justify-center">
@@ -137,6 +150,16 @@ export default function Sidebar() {
           </div>
           <span className="text-base font-semibold text-gray-900">Outbound SaaS</span>
         </div>
+        {/* Close button for mobile */}
+        <button
+          onClick={onClose}
+          className="lg:hidden p-2 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+          aria-label="Close menu"
+        >
+          <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
       </div>
 
       {/* Navigation Items */}
@@ -172,7 +195,7 @@ export default function Sidebar() {
                   return (
                     <button
                       key={item.id}
-                      onClick={() => navigate(item.path === '/dashboard' ? '/' : item.path)}
+                      onClick={() => handleNavigation(item.path === '/dashboard' ? '/' : item.path)}
                       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
                         active
                           ? 'bg-blue-50 text-blue-600'
@@ -222,7 +245,7 @@ export default function Sidebar() {
                   return (
                     <button
                       key={item.id}
-                      onClick={() => navigate(item.path)}
+                      onClick={() => handleNavigation(item.path)}
                       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
                         active
                           ? 'bg-blue-50 text-blue-600'
@@ -245,7 +268,7 @@ export default function Sidebar() {
           {/* Master Dashboard - After Projects */}
           <div className="mt-2">
             <button
-              onClick={() => navigate(masterDashboardItem.path)}
+              onClick={() => handleNavigation(masterDashboardItem.path)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
                 isActive(masterDashboardItem.path)
                   ? 'bg-blue-50 text-blue-600'
