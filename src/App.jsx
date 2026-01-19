@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Login from './pages/Login';
+import ResetPassword from './pages/ResetPassword';
 import Dashboard from './pages/Dashboard';
 import Contacts from './pages/Contacts';
 import ContactDetail from './pages/ContactDetail';
@@ -42,8 +43,9 @@ export default function App() {
         {/* Root path - redirects to login or dashboard based on auth */}
         <Route path="/" element={<RootRedirect />} />
 
-        {/* Public Route */}
+        {/* Public Routes */}
         <Route path="/login" element={<Login />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
 
         {/* Protected Routes */}
         <Route element={<Layout />}>
