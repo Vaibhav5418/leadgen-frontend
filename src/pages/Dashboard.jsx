@@ -681,30 +681,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Alerts & Actions */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <AlertCard
-                type="success"
-                title="Strong Contact Growth"
-                description="Your contact database grew significantly this month. Consider allocating more enrichment resources to maintain data quality."
-                action={() => navigate('/contacts')}
-                actionLabel="View Industry Breakdown"
-              />
-              <AlertCard
-                type="warning"
-                title="Email Validity Declining"
-                description="Email validity rate dropped this month. Run validation on contacts added in the last 30 days to identify and fix invalid addresses."
-                action={() => navigate('/contacts')}
-                actionLabel="Review Data Quality"
-              />
-              <AlertCard
-                type="error"
-                title="Duplicate Detection Alert"
-                description={`${stats.duplicateRecords?.value || 0} duplicate records detected across your database. Use the Data Quality Center to merge or remove duplicates.`}
-                action={() => navigate('/contacts')}
-                actionLabel="Fix Duplicates"
-              />
-            </div>
 
             {/* Data Health Score */}
             <div className="bg-white border border-gray-200 rounded-lg p-6">

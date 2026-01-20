@@ -235,6 +235,21 @@ export default function CreateProject() {
     }
   };
 
+  const handleStepClick = (stepId) => {
+    // If clicking the current step, do nothing
+    if (stepId === currentStep) return;
+
+    // If navigating forward, validate the current step before moving
+    if (stepId > currentStep) {
+      if (!validateStep(currentStep)) {
+        return;
+      }
+    }
+
+    setError(null);
+    setCurrentStep(stepId);
+  };
+
   const handleCancel = () => {
     if (window.confirm('Are you sure you want to cancel? All unsaved data will be lost.')) {
       navigate('/projects');
@@ -797,7 +812,11 @@ export default function CreateProject() {
 
             return (
               <div key={step.id} className="flex items-center flex-1">
-                <div className="flex flex-col items-center flex-1">
+                <button
+                  type="button"
+                  onClick={() => handleStepClick(step.id)}
+                  className="flex flex-col items-center flex-1 focus:outline-none"
+                >
                   <div
                     className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold transition-all ${
                       isCompleted
@@ -822,7 +841,7 @@ export default function CreateProject() {
                   >
                     {step.label}
                   </span>
-                </div>
+                </button>
                 {index < STEPS.length - 1 && (
                   <div
                     className={`flex-1 h-0.5 mx-2 ${

@@ -146,6 +146,37 @@ export default function Projects() {
     return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
   };
 
+  // Calculate total leads generated from status-wise breakdown
+  const getLeadsGeneratedFromStatus = (leadsByStatus) => {
+    if (!leadsByStatus) return 0;
+    const {
+      interested = 0,
+      cip = 0,
+      detailsShared = 0,
+      demoBooked = 0,
+      demoCompleted = 0,
+      meetingProposed = 0,
+      meetingScheduled = 0,
+      meetingCompleted = 0,
+      sql = 0,
+      won = 0,
+    } = leadsByStatus;
+
+    // Sum all lead statuses (excluding 'new' status as it's not a lead)
+    return (
+      interested +
+      cip +
+      detailsShared +
+      demoBooked +
+      demoCompleted +
+      meetingProposed +
+      meetingScheduled +
+      meetingCompleted +
+      sql +
+      won
+    );
+  };
+
   return (
     <div className="p-6">
       {/* Header Section */}
@@ -364,72 +395,11 @@ export default function Projects() {
                       </div>
                     </td>
                     <td className="px-3 py-4">
-                      {project.leadsByStatus ? (
-                        <div className="space-y-0.5">
-                          {project.leadsByStatus.interested > 0 && (
-                            <div className="text-xs font-semibold text-gray-900">
-                              {project.leadsByStatus.interested}
-                            </div>
-                          )}
-                          {project.leadsByStatus.cip > 0 && (
-                            <div className="text-xs font-semibold text-gray-900">
-                              {project.leadsByStatus.cip}
-                            </div>
-                          )}
-                          {project.leadsByStatus.detailsShared > 0 && (
-                            <div className="text-xs font-semibold text-gray-900">
-                              {project.leadsByStatus.detailsShared}
-                            </div>
-                          )}
-                          {project.leadsByStatus.demoBooked > 0 && (
-                            <div className="text-xs font-semibold text-gray-900">
-                              {project.leadsByStatus.demoBooked}
-                            </div>
-                          )}
-                          {project.leadsByStatus.demoCompleted > 0 && (
-                            <div className="text-xs font-semibold text-gray-900">
-                              {project.leadsByStatus.demoCompleted}
-                            </div>
-                          )}
-                          {project.leadsByStatus.meetingProposed > 0 && (
-                            <div className="text-xs font-semibold text-gray-900">
-                              {project.leadsByStatus.meetingProposed}
-                            </div>
-                          )}
-                          {project.leadsByStatus.meetingScheduled > 0 && (
-                            <div className="text-xs font-semibold text-gray-900">
-                              {project.leadsByStatus.meetingScheduled}
-                            </div>
-                          )}
-                          {project.leadsByStatus.meetingCompleted > 0 && (
-                            <div className="text-xs font-semibold text-gray-900">
-                              {project.leadsByStatus.meetingCompleted}
-                            </div>
-                          )}
-                          {project.leadsByStatus.sql > 0 && (
-                            <div className="text-xs font-semibold text-gray-900">
-                              {project.leadsByStatus.sql}
-                            </div>
-                          )}
-                          {project.leadsByStatus.won > 0 && (
-                            <div className="text-xs font-semibold text-gray-900">
-                              {project.leadsByStatus.won}
-                            </div>
-                          )}
-                          {(!project.leadsByStatus.interested && !project.leadsByStatus.cip && !project.leadsByStatus.detailsShared && 
-                            !project.leadsByStatus.demoBooked && !project.leadsByStatus.demoCompleted && 
-                            !project.leadsByStatus.meetingProposed && !project.leadsByStatus.meetingScheduled && 
-                            !project.leadsByStatus.meetingCompleted && !project.leadsByStatus.sql && !project.leadsByStatus.won) && (
-                            <div className="text-sm font-semibold text-gray-900">
-                              {project.leadsGenerated || 0}
-                            </div>
-                          )}
-                        </div>
-                      ) : (
                       <div className="text-sm font-semibold text-gray-900">
-                        {project.leadsGenerated || 0}
+                        {project.leadsByStatus
+                          ? getLeadsGeneratedFromStatus(project.leadsByStatus)
+                          : (project.leadsGenerated || 0)}
                       </div>
-                      )}
                     </td>
                     <td className="px-3 py-4" onClick={(e) => e.stopPropagation()}>
                       <label className="relative inline-flex items-center cursor-pointer">

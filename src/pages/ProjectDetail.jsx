@@ -472,9 +472,9 @@ export default function ProjectDetail() {
 
   const fetchAllProjectActivities = async () => {
     try {
-      // Fetch all activities for accurate KPI filtering
-      // Use a high limit to ensure we get all activities
-      const response = await API.get(`/activities/project/${id}?limit=10000`);
+      // Fetch activities for KPI filtering
+      // Limit to 5000 for better performance - should cover most projects
+      const response = await API.get(`/activities/project/${id}?limit=5000`);
       if (response.data.success) {
         const activities = response.data.data || [];
         setAllProjectActivities(activities);

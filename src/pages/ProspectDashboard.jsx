@@ -179,9 +179,10 @@ export default function ProspectDashboard() {
         }
         
         // Fetch both prospects and activities in parallel
+        // Limit activities to 5000 for better performance
         const [prospectsResponse, activitiesResponse] = await Promise.all([
-          API.get(`/projects/${selectedProject}/project-contacts`),
-          API.get(`/activities/project/${selectedProject}?limit=10000`)
+          API.get(`/projects/${selectedProject}/project-contacts?limit=100`),
+          API.get(`/activities/project/${selectedProject}?limit=5000`)
         ]);
         
         if (prospectsResponse.data.success) {
