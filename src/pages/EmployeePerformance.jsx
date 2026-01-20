@@ -427,40 +427,6 @@ export default function EmployeePerformance() {
 
             {/* Charts Row */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Channel Distribution */}
-              <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
-                <h3 className="text-lg font-semibold text-gray-900 mb-6">Channel Distribution</h3>
-                <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
-                  <div className="h-64">
-                    <Doughnut
-                      data={overviewChartData.channelDistribution}
-                      options={{
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                          legend: {
-                            position: 'bottom',
-                            labels: {
-                              padding: 15,
-                              font: {
-                                size: 12,
-                                weight: '500'
-                              }
-                            }
-                          },
-                          tooltip: {
-                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                            padding: 12,
-                            titleFont: { size: 14 },
-                            bodyFont: { size: 13 }
-                          }
-                        }
-                      }}
-                    />
-                  </div>
-                </Suspense>
-              </div>
-
               {/* Employee Comparison */}
               <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
                 <h3 className="text-lg font-semibold text-gray-900 mb-6">Employee Activity Comparison</h3>
@@ -618,8 +584,105 @@ export default function EmployeePerformance() {
             {/* Channel Distribution */}
             <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm">
               <h3 className="text-lg font-semibold text-gray-900 mb-6">Channel Distribution</h3>
-              <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
-                <div className="h-64">
+              
+              {/* Metric Cards */}
+              <div className="grid grid-cols-3 gap-3 mb-6">
+                <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-4 text-center">
+                  <div className="text-xs font-medium text-blue-700 mb-1">Email</div>
+                  <div className="text-2xl font-bold text-blue-600">{currentEmployee.byChannel.email.total.toLocaleString()}</div>
+                  <div className="text-xs text-blue-600 mt-1">
+                    {currentEmployee.totalActivities > 0 
+                      ? ((currentEmployee.byChannel.email.total / currentEmployee.totalActivities) * 100).toFixed(1) 
+                      : 0}%
+                  </div>
+                </div>
+                <div className="bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-lg p-4 text-center">
+                  <div className="text-xs font-medium text-green-700 mb-1">Call</div>
+                  <div className="text-2xl font-bold text-green-600">{currentEmployee.byChannel.call.total.toLocaleString()}</div>
+                  <div className="text-xs text-green-600 mt-1">
+                    {currentEmployee.totalActivities > 0 
+                      ? ((currentEmployee.byChannel.call.total / currentEmployee.totalActivities) * 100).toFixed(1) 
+                      : 0}%
+                  </div>
+                </div>
+                <div className="bg-gradient-to-br from-purple-50 to-purple-100 border border-purple-200 rounded-lg p-4 text-center">
+                  <div className="text-xs font-medium text-purple-700 mb-1">LinkedIn</div>
+                  <div className="text-2xl font-bold text-purple-600">{currentEmployee.byChannel.linkedin.total.toLocaleString()}</div>
+                  <div className="text-xs text-purple-600 mt-1">
+                    {currentEmployee.totalActivities > 0 
+                      ? ((currentEmployee.byChannel.linkedin.total / currentEmployee.totalActivities) * 100).toFixed(1) 
+                      : 0}%
+                  </div>
+                </div>
+              </div>
+
+              {/* Horizontal Bar Chart */}
+              <div className="mb-6">
+                <Suspense fallback={<div className="h-48 flex items-center justify-center">Loading chart...</div>}>
+                  <div className="h-48">
+                    <Bar
+                      data={{
+                        labels: ['Email', 'Call', 'LinkedIn'],
+                        datasets: [{
+                          label: 'Activities',
+                          data: [
+                            currentEmployee.byChannel.email.total,
+                            currentEmployee.byChannel.call.total,
+                            currentEmployee.byChannel.linkedin.total
+                          ],
+                          backgroundColor: ['#3B82F6', '#10B981', '#8B5CF6'],
+                          borderRadius: 8,
+                          borderSkipped: false,
+                        }]
+                      }}
+                      options={{
+                        indexAxis: 'y',
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                          legend: {
+                            display: false
+                          },
+                          tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                            padding: 12,
+                            callbacks: {
+                              label: function(context) {
+                                const total = currentEmployee.totalActivities;
+                                const value = context.parsed.x;
+                                const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                                return `${value.toLocaleString()} activities (${percentage}%)`;
+                              }
+                            }
+                          }
+                        },
+                        scales: {
+                          x: {
+                            beginAtZero: true,
+                            ticks: {
+                              callback: function(value) {
+                                return value.toLocaleString();
+                              }
+                            },
+                            grid: {
+                              color: 'rgba(0, 0, 0, 0.05)'
+                            }
+                          },
+                          y: {
+                            grid: {
+                              display: false
+                            }
+                          }
+                        }
+                      }}
+                    />
+                  </div>
+                </Suspense>
+              </div>
+
+              {/* Pie Chart */}
+              <Suspense fallback={<div className="h-48 flex items-center justify-center">Loading chart...</div>}>
+                <div className="h-48">
                   <Pie
                     data={employeeChartData.channelDistribution}
                     options={{
@@ -633,12 +696,22 @@ export default function EmployeePerformance() {
                             font: {
                               size: 12,
                               weight: '500'
-                            }
+                            },
+                            usePointStyle: true,
+                            pointStyle: 'circle'
                           }
                         },
                         tooltip: {
                           backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                          padding: 12
+                          padding: 12,
+                          callbacks: {
+                            label: function(context) {
+                              const total = currentEmployee.totalActivities;
+                              const value = context.parsed;
+                              const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                              return `${context.label}: ${value.toLocaleString()} (${percentage}%)`;
+                            }
+                          }
                         }
                       }
                     }}

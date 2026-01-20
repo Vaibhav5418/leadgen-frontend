@@ -213,10 +213,10 @@ export default function ProspectDashboard() {
     }
   };
 
-  const fetchStageData = async (stage, funnelType, funnelData) => {
+  const fetchStageData = async (stage, funnelType, funnelData, memberId = null) => {
     try {
       setLoadingStageData(true);
-      setSelectedStage({ stage, funnelType, funnelData });
+      setSelectedStage({ stage, funnelType, funnelData, memberId });
       
       // Handle Prospect Data stage - fetch all prospects with their latest activity status
       if (stage === 'prospectData') {
@@ -234,8 +234,29 @@ export default function ProspectDashboard() {
         ]);
         
         if (prospectsResponse.data.success) {
-          const prospects = prospectsResponse.data.data || [];
-          const activities = activitiesResponse.data.success ? (activitiesResponse.data.data || []) : [];
+          let prospects = prospectsResponse.data.data || [];
+          let activities = activitiesResponse.data.success ? (activitiesResponse.data.data || []) : [];
+          
+          // Filter by team member if memberId is provided
+          if (memberId) {
+            const memberIdStr = memberId.toString ? memberId.toString() : String(memberId);
+            // Filter activities by createdBy
+            activities = activities.filter(a => {
+              if (!a.createdBy) return false;
+              // Handle both ObjectId objects and strings
+              const activityCreatedBy = a.createdBy?.toString ? a.createdBy.toString() : 
+                                       (a.createdBy?._id ? a.createdBy._id.toString() : String(a.createdBy));
+              return activityCreatedBy === memberIdStr;
+            });
+            // Filter prospects to only those that have activities from this member
+            const contactIdsWithMemberActivities = new Set(
+              activities.map(a => a.contactId?.toString ? a.contactId.toString() : String(a.contactId)).filter(Boolean)
+            );
+            prospects = prospects.filter(p => {
+              const prospectIdStr = p._id?.toString ? p._id.toString() : String(p._id);
+              return contactIdsWithMemberActivities.has(prospectIdStr);
+            });
+          }
           
           // Build activity status lookup by contactId - find most recent status for each contact
           const latestStatusByContactId = new Map();
@@ -282,7 +303,20 @@ export default function ProspectDashboard() {
       const response = await API.get(`/activities/project/${selectedProject}`);
       
       if (response.data.success) {
-        const activities = response.data.data || [];
+        let activities = response.data.data || [];
+        
+        // Filter by team member if memberId is provided
+        if (memberId) {
+          const memberIdStr = memberId.toString ? memberId.toString() : String(memberId);
+          activities = activities.filter(a => {
+            if (!a.createdBy) return false;
+            // Handle both ObjectId objects and strings
+            const activityCreatedBy = a.createdBy?.toString ? a.createdBy.toString() : 
+                                     (a.createdBy?._id ? a.createdBy._id.toString() : String(a.createdBy));
+            return activityCreatedBy === memberIdStr;
+          });
+        }
+        
         let filteredActivities = [];
 
         if (funnelType === 'call') {
@@ -641,7 +675,7 @@ export default function ProspectDashboard() {
     );
   };
 
-  const FunnelVisualization = ({ title, data, color = 'blue', funnelType = 'call', totalProspects = null }) => {
+  const FunnelVisualization = ({ title, data, color = 'blue', funnelType = 'call', totalProspects = null, memberId = null }) => {
     // Determine which stages to show based on funnel type
     let stages = [];
     
@@ -743,13 +777,13 @@ export default function ProspectDashboard() {
     const handleStageClick = (stage) => {
       // Always allow clicking on Prospect Data
       if (stage.key === 'prospectData') {
-        fetchStageData(stage.key, funnelType, data);
+        fetchStageData(stage.key, funnelType, data, memberId);
         return;
       }
       
       // For other stages, check if they have data
       if (stage.clickable && (data[stage.key] || 0) > 0) {
-        fetchStageData(stage.key, funnelType, data);
+        fetchStageData(stage.key, funnelType, data, memberId);
       } else if (stage.clickable) {
         setNotification({ type: 'info', message: `No records found for ${stage.label} stage` });
         setTimeout(() => setNotification(null), 3000);
@@ -1713,6 +1747,43 @@ export default function ProspectDashboard() {
           const meetings = (callData.demoBooked || 0) + (callData.demoCompleted || 0);
           const connectRate = callsMade > 0 ? ((callsConnected / callsMade) * 100) : 0;
           
+          // Get call status breakdown for donut chart
+          const callStatusBreakdown = callData.callStatusBreakdown || {};
+          const statusLabels = Object.keys(callStatusBreakdown).filter(status => 
+            callStatusBreakdown[status] > 0 && callStatusBreakdown[status] !== undefined
+          );
+          const statusData = statusLabels.map(status => callStatusBreakdown[status]);
+          
+          // Define colors for each status
+          const statusColors = {
+            'Interested': '#10B981',
+            'Not Interested': '#EF4444',
+            'Ring': '#F59E0B',
+            'Busy': '#F97316',
+            'Call Back': '#3B82F6',
+            'Hang Up': '#EF4444',
+            'Switch Off': '#6B7280',
+            'Future': '#8B5CF6',
+            'Details Shared': '#06B6D4',
+            'Demo Booked': '#10B981',
+            'Invalid': '#9CA3AF',
+            'Existing': '#6366F1',
+            'Demo Completed': '#059669',
+            'No Status': '#D1D5DB'
+          };
+          
+          const statusBackgroundColors = statusLabels.map(status => statusColors[status] || '#9CA3AF');
+          
+          // Debug: Log the data to help diagnose issues
+          if (statusLabels.length === 0 && callsMade > 0) {
+            console.log('Call Status Breakdown Debug:', {
+              callStatusBreakdown,
+              callData,
+              callsMade,
+              statusLabels
+            });
+          }
+          
           return (
             <div className="space-y-6">
               {/* Call KPI Cards */}
@@ -1858,55 +1929,64 @@ export default function ProspectDashboard() {
                   </Suspense>
                 </div>
 
-                {/* Call Connection Rate */}
+                {/* Call Status Distribution */}
                 <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-                  <h3 className="text-lg font-semibold text-gray-900 mb-6">Call Connection Rate</h3>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-6">Call Status Distribution</h3>
                   <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
                     <div className="h-64 flex items-center justify-center">
-                      <Doughnut
-                        data={{
-                          labels: ['Connected', 'Not Connected'],
-                          datasets: [{
-                            label: 'Call Connections',
-                            data: [
-                              callsConnected,
-                              Math.max(0, callsMade - callsConnected)
-                            ],
-                            backgroundColor: ['#10B981', '#EF4444'],
-                            borderWidth: 2,
-                            borderColor: '#ffffff'
-                          }]
-                        }}
-                        options={{
-                          responsive: true,
-                          maintainAspectRatio: false,
-                          cutout: '60%',
-                          plugins: {
-                            legend: {
-                              position: 'bottom',
-                              labels: {
-                                padding: 15,
-                                font: {
-                                  size: 12,
-                                  weight: '500'
-                                },
-                                usePointStyle: true,
-                                pointStyle: 'circle'
-                              }
-                            },
-                            tooltip: {
-                              callbacks: {
-                                label: (context) => {
-                                  const label = context.label || '';
-                                  const value = context.parsed || 0;
-                                  const percentage = callsMade > 0 ? ((value / callsMade) * 100) : 0;
-                                  return `${label}: ${value.toLocaleString()} (${percentage.toFixed(1)}%)`;
+                      {statusLabels.length > 0 ? (
+                        <Doughnut
+                          data={{
+                            labels: statusLabels,
+                            datasets: [{
+                              label: 'Call Status',
+                              data: statusData,
+                              backgroundColor: statusBackgroundColors,
+                              borderWidth: 0
+                            }]
+                          }}
+                          options={{
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            cutout: '60%',
+                            plugins: {
+                              legend: {
+                                position: 'bottom',
+                                labels: {
+                                  padding: 15,
+                                  font: {
+                                    size: 12,
+                                    weight: '500'
+                                  },
+                                  usePointStyle: true,
+                                  pointStyle: 'circle',
+                                  color: '#374151'
+                                }
+                              },
+                              tooltip: {
+                                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                padding: 12,
+                                callbacks: {
+                                  label: (context) => {
+                                    const label = context.label || '';
+                                    const value = context.parsed || 0;
+                                    const total = statusData.reduce((sum, val) => sum + val, 0);
+                                    const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                                    return `${label}: ${value.toLocaleString()} (${percentage}%)`;
+                                  }
                                 }
                               }
                             }
-                          }
-                        }}
-                      />
+                          }}
+                        />
+                      ) : callsMade > 0 ? (
+                        <div className="text-gray-500 text-sm text-center">
+                          <p>No call status data available</p>
+                          <p className="text-xs mt-2">Calls have been made but status information is missing</p>
+                        </div>
+                      ) : (
+                        <div className="text-gray-500 text-sm">No calls made yet</div>
+                      )}
                     </div>
                   </Suspense>
                 </div>
@@ -2178,6 +2258,7 @@ export default function ProspectDashboard() {
                               color="green"
                               funnelType="call"
                               totalProspects={analytics.overview?.totalProspects}
+                              memberId={memberFunnel.memberId}
                             />
                           )}
                           
@@ -2189,6 +2270,7 @@ export default function ProspectDashboard() {
                               color="purple"
                               funnelType="linkedin"
                               totalProspects={analytics.overview?.totalProspects}
+                              memberId={memberFunnel.memberId}
                             />
                           )}
                           
@@ -2200,6 +2282,7 @@ export default function ProspectDashboard() {
                               color="blue"
                               funnelType="email"
                               totalProspects={analytics.overview?.totalProspects}
+                              memberId={memberFunnel.memberId}
                             />
                           )}
                         </div>
@@ -2352,9 +2435,21 @@ export default function ProspectDashboard() {
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gradient-to-r from-gray-50 to-white">
               <div>
                 <h3 className="text-xl font-bold text-gray-900">
-                  {selectedStage.stage === 'prospectData' 
-                    ? 'All Prospects' 
-                    : selectedStage.stage.charAt(0).toUpperCase() + selectedStage.stage.slice(1) + ' - ' + (selectedStage.funnelType === 'call' ? 'Cold Calling' : selectedStage.funnelType === 'email' ? 'Email' : 'LinkedIn') + ' Funnel'}
+                  {selectedStage.memberId ? (() => {
+                    const member = teamMemberFunnels.find(m => {
+                      const mId = m.memberId?.toString ? m.memberId.toString() : String(m.memberId);
+                      const sId = selectedStage.memberId?.toString ? selectedStage.memberId.toString() : String(selectedStage.memberId);
+                      return mId === sId;
+                    });
+                    const memberName = member?.name || 'Team Member';
+                    return selectedStage.stage === 'prospectData' 
+                      ? `${memberName} - All Prospects` 
+                      : `${memberName} - ${selectedStage.stage.charAt(0).toUpperCase() + selectedStage.stage.slice(1)} - ${selectedStage.funnelType === 'call' ? 'Cold Calling' : selectedStage.funnelType === 'email' ? 'Email' : 'LinkedIn'} Funnel`;
+                  })() : (
+                    selectedStage.stage === 'prospectData' 
+                      ? 'All Prospects' 
+                      : selectedStage.stage.charAt(0).toUpperCase() + selectedStage.stage.slice(1) + ' - ' + (selectedStage.funnelType === 'call' ? 'Cold Calling' : selectedStage.funnelType === 'email' ? 'Email' : 'LinkedIn') + ' Funnel'
+                  )}
                 </h3>
                 <p className="text-sm text-gray-600 mt-1">
                   {stageData.length} {selectedStage.stage === 'prospectData' ? 'prospect' : 'record'}{stageData.length !== 1 ? 's' : ''} found
