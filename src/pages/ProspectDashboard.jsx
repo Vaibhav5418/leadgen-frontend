@@ -1,4 +1,4 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useMemo, lazy, Suspense } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import API from '../api/axios';
 import {
@@ -59,6 +59,11 @@ export default function ProspectDashboard() {
   const [stageData, setStageData] = useState([]);
   const [loadingStageData, setLoadingStageData] = useState(false);
   const [notification, setNotification] = useState(null);
+  const [teamTimeFilter, setTeamTimeFilter] = useState('today'); // 'today', 'last7days', 'lastMonth'
+  const [teamActivityData, setTeamActivityData] = useState(null);
+  const [loadingTeamActivity, setLoadingTeamActivity] = useState(false);
+  const [teamMemberFunnels, setTeamMemberFunnels] = useState([]);
+  const [loadingTeamFunnels, setLoadingTeamFunnels] = useState(false);
 
   // Prevent body scroll when modal is open
   useEffect(() => {
@@ -79,6 +84,30 @@ export default function ProspectDashboard() {
   useEffect(() => {
     fetchAnalytics();
   }, [selectedProject]);
+
+  useEffect(() => {
+    fetchTeamActivityData();
+  }, [selectedProject, teamTimeFilter]);
+
+  useEffect(() => {
+    fetchTeamMemberFunnels();
+  }, [selectedProject]);
+
+  const fetchTeamMemberFunnels = async () => {
+    try {
+      setLoadingTeamFunnels(true);
+      const params = selectedProject ? { projectId: selectedProject } : {};
+      const response = await API.get('/projects/team-member-funnels', { params });
+      if (response.data.success) {
+        setTeamMemberFunnels(response.data.data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching team member funnels:', error);
+      setTeamMemberFunnels([]);
+    } finally {
+      setLoadingTeamFunnels(false);
+    }
+  };
 
   const fetchProjects = async () => {
     try {
@@ -103,6 +132,27 @@ export default function ProspectDashboard() {
       console.error('Error fetching prospect analytics:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchTeamActivityData = async () => {
+    try {
+      setLoadingTeamActivity(true);
+      const params = {
+        timeFilter: teamTimeFilter
+      };
+      if (selectedProject) {
+        params.projectId = selectedProject;
+      }
+      const response = await API.get('/activities/team-performance', { params });
+      if (response.data.success) {
+        setTeamActivityData(response.data.data);
+      }
+    } catch (error) {
+      console.error('Error fetching team activity data:', error);
+      setTeamActivityData(null);
+    } finally {
+      setLoadingTeamActivity(false);
     }
   };
 
@@ -412,12 +462,61 @@ export default function ProspectDashboard() {
     }
   };
 
-  const tabs = [
-    { id: 'overview', label: 'Overview', icon: 'grid' },
-    { id: 'funnels', label: 'Funnels', icon: 'funnel' },
-    { id: 'pipeline', label: 'Pipeline', icon: 'chart' },
-    { id: 'team', label: 'Team Performance', icon: 'users' }
-  ];
+  // Determine enabled activity types based on selected project channels
+  const enabledActivityTypes = useMemo(() => {
+    if (!selectedProject) {
+      // If no project selected, show all tabs
+      return ['call', 'email', 'linkedin'];
+    }
+    
+    // Find the selected project from projects list
+    const project = projects.find(p => p._id === selectedProject);
+    if (!project?.channels) {
+      // If project not found or no channels defined, default to all
+      return ['call', 'email', 'linkedin'];
+    }
+    
+    const enabled = [];
+    if (project.channels.coldCalling) enabled.push('call');
+    if (project.channels.coldEmail) enabled.push('email');
+    if (project.channels.linkedInOutreach) enabled.push('linkedin');
+    
+    // If no channels are enabled, default to all (for backward compatibility)
+    return enabled.length > 0 ? enabled : ['call', 'email', 'linkedin'];
+  }, [selectedProject, projects]);
+
+  // Filter tabs based on enabled channels
+  const filteredTabs = useMemo(() => {
+    const allTabs = [
+      { id: 'overview', label: 'Overview' },
+      { id: 'pipeline', label: 'Pipeline' },
+      { id: 'linkedin', label: 'LinkedIn' },
+      { id: 'calls', label: 'Cold Calls' },
+      { id: 'email', label: 'Email' },
+      { id: 'team', label: 'Team Performance' }
+    ];
+    
+    // Always show overview, pipeline, and team
+    // Filter channel-specific tabs based on enabled channels
+    return allTabs.filter(tab => {
+      if (['overview', 'pipeline', 'team'].includes(tab.id)) {
+        return true;
+      }
+      if (tab.id === 'linkedin') return enabledActivityTypes.includes('linkedin');
+      if (tab.id === 'calls') return enabledActivityTypes.includes('call');
+      if (tab.id === 'email') return enabledActivityTypes.includes('email');
+      return true;
+    });
+  }, [enabledActivityTypes]);
+
+  // Auto-select a valid tab if current selection is not enabled
+  useEffect(() => {
+    const validTabIds = filteredTabs.map(tab => tab.id);
+    if (!validTabIds.includes(activeTab)) {
+      // Select first available tab
+      setActiveTab(validTabIds[0] || 'overview');
+    }
+  }, [filteredTabs, activeTab]);
 
   // Skeleton loader
   const SkeletonCard = () => (
@@ -443,7 +542,7 @@ export default function ProspectDashboard() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <p className="text-gray-600">Failed to load dashboard data</p>
+          <p className="text-gray-600">Having trouble loading the dashboard. Refresh the page.</p>
           <button
             onClick={fetchAnalytics}
             className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
@@ -788,7 +887,7 @@ export default function ProspectDashboard() {
 
           {/* Navigation Tabs */}
           <div className="flex items-center gap-6 overflow-x-auto pb-2 border-b border-gray-200">
-            {tabs.map((tab) => (
+            {filteredTabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
@@ -963,38 +1062,71 @@ export default function ProspectDashboard() {
               />
             </div>
 
-            {/* Funnel Section with Horizontal Scroller */}
+            {/* Funnel Section with Dynamic Layout */}
             <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-6">Funnel Analytics</h3>
-              <div className="overflow-x-auto">
-                <div className="flex gap-6 min-w-max pb-2">
-                  <div className="flex-shrink-0 w-80">
-                    <FunnelVisualization
-                      title="Cold Calling Funnel"
-                      data={analytics.funnels.coldCalling}
-                      color="green"
-                      funnelType="call"
-                      totalProspects={analytics.overview?.totalProspects}
-                    />
-                  </div>
-                  <div className="flex-shrink-0 w-80">
-                    <FunnelVisualization
-                      title="Email Funnel"
-                      data={analytics.funnels.email}
-                      color="blue"
-                      funnelType="email"
-                      totalProspects={analytics.overview?.totalProspects}
-                    />
-                  </div>
-                  <div className="flex-shrink-0 w-80">
-                    <FunnelVisualization
-                      title="LinkedIn Funnel"
-                      data={analytics.funnels.linkedin}
-                      color="purple"
-                      funnelType="linkedin"
-                      totalProspects={analytics.overview?.totalProspects}
-                    />
-                  </div>
+              <div className={`${
+                enabledActivityTypes.length === 1 
+                  ? 'flex justify-center' 
+                  : enabledActivityTypes.length === 2
+                  ? 'flex justify-center gap-6'
+                  : 'overflow-x-auto'
+              }`}>
+                <div className={`${
+                  enabledActivityTypes.length === 1
+                    ? 'w-80'
+                    : enabledActivityTypes.length === 2
+                    ? 'flex gap-6'
+                    : 'flex gap-6 min-w-max pb-2'
+                }`}>
+                  {/* Cold Calling Funnel - Only show if coldCalling channel is enabled */}
+                  {enabledActivityTypes.includes('call') && (
+                    <div className={`${
+                      enabledActivityTypes.length === 1 || enabledActivityTypes.length === 2
+                        ? 'w-80'
+                        : 'flex-shrink-0 w-80'
+                    }`}>
+                      <FunnelVisualization
+                        title="Cold Calling Funnel"
+                        data={analytics.funnels.coldCalling}
+                        color="green"
+                        funnelType="call"
+                        totalProspects={analytics.overview?.totalProspects}
+                      />
+                    </div>
+                  )}
+                  {/* Email Funnel - Only show if coldEmail channel is enabled */}
+                  {enabledActivityTypes.includes('email') && (
+                    <div className={`${
+                      enabledActivityTypes.length === 1 || enabledActivityTypes.length === 2
+                        ? 'w-80'
+                        : 'flex-shrink-0 w-80'
+                    }`}>
+                      <FunnelVisualization
+                        title="Email Funnel"
+                        data={analytics.funnels.email}
+                        color="blue"
+                        funnelType="email"
+                        totalProspects={analytics.overview?.totalProspects}
+                      />
+                    </div>
+                  )}
+                  {/* LinkedIn Funnel - Only show if linkedInOutreach channel is enabled */}
+                  {enabledActivityTypes.includes('linkedin') && (
+                    <div className={`${
+                      enabledActivityTypes.length === 1 || enabledActivityTypes.length === 2
+                        ? 'w-80'
+                        : 'flex-shrink-0 w-80'
+                    }`}>
+                      <FunnelVisualization
+                        title="LinkedIn Funnel"
+                        data={analytics.funnels.linkedin}
+                        color="purple"
+                        funnelType="linkedin"
+                        totalProspects={analytics.overview?.totalProspects}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1011,27 +1143,30 @@ export default function ProspectDashboard() {
                         data={{
                           labels: analytics.activities.trends.labels,
                           datasets: [
-                            {
+                            // Only include Calls dataset if coldCalling channel is enabled
+                            ...(enabledActivityTypes.includes('call') ? [{
                               label: 'Calls',
                               data: analytics.activities.trends.call,
                               borderColor: 'rgb(34, 197, 94)',
                               backgroundColor: 'rgba(34, 197, 94, 0.1)',
                               tension: 0.4,
-                            },
-                            {
+                            }] : []),
+                            // Only include Emails dataset if coldEmail channel is enabled
+                            ...(enabledActivityTypes.includes('email') ? [{
                               label: 'Emails',
                               data: analytics.activities.trends.email,
                               borderColor: 'rgb(59, 130, 246)',
                               backgroundColor: 'rgba(59, 130, 246, 0.1)',
                               tension: 0.4,
-                            },
-                            {
+                            }] : []),
+                            // Only include LinkedIn dataset if linkedInOutreach channel is enabled
+                            ...(enabledActivityTypes.includes('linkedin') ? [{
                               label: 'LinkedIn',
                               data: analytics.activities.trends.linkedin,
                               borderColor: 'rgb(168, 85, 247)',
                               backgroundColor: 'rgba(168, 85, 247, 0.1)',
                               tension: 0.4,
-                            },
+                            }] : []),
                           ],
                         }}
                         options={{
@@ -1062,13 +1197,27 @@ export default function ProspectDashboard() {
                     <Suspense fallback={<div className="h-64 flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-2 border-gray-200 border-t-blue-600"></div></div>}>
                       <Doughnut
                         data={{
-                          labels: analytics.activities.byType.map(a => a.type.charAt(0).toUpperCase() + a.type.slice(1)),
+                          labels: analytics.activities.byType
+                            .filter(a => {
+                              const type = a.type.toLowerCase();
+                              return (type === 'call' && enabledActivityTypes.includes('call')) ||
+                                     (type === 'email' && enabledActivityTypes.includes('email')) ||
+                                     (type === 'linkedin' && enabledActivityTypes.includes('linkedin'));
+                            })
+                            .map(a => a.type.charAt(0).toUpperCase() + a.type.slice(1)),
                           datasets: [{
-                            data: analytics.activities.byType.map(a => a.count),
+                            data: analytics.activities.byType
+                              .filter(a => {
+                                const type = a.type.toLowerCase();
+                                return (type === 'call' && enabledActivityTypes.includes('call')) ||
+                                       (type === 'email' && enabledActivityTypes.includes('email')) ||
+                                       (type === 'linkedin' && enabledActivityTypes.includes('linkedin'));
+                              })
+                              .map(a => a.count),
                             backgroundColor: [
-                              'rgb(34, 197, 94)',
-                              'rgb(59, 130, 246)',
-                              'rgb(168, 85, 247)',
+                              ...(enabledActivityTypes.includes('call') ? ['rgb(34, 197, 94)'] : []),
+                              ...(enabledActivityTypes.includes('email') ? ['rgb(59, 130, 246)'] : []),
+                              ...(enabledActivityTypes.includes('linkedin') ? ['rgb(168, 85, 247)'] : []),
                             ],
                           }],
                         }}
@@ -1161,28 +1310,43 @@ export default function ProspectDashboard() {
 
         {activeTab === 'funnels' && (
           <div className="space-y-3">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-              <FunnelVisualization
-                title="Cold Calling Funnel"
-                data={analytics.funnels.coldCalling}
-                color="green"
-                funnelType="call"
-                totalProspects={analytics.overview?.totalProspects}
-              />
-              <FunnelVisualization
-                title="Email Funnel"
-                data={analytics.funnels.email}
-                color="blue"
-                funnelType="email"
-                totalProspects={analytics.overview?.totalProspects}
-              />
-              <FunnelVisualization
-                title="LinkedIn Funnel"
-                data={analytics.funnels.linkedin}
-                color="purple"
-                funnelType="linkedin"
-                totalProspects={analytics.overview?.totalProspects}
-              />
+            <div className={`${
+              enabledActivityTypes.length === 1
+                ? 'flex justify-center'
+                : enabledActivityTypes.length === 2
+                ? 'grid grid-cols-1 lg:grid-cols-2 gap-3 justify-center'
+                : 'grid grid-cols-1 lg:grid-cols-3 gap-3'
+            }`}>
+              {/* Cold Calling Funnel - Only show if coldCalling channel is enabled */}
+              {enabledActivityTypes.includes('call') && (
+                <FunnelVisualization
+                  title="Cold Calling Funnel"
+                  data={analytics.funnels.coldCalling}
+                  color="green"
+                  funnelType="call"
+                  totalProspects={analytics.overview?.totalProspects}
+                />
+              )}
+              {/* Email Funnel - Only show if coldEmail channel is enabled */}
+              {enabledActivityTypes.includes('email') && (
+                <FunnelVisualization
+                  title="Email Funnel"
+                  data={analytics.funnels.email}
+                  color="blue"
+                  funnelType="email"
+                  totalProspects={analytics.overview?.totalProspects}
+                />
+              )}
+              {/* LinkedIn Funnel - Only show if linkedInOutreach channel is enabled */}
+              {enabledActivityTypes.includes('linkedin') && (
+                <FunnelVisualization
+                  title="LinkedIn Funnel"
+                  data={analytics.funnels.linkedin}
+                  color="purple"
+                  funnelType="linkedin"
+                  totalProspects={analytics.overview?.totalProspects}
+                />
+              )}
             </div>
             {selectedStage && (
               <div className="text-xs text-gray-500 text-center mt-2">
@@ -1279,41 +1443,840 @@ export default function ProspectDashboard() {
           </div>
         )}
 
+        {enabledActivityTypes.includes('linkedin') && activeTab === 'linkedin' && (() => {
+          const linkedinData = analytics.funnels.linkedin || {};
+          const connectionSent = linkedinData.connectionSent || 0;
+          const accepted = linkedinData.accepted || 0;
+          const followups = linkedinData.followups || 0;
+          const scheduled = linkedinData.scheduled || 0;
+          const completed = linkedinData.completed || 0;
+          const acceptanceRate = connectionSent > 0 ? ((accepted / connectionSent) * 100) : 0;
+          const replyRate = followups > 0 ? ((followups / connectionSent) * 100) : 0;
+          
+          return (
+            <div className="space-y-6">
+              {/* LinkedIn KPI Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                {/* Connection Requests Sent */}
+                <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl border border-purple-100 shadow-sm p-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-12 h-12 rounded-lg bg-white/80 border border-purple-100 flex items-center justify-center shadow-xs">
+                      <svg className="w-6 h-6 text-indigo-600" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-purple-700 bg-white/70 border border-purple-100 px-2 py-1 rounded-full shadow-xs">
+                      LinkedIn
+                    </span>
+                  </div>
+                  <div className="text-3xl font-bold text-gray-900 leading-tight">{connectionSent.toLocaleString()}</div>
+                  <div className="text-sm text-gray-600 mt-1">Connection Requests Sent</div>
+                </div>
+
+                {/* Acceptance Rate */}
+                <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-100 shadow-sm p-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-12 h-12 rounded-lg bg-white/80 border border-emerald-100 flex items-center justify-center shadow-xs">
+                      <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-emerald-700 bg-white/70 border border-emerald-100 px-2 py-1 rounded-full shadow-xs">
+                      Rate
+                    </span>
+                  </div>
+                  <div className="text-3xl font-bold text-gray-900 leading-tight">{acceptanceRate.toFixed(1)}%</div>
+                  <div className="text-sm text-gray-600 mt-1">{accepted.toLocaleString()} accepted</div>
+                </div>
+
+                {/* Messages Sent */}
+                <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl border border-purple-100 shadow-sm p-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-12 h-12 rounded-lg bg-white/80 border border-purple-100 flex items-center justify-center shadow-xs">
+                      <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-purple-700 bg-white/70 border border-purple-100 px-2 py-1 rounded-full shadow-xs">
+                      Messages
+                    </span>
+                  </div>
+                  <div className="text-3xl font-bold text-gray-900 leading-tight">{followups.toLocaleString()}</div>
+                  <div className="text-sm text-gray-600 mt-1">Messages Sent</div>
+                </div>
+
+                {/* Reply Rate */}
+                <div className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-xl border border-cyan-100 shadow-sm p-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-12 h-12 rounded-lg bg-white/80 border border-cyan-100 flex items-center justify-center shadow-xs">
+                      <svg className="w-6 h-6 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-cyan-700 bg-white/70 border border-cyan-100 px-2 py-1 rounded-full shadow-xs">
+                      Rate
+                    </span>
+                  </div>
+                  <div className="text-3xl font-bold text-gray-900 leading-tight">{replyRate.toFixed(1)}%</div>
+                  <div className="text-sm text-gray-600 mt-1">{followups.toLocaleString()} replies</div>
+                </div>
+
+                {/* Meetings Booked */}
+                <div className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-xl border border-amber-100 shadow-sm p-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-12 h-12 rounded-lg bg-white/80 border border-amber-100 flex items-center justify-center shadow-xs">
+                      <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-amber-700 bg-white/70 border border-amber-100 px-2 py-1 rounded-full shadow-xs">
+                      Meetings
+                    </span>
+                  </div>
+                  <div className="text-3xl font-bold text-gray-900 leading-tight">{(scheduled + completed).toLocaleString()}</div>
+                  <div className="text-sm text-gray-600 mt-1">Meetings Booked</div>
+                </div>
+              </div>
+
+              {/* Charts */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* LinkedIn Funnel Overview */}
+                <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-6">LinkedIn Funnel Overview</h3>
+                  <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
+                    <div className="h-64">
+                      <Bar
+                        data={{
+                          labels: ['Requests Sent', 'Accepted', 'Messages Sent', 'Replies', 'Meetings'],
+                          datasets: [{
+                            label: 'LinkedIn Funnel',
+                            data: [
+                              connectionSent,
+                              accepted,
+                              followups,
+                              followups,
+                              (scheduled + completed)
+                            ],
+                            backgroundColor: '#3B82F6',
+                            borderColor: '#2563EB',
+                            borderWidth: 1
+                          }]
+                        }}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                              callbacks: {
+                                label: (context) => {
+                                  return `${context.label}: ${context.parsed.y.toLocaleString()}`;
+                                }
+                              }
+                            }
+                          },
+                          scales: {
+                            y: {
+                              beginAtZero: true,
+                              ticks: {
+                                stepSize: 12
+                              }
+                            },
+                            x: {
+                              ticks: {
+                                maxRotation: 45,
+                                minRotation: 45,
+                                font: {
+                                  size: 10
+                                }
+                              }
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  </Suspense>
+                </div>
+
+                {/* Connection Acceptance Rate */}
+                <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-6">Connection Acceptance Rate</h3>
+                  <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
+                    <div className="h-64 flex items-center justify-center">
+                      <Doughnut
+                        data={{
+                          labels: ['Accepted', 'Not Accepted'],
+                          datasets: [{
+                            label: 'Connection Requests',
+                            data: [
+                              accepted,
+                              Math.max(0, connectionSent - accepted)
+                            ],
+                            backgroundColor: ['#10B981', '#EF4444'],
+                            borderWidth: 2,
+                            borderColor: '#ffffff'
+                          }]
+                        }}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          cutout: '60%',
+                          plugins: {
+                            legend: {
+                              position: 'bottom',
+                              labels: {
+                                padding: 15,
+                                font: {
+                                  size: 12,
+                                  weight: '500'
+                                },
+                                usePointStyle: true,
+                                pointStyle: 'circle'
+                              }
+                            },
+                            tooltip: {
+                              callbacks: {
+                                label: (context) => {
+                                  const label = context.label || '';
+                                  const value = context.parsed || 0;
+                                  const percentage = connectionSent > 0 ? ((value / connectionSent) * 100) : 0;
+                                  return `${label}: ${value.toLocaleString()} (${percentage.toFixed(1)}%)`;
+                                }
+                              }
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  </Suspense>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {enabledActivityTypes.includes('call') && activeTab === 'calls' && (() => {
+          const callData = analytics.funnels.coldCalling || {};
+          const callsMade = callData.callsAttempted || 0;
+          const callsConnected = callData.callsConnected || 0;
+          const decisionMaker = callData.decisionMakerReached || 0;
+          const interested = callData.interested || 0;
+          const meetings = (callData.demoBooked || 0) + (callData.demoCompleted || 0);
+          const connectRate = callsMade > 0 ? ((callsConnected / callsMade) * 100) : 0;
+          
+          return (
+            <div className="space-y-6">
+              {/* Call KPI Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                {/* Calls Made */}
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100 shadow-sm p-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-12 h-12 rounded-lg bg-white/80 border border-blue-100 flex items-center justify-center shadow-xs">
+                      <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-blue-700 bg-white/70 border border-blue-100 px-2 py-1 rounded-full shadow-xs">
+                      Calls
+                    </span>
+                  </div>
+                  <div className="text-3xl font-bold text-gray-900 leading-tight">{callsMade.toLocaleString()}</div>
+                  <div className="text-sm text-gray-600 mt-1">Calls Made</div>
+                </div>
+
+                {/* Connect Rate */}
+                <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-100 shadow-sm p-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-12 h-12 rounded-lg bg-white/80 border border-emerald-100 flex items-center justify-center shadow-xs">
+                      <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-emerald-700 bg-white/70 border border-emerald-100 px-2 py-1 rounded-full shadow-xs">
+                      Rate
+                    </span>
+                  </div>
+                  <div className="text-3xl font-bold text-gray-900 leading-tight">{connectRate.toFixed(1)}%</div>
+                  <div className="text-sm text-gray-600 mt-1">{callsConnected.toLocaleString()} connected</div>
+                </div>
+
+                {/* Decision Maker Connects */}
+                <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl border border-purple-100 shadow-sm p-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-12 h-12 rounded-lg bg-white/80 border border-purple-100 flex items-center justify-center shadow-xs">
+                      <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-purple-700 bg-white/70 border border-purple-100 px-2 py-1 rounded-full shadow-xs">
+                      Decision
+                    </span>
+                  </div>
+                  <div className="text-3xl font-bold text-gray-900 leading-tight">{decisionMaker.toLocaleString()}</div>
+                  <div className="text-sm text-gray-600 mt-1">Decision Maker Connects</div>
+                </div>
+
+                {/* Interested */}
+                <div className="bg-gradient-to-br from-cyan-50 to-blue-50 rounded-xl border border-cyan-100 shadow-sm p-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-12 h-12 rounded-lg bg-white/80 border border-cyan-100 flex items-center justify-center shadow-xs">
+                      <svg className="w-6 h-6 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-cyan-700 bg-white/70 border border-cyan-100 px-2 py-1 rounded-full shadow-xs">
+                      Interested
+                    </span>
+                  </div>
+                  <div className="text-3xl font-bold text-gray-900 leading-tight">{interested.toLocaleString()}</div>
+                  <div className="text-sm text-gray-600 mt-1">Interested</div>
+                </div>
+
+                {/* Meetings Booked */}
+                <div className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-xl border border-amber-100 shadow-sm p-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-12 h-12 rounded-lg bg-white/80 border border-amber-100 flex items-center justify-center shadow-xs">
+                      <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-amber-700 bg-white/70 border border-amber-100 px-2 py-1 rounded-full shadow-xs">
+                      Meetings
+                    </span>
+                  </div>
+                  <div className="text-3xl font-bold text-gray-900 leading-tight">{meetings.toLocaleString()}</div>
+                  <div className="text-sm text-gray-600 mt-1">Meetings Booked</div>
+                </div>
+              </div>
+
+              {/* Charts */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Cold Call Funnel Overview */}
+                <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-6">Cold Call Funnel Overview</h3>
+                  <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
+                    <div className="h-64">
+                      <Bar
+                        data={{
+                          labels: ['Calls Made', 'Connected', 'Decision Maker', 'Interested', 'Meetings'],
+                          datasets: [{
+                            label: 'Cold Call Funnel',
+                            data: [
+                              callsMade,
+                              callsConnected,
+                              decisionMaker,
+                              interested,
+                              meetings
+                            ],
+                            backgroundColor: '#3B82F6',
+                            borderColor: '#2563EB',
+                            borderWidth: 1
+                          }]
+                        }}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                              callbacks: {
+                                label: (context) => {
+                                  return `${context.label}: ${context.parsed.y.toLocaleString()}`;
+                                }
+                              }
+                            }
+                          },
+                          scales: {
+                            y: {
+                              beginAtZero: true,
+                              ticks: {
+                                stepSize: 25
+                              }
+                            },
+                            x: {
+                              ticks: {
+                                maxRotation: 45,
+                                minRotation: 45,
+                                font: {
+                                  size: 10
+                                }
+                              }
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  </Suspense>
+                </div>
+
+                {/* Call Connection Rate */}
+                <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-6">Call Connection Rate</h3>
+                  <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
+                    <div className="h-64 flex items-center justify-center">
+                      <Doughnut
+                        data={{
+                          labels: ['Connected', 'Not Connected'],
+                          datasets: [{
+                            label: 'Call Connections',
+                            data: [
+                              callsConnected,
+                              Math.max(0, callsMade - callsConnected)
+                            ],
+                            backgroundColor: ['#10B981', '#EF4444'],
+                            borderWidth: 2,
+                            borderColor: '#ffffff'
+                          }]
+                        }}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          cutout: '60%',
+                          plugins: {
+                            legend: {
+                              position: 'bottom',
+                              labels: {
+                                padding: 15,
+                                font: {
+                                  size: 12,
+                                  weight: '500'
+                                },
+                                usePointStyle: true,
+                                pointStyle: 'circle'
+                              }
+                            },
+                            tooltip: {
+                              callbacks: {
+                                label: (context) => {
+                                  const label = context.label || '';
+                                  const value = context.parsed || 0;
+                                  const percentage = callsMade > 0 ? ((value / callsMade) * 100) : 0;
+                                  return `${label}: ${value.toLocaleString()} (${percentage.toFixed(1)}%)`;
+                                }
+                              }
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  </Suspense>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {enabledActivityTypes.includes('email') && activeTab === 'email' && (() => {
+          const emailData = analytics.funnels.email || {};
+          const emailsSent = emailData.emailSent || 0;
+          const accepted = emailData.accepted || 0;
+          const scheduled = emailData.scheduled || 0;
+          const completed = emailData.completed || 0;
+          const sql = emailData.sql || 0;
+          const openRate = emailsSent > 0 ? ((accepted / emailsSent) * 100) : 0;
+          const replyRate = emailsSent > 0 ? ((sql / emailsSent) * 100) : 0;
+          const meetings = scheduled + completed;
+          
+          return (
+            <div className="space-y-6">
+              {/* Email KPI Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                {/* Emails Sent */}
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-100 shadow-sm p-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-12 h-12 rounded-lg bg-white/80 border border-blue-100 flex items-center justify-center shadow-xs">
+                      <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-blue-700 bg-white/70 border border-blue-100 px-2 py-1 rounded-full shadow-xs">
+                      Email
+                    </span>
+                  </div>
+                  <div className="text-3xl font-bold text-gray-900 leading-tight">{emailsSent.toLocaleString()}</div>
+                  <div className="text-sm text-gray-600 mt-1">Emails Sent</div>
+                </div>
+
+                {/* Open Rate */}
+                <div className="bg-gradient-to-br from-emerald-50 to-teal-50 rounded-xl border border-emerald-100 shadow-sm p-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-12 h-12 rounded-lg bg-white/80 border border-emerald-100 flex items-center justify-center shadow-xs">
+                      <svg className="w-6 h-6 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-emerald-700 bg-white/70 border border-emerald-100 px-2 py-1 rounded-full shadow-xs">
+                      Rate
+                    </span>
+                  </div>
+                  <div className="text-3xl font-bold text-gray-900 leading-tight">{openRate.toFixed(1)}%</div>
+                  <div className="text-sm text-gray-600 mt-1">{accepted.toLocaleString()} opened</div>
+                </div>
+
+                {/* Reply Rate */}
+                <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-xl border border-purple-100 shadow-sm p-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-12 h-12 rounded-lg bg-white/80 border border-purple-100 flex items-center justify-center shadow-xs">
+                      <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-purple-700 bg-white/70 border border-purple-100 px-2 py-1 rounded-full shadow-xs">
+                      Rate
+                    </span>
+                  </div>
+                  <div className="text-3xl font-bold text-gray-900 leading-tight">{replyRate.toFixed(1)}%</div>
+                  <div className="text-sm text-gray-600 mt-1">{sql.toLocaleString()} replies</div>
+                </div>
+
+                {/* Meetings Booked */}
+                <div className="bg-gradient-to-br from-amber-50 to-yellow-50 rounded-xl border border-amber-100 shadow-sm p-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-12 h-12 rounded-lg bg-white/80 border border-amber-100 flex items-center justify-center shadow-xs">
+                      <svg className="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-amber-700 bg-white/70 border border-amber-100 px-2 py-1 rounded-full shadow-xs">
+                      Meetings
+                    </span>
+                  </div>
+                  <div className="text-3xl font-bold text-gray-900 leading-tight">{meetings.toLocaleString()}</div>
+                  <div className="text-sm text-gray-600 mt-1">Meetings Booked</div>
+                </div>
+
+                {/* Bounce Rate */}
+                <div className="bg-gradient-to-br from-red-50 to-pink-50 rounded-xl border border-red-100 shadow-sm p-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-12 h-12 rounded-lg bg-white/80 border border-red-100 flex items-center justify-center shadow-xs">
+                      <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-red-700 bg-white/70 border border-red-100 px-2 py-1 rounded-full shadow-xs">
+                      Bounce
+                    </span>
+                  </div>
+                  <div className="text-3xl font-bold text-gray-900 leading-tight">0.0%</div>
+                  <div className="text-sm text-gray-600 mt-1">Bounce Rate</div>
+                </div>
+              </div>
+
+              {/* Charts */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Email Funnel Overview */}
+                <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-6">Email Funnel Overview</h3>
+                  <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
+                    <div className="h-64">
+                      <Bar
+                        data={{
+                          labels: ['Emails Sent', 'Opened', 'Replied', 'Meetings'],
+                          datasets: [{
+                            label: 'Email Funnel',
+                            data: [
+                              emailsSent,
+                              accepted,
+                              sql,
+                              meetings
+                            ],
+                            backgroundColor: '#3B82F6',
+                            borderColor: '#2563EB',
+                            borderWidth: 1
+                          }]
+                        }}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                              callbacks: {
+                                label: (context) => {
+                                  return `${context.label}: ${context.parsed.y.toLocaleString()}`;
+                                }
+                              }
+                            }
+                          },
+                          scales: {
+                            y: {
+                              beginAtZero: true,
+                              ticks: {
+                                stepSize: 10
+                              }
+                            },
+                            x: {
+                              ticks: {
+                                maxRotation: 45,
+                                minRotation: 45,
+                                font: {
+                                  size: 10
+                                }
+                              }
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  </Suspense>
+                </div>
+
+                {/* Email Status Rate */}
+                <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-6">Email Status Distribution</h3>
+                  <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
+                    <div className="h-64 flex items-center justify-center">
+                      <Doughnut
+                        data={{
+                          labels: ['Replied', 'Opened', 'No Reply'],
+                          datasets: [{
+                            label: 'Email Status',
+                            data: [
+                              sql,
+                              Math.max(0, accepted - sql),
+                              Math.max(0, emailsSent - accepted)
+                            ],
+                            backgroundColor: ['#10B981', '#3B82F6', '#9CA3AF'],
+                            borderWidth: 2,
+                            borderColor: '#ffffff'
+                          }]
+                        }}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          cutout: '60%',
+                          plugins: {
+                            legend: {
+                              position: 'bottom',
+                              labels: {
+                                padding: 15,
+                                font: {
+                                  size: 12,
+                                  weight: '500'
+                                },
+                                usePointStyle: true,
+                                pointStyle: 'circle'
+                              }
+                            },
+                            tooltip: {
+                              callbacks: {
+                                label: (context) => {
+                                  const label = context.label || '';
+                                  const value = context.parsed || 0;
+                                  const percentage = emailsSent > 0 ? ((value / emailsSent) * 100) : 0;
+                                  return `${label}: ${value.toLocaleString()} (${percentage.toFixed(1)}%)`;
+                                }
+                              }
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  </Suspense>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {activeTab === 'team' && (
           <div className="space-y-6">
+            {/* Team Performance Funnels */}
             <div className="bg-white border border-gray-200 rounded-lg p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Team Performance</h3>
-              {analytics.team.performance.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50 border-b border-gray-200">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Team Member</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Total Activities</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Calls</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Emails</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">LinkedIn</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {analytics.team.performance.map((member) => (
-                        <tr key={member.id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3">
-                            <div className="text-sm font-medium text-gray-900">{member.name || 'Unknown'}</div>
-                            <div className="text-xs text-gray-500">{member.email}</div>
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-900 font-semibold">{member.totalActivities}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{member.calls}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{member.emails}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{member.linkedin}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              {loadingTeamFunnels ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              ) : teamMemberFunnels.length > 0 ? (
+                <div className={`${
+                  teamMemberFunnels.length === 1
+                    ? 'flex justify-center'
+                    : teamMemberFunnels.length === 2
+                    ? 'grid grid-cols-1 lg:grid-cols-2 gap-6'
+                    : 'grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6'
+                }`}>
+                  {teamMemberFunnels.map((memberFunnel) => {
+                    const member = analytics?.team?.performance?.find(m => m.id === memberFunnel.memberId);
+                    return (
+                      <div key={memberFunnel.memberId} className="space-y-4">
+                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-100">
+                          <h4 className="text-base font-semibold text-gray-900 mb-1">{memberFunnel.name}</h4>
+                          <p className="text-xs text-gray-600">{memberFunnel.email}</p>
+                          {member && (
+                            <div className="mt-2 flex gap-4 text-xs text-gray-600">
+                              <span>Total: <span className="font-semibold text-gray-900">{member.totalActivities}</span></span>
+                              {enabledActivityTypes.includes('call') && (
+                                <span>Calls: <span className="font-semibold text-gray-900">{member.calls}</span></span>
+                              )}
+                              {enabledActivityTypes.includes('email') && (
+                                <span>Emails: <span className="font-semibold text-gray-900">{member.emails}</span></span>
+                              )}
+                              {enabledActivityTypes.includes('linkedin') && (
+                                <span>LinkedIn: <span className="font-semibold text-gray-900">{member.linkedin}</span></span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div className="space-y-3">
+                          {/* Cold Calling Funnel - Only show if coldCalling channel is enabled */}
+                          {enabledActivityTypes.includes('call') && memberFunnel.funnels.coldCalling && (
+                            <FunnelVisualization
+                              title={`${memberFunnel.name} - Cold Calling`}
+                              data={memberFunnel.funnels.coldCalling}
+                              color="green"
+                              funnelType="call"
+                              totalProspects={analytics.overview?.totalProspects}
+                            />
+                          )}
+                          
+                          {/* LinkedIn Funnel - Only show if linkedInOutreach channel is enabled */}
+                          {enabledActivityTypes.includes('linkedin') && memberFunnel.funnels.linkedin && (
+                            <FunnelVisualization
+                              title={`${memberFunnel.name} - LinkedIn`}
+                              data={memberFunnel.funnels.linkedin}
+                              color="purple"
+                              funnelType="linkedin"
+                              totalProspects={analytics.overview?.totalProspects}
+                            />
+                          )}
+                          
+                          {/* Email Funnel - Only show if coldEmail channel is enabled */}
+                          {enabledActivityTypes.includes('email') && memberFunnel.funnels.email && (
+                            <FunnelVisualization
+                              title={`${memberFunnel.name} - Email`}
+                              data={memberFunnel.funnels.email}
+                              color="blue"
+                              funnelType="email"
+                              totalProspects={analytics.overview?.totalProspects}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="text-center py-12 text-gray-500">
                   <p className="text-sm">No team performance data available</p>
+                </div>
+              )}
+            </div>
+
+            {/* Time Filter Buttons */}
+            <div className="bg-white border border-gray-200 rounded-lg p-4">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-gray-700">Time Period:</span>
+                <button
+                  onClick={() => setTeamTimeFilter('today')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    teamTimeFilter === 'today'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Today
+                </button>
+                <button
+                  onClick={() => setTeamTimeFilter('last7days')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    teamTimeFilter === 'last7days'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Last 7 Days
+                </button>
+                <button
+                  onClick={() => setTeamTimeFilter('lastMonth')}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    teamTimeFilter === 'lastMonth'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Last Month
+                </button>
+              </div>
+            </div>
+
+            {/* Activity Graph */}
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Activity Trends</h3>
+              {loadingTeamActivity ? (
+                <div className="h-96 flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              ) : teamActivityData?.chartData ? (
+                <div className="h-96">
+                  <Suspense fallback={<div className="h-full flex items-center justify-center">Loading chart...</div>}>
+                    <Bar
+                      data={teamActivityData.chartData}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                          legend: {
+                            position: 'top',
+                          },
+                          title: {
+                            display: true,
+                            text: 'Activities by Type and Status'
+                          }
+                        },
+                        scales: {
+                          x: {
+                            stacked: true,
+                          },
+                          y: {
+                            stacked: true,
+                            beginAtZero: true
+                          }
+                        }
+                      }}
+                    />
+                  </Suspense>
+                </div>
+              ) : (
+                <div className="h-96 flex items-center justify-center text-gray-500">
+                  <p className="text-sm">No activity data available</p>
+                </div>
+              )}
+            </div>
+
+            {/* Pie Chart for Status Distribution */}
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Activity Distribution by Channel</h3>
+              {loadingTeamActivity ? (
+                <div className="h-96 flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                </div>
+              ) : teamActivityData?.pieData ? (
+                <div className="h-96">
+                  <Suspense fallback={<div className="h-full flex items-center justify-center">Loading chart...</div>}>
+                    <Pie
+                      data={teamActivityData.pieData}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                          legend: {
+                            position: 'right',
+                          },
+                          title: {
+                            display: true,
+                            text: 'Activities by Channel'
+                          }
+                        }
+                      }}
+                    />
+                  </Suspense>
+                </div>
+              ) : (
+                <div className="h-96 flex items-center justify-center text-gray-500">
+                  <p className="text-sm">No activity data available</p>
                 </div>
               )}
             </div>
@@ -1387,7 +2350,6 @@ export default function ProspectDashboard() {
                           <>
                             <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Date</th>
                             <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Status</th>
-                            <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Notes</th>
                           </>
                         )}
                       </tr>
@@ -1470,11 +2432,6 @@ export default function ProspectDashboard() {
                               {!item.status && !item.callStatus && (
                                 <span className="text-xs text-gray-400">-</span>
                               )}
-                            </td>
-                            <td className="px-4 py-3 text-sm text-gray-600 max-w-xs">
-                              <div className="truncate" title={item.conversationNotes || 'No notes'}>
-                                {item.conversationNotes || 'No notes'}
-                              </div>
                             </td>
                           </tr>
                         );

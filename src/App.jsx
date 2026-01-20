@@ -15,10 +15,12 @@ import ProjectDetail from './pages/ProjectDetail';
 import ProjectDashboard from './pages/ProjectDashboard';
 import ProspectDashboard from './pages/ProspectDashboard';
 import MasterDashboard from './pages/MasterDashboard';
+import EmployeePerformance from './pages/EmployeePerformance';
 import Report from './pages/Report';
 import LinkedInReport from './pages/LinkedInReport';
 import ColdCallingReport from './pages/ColdCallingReport';
 import EmailReport from './pages/EmailReport';
+import MonthlyReport from './pages/MonthlyReport';
 import FunnelProjects from './pages/FunnelProjects';
 import LinkedInFunnelDetail from './pages/LinkedInFunnelDetail';
 import ColdCallingFunnelDetail from './pages/ColdCallingFunnelDetail';
@@ -63,6 +65,15 @@ export default function App() {
             element={
               <PrivateRoute>
                 <MasterDashboard />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/employee-performance"
+            element={
+              <PrivateRoute>
+                <EmployeePerformance />
               </PrivateRoute>
             }
           />
@@ -207,6 +218,15 @@ export default function App() {
             element={
               <PrivateRoute>
                 <EmailReport />
+              </PrivateRoute>
+            }
+          />
+
+          <Route
+            path="/projects/:id/report"
+            element={
+              <PrivateRoute>
+                <MonthlyReport />
               </PrivateRoute>
             }
           />

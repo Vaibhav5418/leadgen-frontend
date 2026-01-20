@@ -123,7 +123,7 @@ export default function Login() {
           </div>
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Outbound SaaS</h1>
           <p className="text-gray-600">
-            {isLogin ? 'Welcome back!' : 'Create your account'}
+            {isLogin ? 'Welcome back' : 'Let\'s get you started'}
           </p>
         </div>
 
@@ -204,8 +204,8 @@ export default function Login() {
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-sm font-medium text-gray-700">
-                  Password
-                </label>
+                Password
+              </label>
                 {isLogin && (
                   <button
                     type="button"

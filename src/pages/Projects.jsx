@@ -37,7 +37,11 @@ export default function Projects() {
       
       const response = await API.get('/projects', { params });
       if (response.data.success) {
-        let filteredProjects = response.data.data || [];
+        // Ensure data is always an array
+        const projectsData = response.data.data;
+        const allProjects = Array.isArray(projectsData) ? projectsData : [];
+        
+        let filteredProjects = [...allProjects];
         
         // Apply quick filters
         if (quickFilter === 'active') {
@@ -51,7 +55,6 @@ export default function Projects() {
         setProjects(filteredProjects);
         
         // Calculate basic stats
-        const allProjects = response.data.data || [];
         const totalProspects = allProjects.reduce((sum, p) => sum + (p.totalProspects || 0), 0);
         // Calculate active projects count
         const activeProjectsCount = allProjects.filter(p => p.status === 'active').length;
@@ -67,7 +70,7 @@ export default function Projects() {
       }
     } catch (err) {
       console.error('Error fetching projects:', err);
-      setError('Failed to load projects');
+      setError('Couldn\'t load your projects right now. Give it another try in a moment.');
     } finally {
       setLoading(false);
     }
@@ -128,7 +131,7 @@ export default function Projects() {
       }
     } catch (err) {
       console.error('Error toggling project status:', err);
-      alert('Failed to update project status. Please try again.');
+      alert('Something went wrong updating the project. Try again in a moment.');
     }
   };
 
@@ -149,7 +152,7 @@ export default function Projects() {
       <div className="flex items-start justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 mb-1">Project Management</h1>
-          <p className="text-sm text-gray-600">Track and manage your outbound lead generation campaigns</p>
+          <p className="text-sm text-gray-600">Manage your outbound campaigns and track what's working</p>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -361,9 +364,72 @@ export default function Projects() {
                       </div>
                     </td>
                     <td className="px-3 py-4">
+                      {project.leadsByStatus ? (
+                        <div className="space-y-0.5">
+                          {project.leadsByStatus.interested > 0 && (
+                            <div className="text-xs font-semibold text-gray-900">
+                              {project.leadsByStatus.interested}
+                            </div>
+                          )}
+                          {project.leadsByStatus.cip > 0 && (
+                            <div className="text-xs font-semibold text-gray-900">
+                              {project.leadsByStatus.cip}
+                            </div>
+                          )}
+                          {project.leadsByStatus.detailsShared > 0 && (
+                            <div className="text-xs font-semibold text-gray-900">
+                              {project.leadsByStatus.detailsShared}
+                            </div>
+                          )}
+                          {project.leadsByStatus.demoBooked > 0 && (
+                            <div className="text-xs font-semibold text-gray-900">
+                              {project.leadsByStatus.demoBooked}
+                            </div>
+                          )}
+                          {project.leadsByStatus.demoCompleted > 0 && (
+                            <div className="text-xs font-semibold text-gray-900">
+                              {project.leadsByStatus.demoCompleted}
+                            </div>
+                          )}
+                          {project.leadsByStatus.meetingProposed > 0 && (
+                            <div className="text-xs font-semibold text-gray-900">
+                              {project.leadsByStatus.meetingProposed}
+                            </div>
+                          )}
+                          {project.leadsByStatus.meetingScheduled > 0 && (
+                            <div className="text-xs font-semibold text-gray-900">
+                              {project.leadsByStatus.meetingScheduled}
+                            </div>
+                          )}
+                          {project.leadsByStatus.meetingCompleted > 0 && (
+                            <div className="text-xs font-semibold text-gray-900">
+                              {project.leadsByStatus.meetingCompleted}
+                            </div>
+                          )}
+                          {project.leadsByStatus.sql > 0 && (
+                            <div className="text-xs font-semibold text-gray-900">
+                              {project.leadsByStatus.sql}
+                            </div>
+                          )}
+                          {project.leadsByStatus.won > 0 && (
+                            <div className="text-xs font-semibold text-gray-900">
+                              {project.leadsByStatus.won}
+                            </div>
+                          )}
+                          {(!project.leadsByStatus.interested && !project.leadsByStatus.cip && !project.leadsByStatus.detailsShared && 
+                            !project.leadsByStatus.demoBooked && !project.leadsByStatus.demoCompleted && 
+                            !project.leadsByStatus.meetingProposed && !project.leadsByStatus.meetingScheduled && 
+                            !project.leadsByStatus.meetingCompleted && !project.leadsByStatus.sql && !project.leadsByStatus.won) && (
+                            <div className="text-sm font-semibold text-gray-900">
+                              {project.leadsGenerated || 0}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
                       <div className="text-sm font-semibold text-gray-900">
                         {project.leadsGenerated || 0}
                       </div>
+                      )}
                     </td>
                     <td className="px-3 py-4" onClick={(e) => e.stopPropagation()}>
                       <label className="relative inline-flex items-center cursor-pointer">
@@ -422,8 +488,8 @@ export default function Projects() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
               </svg>
             </div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">No projects found</h2>
-            <p className="text-sm text-gray-600 mb-6">Get started by creating your first project</p>
+            <h2 className="text-lg font-semibold text-gray-900 mb-2">No projects yet</h2>
+            <p className="text-sm text-gray-600 mb-6">Create your first project to get started</p>
             <button
               onClick={handleCreateProject}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, startTransition, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import API from '../api/axios';
 import ActivityLogModal from '../components/ActivityLogModal';
 import BulkImportModal from '../components/BulkImportModal';
@@ -48,26 +48,35 @@ const getContactImportDate = (contact) => {
 export default function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  
+  // Initialize filters from URL params
   const [project, setProject] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const searchTimeoutRef = useRef(null);
-  const [quickFilter, setQuickFilter] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
-  const [filterActionDate, setFilterActionDate] = useState('');
-  const [filterActionDateFrom, setFilterActionDateFrom] = useState('');
-  const [filterActionDateTo, setFilterActionDateTo] = useState('');
-  const [filterLastInteraction, setFilterLastInteraction] = useState('');
-  const [filterLastInteractionFrom, setFilterLastInteractionFrom] = useState('');
-  const [filterLastInteractionTo, setFilterLastInteractionTo] = useState('');
-  const [filterImportDate, setFilterImportDate] = useState('');
-  const [filterImportDateFrom, setFilterImportDateFrom] = useState('');
-  const [filterImportDateTo, setFilterImportDateTo] = useState('');
-  const [filterNoActivity, setFilterNoActivity] = useState(false);
-  const [filterMatchType, setFilterMatchType] = useState('');
+  const [quickFilter, setQuickFilter] = useState(searchParams.get('quickFilter') || '');
+  const [filterStatus, setFilterStatus] = useState(searchParams.get('filterStatus') || '');
+  const [filterActionDate, setFilterActionDate] = useState(searchParams.get('filterActionDate') || '');
+  const [filterActionDateFrom, setFilterActionDateFrom] = useState(searchParams.get('filterActionDateFrom') || '');
+  const [filterActionDateTo, setFilterActionDateTo] = useState(searchParams.get('filterActionDateTo') || '');
+  const [filterLastInteraction, setFilterLastInteraction] = useState(searchParams.get('filterLastInteraction') || '');
+  const [filterLastInteractionFrom, setFilterLastInteractionFrom] = useState(searchParams.get('filterLastInteractionFrom') || '');
+  const [filterLastInteractionTo, setFilterLastInteractionTo] = useState(searchParams.get('filterLastInteractionTo') || '');
+  const [filterImportDate, setFilterImportDate] = useState(searchParams.get('filterImportDate') || '');
+  const [filterImportDateFrom, setFilterImportDateFrom] = useState(searchParams.get('filterImportDateFrom') || '');
+  const [filterImportDateTo, setFilterImportDateTo] = useState(searchParams.get('filterImportDateTo') || '');
+  const [filterNoActivity, setFilterNoActivity] = useState(searchParams.get('filterNoActivity') === 'true');
+  const [filterMatchType, setFilterMatchType] = useState(searchParams.get('filterMatchType') || '');
+  const [filterKpi, setFilterKpi] = useState(null); // { channel: 'linkedin'|'call'|'email', metric: string }
+  const [selectedPipeline, setSelectedPipeline] = useState('linkedin'); // 'linkedin' | 'call' | 'email'
+  const [kpiProspectModal, setKpiProspectModal] = useState({
+    isOpen: false,
+    filter: null // { channel: 'linkedin'|'call'|'email', metric: string }
+  });
   const [matchStats, setMatchStats] = useState(null);
   const [expandedContacts, setExpandedContacts] = useState(new Set());
   const [contactActivities, setContactActivities] = useState({});
@@ -97,8 +106,60 @@ export default function ProjectDetail() {
   const [showRemoveConfirmation, setShowRemoveConfirmation] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [deletedContactIds, setDeletedContactIds] = useState(new Set()); // Track deleted contact IDs to prevent reappearance
+  const [kpiMetrics, setKpiMetrics] = useState(null);
+  const [loadingKpi, setLoadingKpi] = useState(false);
+  const [sortBy, setSortBy] = useState(null); // 'name' | null
+  const [sortOrder, setSortOrder] = useState('asc'); // 'asc' | 'desc'
+  const [showStatusFilter, setShowStatusFilter] = useState(false);
+  const statusFilterRef = useRef(null);
+
+  // Determine enabled activity types based on project channels
+  const enabledActivityTypes = useMemo(() => {
+    if (!project?.channels) return ['call', 'email', 'linkedin']; // Default to all if no channels defined
+    
+    const enabled = [];
+    if (project.channels.coldCalling) enabled.push('call');
+    if (project.channels.coldEmail) enabled.push('email');
+    if (project.channels.linkedInOutreach) enabled.push('linkedin');
+    
+    // If no channels are enabled, default to all (for backward compatibility)
+    return enabled.length > 0 ? enabled : ['call', 'email', 'linkedin'];
+  }, [project?.channels]);
+
+  // Auto-select first enabled pipeline if current selection is not enabled
+  useEffect(() => {
+    if (enabledActivityTypes.length > 0 && !enabledActivityTypes.includes(selectedPipeline)) {
+      setSelectedPipeline(enabledActivityTypes[0]);
+    }
+  }, [enabledActivityTypes, selectedPipeline]);
+
+  // Close status filter when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (statusFilterRef.current && !statusFilterRef.current.contains(event.target)) {
+        setShowStatusFilter(false);
+      }
+    };
+
+    if (showStatusFilter) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showStatusFilter]);
 
   // Debounce search query for better performance
+  // Initialize debounced search query from URL params on mount
+  useEffect(() => {
+    const searchParam = searchParams.get('search') || '';
+    if (searchParam) {
+      setDebouncedSearchQuery(searchParam);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount
+
   useEffect(() => {
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
@@ -116,21 +177,60 @@ export default function ProjectDetail() {
 
   useEffect(() => {
     if (id) {
+      // Always clear filters on mount to ensure a fresh start
+      // This prevents filters from persisting when navigating away and back
+      setSearchQuery('');
+      setQuickFilter('');
+      setFilterStatus('');
+      setFilterActionDate('');
+      setFilterActionDateFrom('');
+      setFilterActionDateTo('');
+      setFilterLastInteraction('');
+      setFilterLastInteractionFrom('');
+      setFilterLastInteractionTo('');
+      setFilterImportDate('');
+      setFilterImportDateFrom('');
+      setFilterImportDateTo('');
+      setFilterNoActivity(false);
+      setFilterMatchType('');
+      
+      // Clear filter URL params (but preserve returnTo if it exists for navigation)
+      const returnTo = searchParams.get('returnTo');
+      const cleanParams = new URLSearchParams();
+      if (returnTo) {
+        cleanParams.set('returnTo', returnTo);
+      }
+      setSearchParams(cleanParams, { replace: true });
+      
       // Fetch project first, then contacts and activities in parallel
       fetchProject().then(() => {
-        // Fetch contacts and activities in parallel for better performance
+        // Fetch contacts, activities, and KPI metrics in parallel for better performance
         Promise.all([
         fetchAllProjectActivities().catch(err => {
           console.error('Error fetching activities:', err);
           }),
-        fetchImportedContacts().catch(err => {
+        fetchImportedContacts(1).catch(err => {
           console.error('Error fetching imported contacts:', err);
+          }),
+        fetchKpiMetrics().catch(err => {
+          console.error('Error fetching KPI metrics:', err);
           })
         ]);
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // When search query changes, fetch matching contacts
+  useEffect(() => {
+    if (id) {
+      // Reset to page 1 when search changes
+      setContactsPage(1);
+      // Fetch contacts with search query (backend handles filtering)
+      fetchImportedContacts(1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearchQuery, id]);
 
   const fetchProject = async () => {
     try {
@@ -141,23 +241,56 @@ export default function ProjectDetail() {
       }
     } catch (err) {
       console.error('Error fetching project:', err);
-      setError('Failed to load project');
+      setError('Having trouble loading the project. Refresh the page and try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  // Fetch only imported contacts (contacts already linked to project)
-  const fetchImportedContacts = async () => {
+  // Fetch KPI metrics for the project
+  const fetchKpiMetrics = async () => {
     try {
-      // Fetch all prospects by setting a high limit
-      const response = await API.get(`/projects/${id}/project-contacts?limit=10000`);
+      setLoadingKpi(true);
+      const response = await API.get(`/projects/${id}/kpi-metrics`);
+      if (response.data.success) {
+        setKpiMetrics(response.data.data);
+      }
+    } catch (err) {
+      console.error('Error fetching KPI metrics:', err);
+    } finally {
+      setLoadingKpi(false);
+    }
+  };
+
+  // Pagination state
+  const [contactsPage, setContactsPage] = useState(1);
+  const [contactsTotal, setContactsTotal] = useState(0);
+  const [contactsTotalPages, setContactsTotalPages] = useState(1);
+  const CONTACTS_PER_PAGE = 50; // Load 50 contacts per page
+
+  // Fetch only imported contacts (contacts already linked to project) with pagination
+  const fetchImportedContacts = async (page = 1) => {
+    try {
+      setLoading(true);
+      
+      // If there's a search query, fetch all matching contacts (high limit)
+      // Otherwise, use normal pagination
+      const limit = debouncedSearchQuery ? 10000 : CONTACTS_PER_PAGE;
+      const searchParam = debouncedSearchQuery ? `&search=${encodeURIComponent(debouncedSearchQuery)}` : '';
+      
+      const response = await API.get(`/projects/${id}/project-contacts?page=${page}&limit=${limit}${searchParam}`);
       if (response.data.success) {
         const contactsData = response.data.data || [];
+        const pagination = response.data.pagination || {};
+        
+        // Update pagination info
+        setContactsTotal(pagination.total || contactsData.length);
+        setContactsTotalPages(pagination.totalPages || 1);
+        setContactsPage(page);
         
         // Deduplicate contacts by _id (contact ID) - ensure each contact appears only once
-        // This fixes the issue where the same prospect appears multiple times with different activity dates
         const contactsMap = new Map();
+        
         contactsData.forEach(contact => {
           const contactId = contact._id?.toString ? contact._id.toString() : String(contact._id);
           if (!contactId) return; // Skip contacts without IDs
@@ -168,7 +301,6 @@ export default function ProjectDetail() {
             contactsMap.set(contactId, contact);
           } else {
             // Duplicate found - prefer the one with projectContactId (imported) over activity-based
-            // If both are same type, keep the first one encountered
             const existingHasProjectContact = existing.projectContactId !== null && existing.projectContactId !== undefined;
             const newHasProjectContact = contact.projectContactId !== null && contact.projectContactId !== undefined;
             
@@ -176,7 +308,6 @@ export default function ProjectDetail() {
               // New one is imported (has projectContactId), existing is activity-based - replace
               contactsMap.set(contactId, contact);
             }
-            // Otherwise keep existing (first one wins, or both are same type)
           }
         });
         
@@ -185,28 +316,28 @@ export default function ProjectDetail() {
         
         // Also filter out any contacts that were previously deleted (prevent reappearance)
         if (deletedContactIds.size > 0) {
-          const beforeFilter = uniqueContacts.length;
           uniqueContacts = uniqueContacts.filter(contact => {
             if (!contact._id) return true;
             const contactIdStr = contact._id.toString ? contact._id.toString() : String(contact._id);
             return !deletedContactIds.has(contactIdStr);
           });
-          if (beforeFilter !== uniqueContacts.length) {
-            console.log(`Filtered out ${beforeFilter - uniqueContacts.length} previously deleted contact(s) from refresh`);
-          }
         }
         
         setContacts(uniqueContacts);
-        
-        // Log if duplicates were found and removed
-        if (contactsData.length !== uniqueContacts.length) {
-          console.log(`Removed ${contactsData.length - uniqueContacts.length} duplicate contact(s) - same contact appeared multiple times`);
-        }
       }
     } catch (err) {
       console.error('Error fetching imported contacts:', err);
+    } finally {
+      setLoading(false);
     }
   };
+
+  // Handle page change
+  const handlePageChange = useCallback((newPage) => {
+    if (newPage >= 1 && newPage !== contactsPage) {
+      fetchImportedContacts(newPage);
+    }
+  }, [contactsPage, id]);
 
   // Fetch similar contacts from databank (including suggestions)
   const fetchSimilarContacts = async () => {
@@ -275,6 +406,32 @@ export default function ProjectDetail() {
   // hasICP is true only if at least one meaningful criteria exists
   const hasICP = hasTargetIndustries || hasTargetJobTitles || hasGeographies || hasKeywords || hasMeaningfulCompanySize;
 
+  // Sync filter states to URL params
+  useEffect(() => {
+    const params = new URLSearchParams();
+    
+    // Only add params that have values
+    if (searchQuery) params.set('search', searchQuery);
+    if (quickFilter) params.set('quickFilter', quickFilter);
+    if (filterStatus) params.set('filterStatus', filterStatus);
+    if (filterActionDate) params.set('filterActionDate', filterActionDate);
+    if (filterActionDateFrom) params.set('filterActionDateFrom', filterActionDateFrom);
+    if (filterActionDateTo) params.set('filterActionDateTo', filterActionDateTo);
+    if (filterLastInteraction) params.set('filterLastInteraction', filterLastInteraction);
+    if (filterLastInteractionFrom) params.set('filterLastInteractionFrom', filterLastInteractionFrom);
+    if (filterLastInteractionTo) params.set('filterLastInteractionTo', filterLastInteractionTo);
+    if (filterImportDate) params.set('filterImportDate', filterImportDate);
+    if (filterImportDateFrom) params.set('filterImportDateFrom', filterImportDateFrom);
+    if (filterImportDateTo) params.set('filterImportDateTo', filterImportDateTo);
+    if (filterNoActivity) params.set('filterNoActivity', 'true');
+    if (filterMatchType) params.set('filterMatchType', filterMatchType);
+    
+    // Update URL without causing a navigation
+    setSearchParams(params, { replace: true });
+  }, [searchQuery, quickFilter, filterStatus, filterActionDate, filterActionDateFrom, filterActionDateTo, 
+      filterLastInteraction, filterLastInteractionFrom, filterLastInteractionTo, 
+      filterImportDate, filterImportDateFrom, filterImportDateTo, filterNoActivity, filterMatchType, setSearchParams]);
+
   // Disable suggestions if ICP is removed while suggestions are enabled
   useEffect(() => {
     if (showProspectSuggestions && !hasICP) {
@@ -315,15 +472,14 @@ export default function ProjectDetail() {
 
   const fetchAllProjectActivities = async () => {
     try {
-      const response = await API.get(`/activities/project/${id}?limit=10000`); // Increased limit to ensure all activities are fetched
+      // Fetch all activities for accurate KPI filtering
+      // Use a high limit to ensure we get all activities
+      const response = await API.get(`/activities/project/${id}?limit=10000`);
       if (response.data.success) {
         const activities = response.data.data || [];
         setAllProjectActivities(activities);
-        // Debug: Log activities with status to verify they're being fetched
-        const activitiesWithStatus = activities.filter(a => a.status);
-        if (activitiesWithStatus.length > 0) {
-          console.log(`Found ${activitiesWithStatus.length} activities with status out of ${activities.length} total activities`);
-        }
+        // Refresh KPI metrics when activities are updated
+        fetchKpiMetrics();
       }
     } catch (err) {
       console.error('Error fetching project activities:', err);
@@ -659,7 +815,7 @@ export default function ProjectDetail() {
     };
     const config = stageConfig[stage] || { bg: 'bg-gray-100', text: 'text-gray-800' };
     return (
-      <span className={`inline-flex items-center justify-center px-2 py-0.5 text-[10px] font-medium rounded-full whitespace-nowrap ${config.bg} ${config.text} ${config.border || ''}`}>
+      <span className={`inline-flex items-center justify-center px-2.5 py-1 text-xs font-medium rounded-full whitespace-nowrap ${config.bg} ${config.text} ${config.border || ''}`}>
         {stage || 'New'}
       </span>
     );
@@ -844,9 +1000,17 @@ export default function ProjectDetail() {
                         {getActivityTypeLabel(activity.type)}
                       </span>
                     </div>
+                    {activity.conversationNotes && (() => {
+                      // Remove contact information block if present
+                      const notes = activity.conversationNotes.replace(/\[Contact:.*?\|.*?Email:.*?\|.*?Phone:.*?\|.*?LinkedIn:.*?\]/g, '').trim();
+                      // Also remove standalone contact info blocks
+                      const cleanedNotes = notes.replace(/\[Contact:.*?\]/g, '').trim();
+                      return cleanedNotes ? (
                     <p className="text-sm text-gray-700 mb-2 whitespace-pre-wrap leading-relaxed">
-                      {activity.conversationNotes}
+                          {cleanedNotes}
                     </p>
+                      ) : null;
+                    })()}
                     <div className="flex items-center gap-2 text-xs text-gray-500">
                       <span className={`px-2 py-0.5 rounded font-medium ${
                         activity.type === 'call' ? 'bg-blue-100 text-blue-700' :
@@ -871,19 +1035,11 @@ export default function ProjectDetail() {
   };
 
   // Memoize filtered contacts to avoid recalculating on every render
-  // Use debouncedSearchQuery for better performance
+  // Note: Search is now handled server-side, so backend already returns filtered results
   const filteredContacts = useMemo(() => {
     return contacts.filter(contact => {
-    // Search filter (using debounced query)
-    if (debouncedSearchQuery) {
-      const query = debouncedSearchQuery.toLowerCase();
-      const matchesSearch = 
-        (contact.name && contact.name.toLowerCase().includes(query)) ||
-        (contact.company && contact.company.toLowerCase().includes(query)) ||
-        (contact.email && contact.email.toLowerCase().includes(query)) ||
-        (contact.firstPhone && contact.firstPhone.toLowerCase().includes(query));
-      if (!matchesSearch) return false;
-    }
+    // Search is handled server-side, so we don't need to filter here
+    // Backend already returns only matching contacts when search query is provided
 
     // Status filter - check latest activity status and contact.stage
     if (filterStatus) {
@@ -1083,6 +1239,149 @@ export default function ProjectDetail() {
       if (hasAnyActivity) return false;
     }
 
+    // KPI filter - filter by channel and metric type
+    if (filterKpi) {
+      const contactIdStr = (contact._id?.toString ? contact._id.toString() : contact._id) || '';
+      const contactActivities = allProjectActivities.filter(a => {
+        const activityProjectId = a.projectId?.toString ? a.projectId.toString() : a.projectId;
+        if (activityProjectId !== id) return false;
+        
+        if (contactIdStr && a.contactId) {
+          const activityContactIdStr = a.contactId.toString ? a.contactId.toString() : a.contactId;
+          if (activityContactIdStr === contactIdStr) return true;
+        }
+        
+        // Fallback to notes matching
+        if (!contactIdStr || !a.contactId) {
+          const notesLower = a.conversationNotes?.toLowerCase() || '';
+          const contactNameLower = contact.name?.toLowerCase() || '';
+          const contactEmailLower = contact.email?.toLowerCase() || '';
+          return notesLower.includes(contactNameLower) || notesLower.includes(contactEmailLower);
+        }
+        return false;
+      });
+
+      let hasMatchingActivity = false;
+      
+      if (filterKpi.channel === 'linkedin') {
+        // Backend uses type: 'linkedin'
+        const linkedinActivities = contactActivities.filter(a => a.type === 'linkedin');
+        if (filterKpi.metric === 'connectionSent') {
+          hasMatchingActivity = linkedinActivities.some(a => a.lnRequestSent === true || a.lnRequestSent === 'Yes');
+        } else if (filterKpi.metric === 'accepted') {
+          hasMatchingActivity = linkedinActivities.some(a => a.connected === true || a.connected === 'Yes');
+        } else if (filterKpi.metric === 'followUps') {
+          hasMatchingActivity = linkedinActivities.length > 1;
+        } else if (filterKpi.metric === 'cip') {
+          hasMatchingActivity = linkedinActivities.some(a => 
+            a.status && (a.status === 'CIP' || a.status === 'Conversations in Progress')
+          );
+        } else if (filterKpi.metric === 'meetingProposed') {
+          hasMatchingActivity = linkedinActivities.some(a => a.status === 'Meeting Proposed');
+        } else if (filterKpi.metric === 'scheduled') {
+          hasMatchingActivity = linkedinActivities.some(a => a.status === 'Meeting Scheduled');
+        } else if (filterKpi.metric === 'completed') {
+          hasMatchingActivity = linkedinActivities.some(a => a.status === 'Meeting Completed');
+        } else if (filterKpi.metric === 'sql') {
+          hasMatchingActivity = contact.stage === 'SQL';
+        } else if (filterKpi.metric === 'win') {
+          hasMatchingActivity = contact.stage === 'WON';
+        }
+        // Legacy metrics
+        else if (filterKpi.metric === 'connectionRequestsSent') {
+          hasMatchingActivity = linkedinActivities.some(a => a.lnRequestSent === true || a.lnRequestSent === 'Yes');
+        } else if (filterKpi.metric === 'connectionAcceptanceRate') {
+          hasMatchingActivity = linkedinActivities.some(a => a.connected === true || a.connected === 'Yes');
+        } else if (filterKpi.metric === 'messagesSent') {
+          hasMatchingActivity = linkedinActivities.some(a => a.status && a.status !== '');
+        } else if (filterKpi.metric === 'messageReplyRate') {
+          hasMatchingActivity = linkedinActivities.some(a => 
+            a.status && ['Meeting Proposed', 'Meeting Scheduled', 'Meeting Completed', 'SQL', 'Tech Discussion'].includes(a.status)
+          );
+        } else if (filterKpi.metric === 'meetingsBooked') {
+          hasMatchingActivity = linkedinActivities.some(a => 
+            a.status && ['Meeting Scheduled', 'Meeting Completed', 'In-Person Meeting'].includes(a.status)
+          );
+        }
+      } else if (filterKpi.channel === 'call') {
+        // Backend uses type: 'call' and callStatus field (not status)
+        const callActivities = contactActivities.filter(a => a.type === 'call');
+        if (filterKpi.metric === 'allProspects') {
+          // Show all prospects (no filtering)
+          hasMatchingActivity = true;
+        } else if (filterKpi.metric === 'callsAttempted') {
+          // All call activities
+          hasMatchingActivity = callActivities.length > 0;
+        } else if (filterKpi.metric === 'callsConnected') {
+          // Calls that were answered (not Ring, Busy, Switch Off, Invalid, Hang Up)
+          hasMatchingActivity = callActivities.some(a => 
+            a.callStatus && !['Ring', 'Busy', 'Switch Off', 'Invalid', 'Hang Up'].includes(a.callStatus)
+          );
+        } else if (filterKpi.metric === 'decisionMakerReached') {
+          // Calls that reached decision maker (answered and not Not Interested)
+          hasMatchingActivity = callActivities.some(a => 
+            a.callStatus && !['Ring', 'Busy', 'Switch Off', 'Invalid', 'Hang Up', 'Not Interested'].includes(a.callStatus)
+          );
+        } else if (filterKpi.metric === 'interested') {
+          hasMatchingActivity = callActivities.some(a => a.callStatus === 'Interested');
+        } else if (filterKpi.metric === 'detailsShared') {
+          hasMatchingActivity = callActivities.some(a => a.callStatus === 'Details Shared');
+        } else if (filterKpi.metric === 'demoBooked') {
+          hasMatchingActivity = callActivities.some(a => a.callStatus === 'Demo Booked');
+        } else if (filterKpi.metric === 'demoCompleted') {
+          hasMatchingActivity = callActivities.some(a => a.callStatus === 'Demo Completed');
+        } else if (filterKpi.metric === 'sql') {
+          // Check project contact stage
+          hasMatchingActivity = contact.stage === 'SQL';
+        } else if (filterKpi.metric === 'won') {
+          // Check project contact stage
+          hasMatchingActivity = contact.stage === 'WON';
+        } else if (filterKpi.metric === 'callsMade') {
+          // Legacy support
+          hasMatchingActivity = callActivities.length > 0;
+        } else if (filterKpi.metric === 'callAnswerRate') {
+          // Legacy support
+          hasMatchingActivity = callActivities.some(a => 
+            a.callStatus && !['Ring', 'Busy', 'Switch Off', 'Invalid', 'Hang Up'].includes(a.callStatus)
+          );
+        } else if (filterKpi.metric === 'callInterestedRate') {
+          // Legacy support
+          hasMatchingActivity = callActivities.some(a => 
+            a.callStatus && ['Interested', 'Details Shared', 'Demo Booked', 'Demo Completed'].includes(a.callStatus)
+          );
+        } else if (filterKpi.metric === 'meetingsBooked') {
+          // Legacy support
+          hasMatchingActivity = callActivities.some(a => 
+            a.callStatus && ['Demo Booked', 'Demo Completed'].includes(a.callStatus)
+          );
+        }
+      } else if (filterKpi.channel === 'email') {
+        // Backend uses type: 'email'
+        const emailActivities = contactActivities.filter(a => a.type === 'email');
+        if (filterKpi.metric === 'emailsSent') {
+          // Backend counts all email activities
+          hasMatchingActivity = emailActivities.length > 0;
+        } else if (filterKpi.metric === 'emailOpenRate') {
+          // Backend checks: status && status !== 'Bounce' && status !== 'Opt-Out' && status !== 'No Reply'
+          hasMatchingActivity = emailActivities.some(a => 
+            a.status && a.status !== 'Bounce' && a.status !== 'Opt-Out' && a.status !== 'No Reply'
+          );
+        } else if (filterKpi.metric === 'emailReplyRate') {
+          // Backend checks: status in ['Meeting Proposed', 'Meeting Scheduled', 'Meeting Completed', 'SQL', 'Tech Discussion']
+          hasMatchingActivity = emailActivities.some(a => 
+            a.status && ['Meeting Proposed', 'Meeting Scheduled', 'Meeting Completed', 'SQL', 'Tech Discussion'].includes(a.status)
+          );
+        } else if (filterKpi.metric === 'meetingsBooked') {
+          // Backend checks: status in ['Meeting Scheduled', 'Meeting Completed', 'In-Person Meeting']
+          hasMatchingActivity = emailActivities.some(a => 
+            a.status && ['Meeting Scheduled', 'Meeting Completed', 'In-Person Meeting'].includes(a.status)
+          );
+        }
+      }
+      
+      if (!hasMatchingActivity) return false;
+    }
+
     // Quick filters
     if (quickFilter === 'due-today') {
       // Find activities with nextActionDate due today
@@ -1130,8 +1429,368 @@ export default function ProjectDetail() {
     }
 
       return true;
+    }).sort((a, b) => {
+      // Apply sorting if sortBy is set
+      if (sortBy === 'name') {
+        const nameA = (a.name || '').toLowerCase();
+        const nameB = (b.name || '').toLowerCase();
+        if (sortOrder === 'asc') {
+          return nameA.localeCompare(nameB);
+        } else {
+          return nameB.localeCompare(nameA);
+        }
+      }
+      return 0;
     });
-  }, [contacts, debouncedSearchQuery, quickFilter, filterStatus, filterActionDate, filterActionDateFrom, filterActionDateTo, filterLastInteraction, filterLastInteractionFrom, filterLastInteractionTo, filterImportDate, filterImportDateFrom, filterImportDateTo, filterNoActivity, filterMatchType, allProjectActivities, project, activityLookups, id]);
+  }, [contacts, debouncedSearchQuery, quickFilter, filterStatus, filterActionDate, filterActionDateFrom, filterActionDateTo, filterLastInteraction, filterLastInteractionFrom, filterLastInteractionTo, filterImportDate, filterImportDateFrom, filterImportDateTo, filterNoActivity, filterMatchType, filterKpi, allProjectActivities, project, activityLookups, id, sortBy, sortOrder]);
+
+  // State to store all contacts for KPI filtering (not paginated)
+  const [allContactsForKpi, setAllContactsForKpi] = useState([]);
+  const [loadingAllContactsForKpi, setLoadingAllContactsForKpi] = useState(false);
+
+  // Fetch all contacts for KPI filtering (without pagination)
+  const fetchAllContactsForKpi = useCallback(async () => {
+    try {
+      setLoadingAllContactsForKpi(true);
+      setAllContactsForKpi([]); // Clear previous data
+      
+      // Fetch all contacts by requesting a very high limit
+      // The backend default is 10000, so we'll use that
+      const response = await API.get(`/projects/${id}/project-contacts?page=1&limit=10000`);
+      if (response.data.success) {
+        const contactsData = response.data.data || [];
+        const pagination = response.data.pagination || {};
+        const total = pagination.total || contactsData.length;
+        
+        // If we got fewer contacts than the total, we need to fetch more pages
+        let allContactsData = [...contactsData];
+        
+        if (contactsData.length < total && total > 10000) {
+          // If total is more than 10000, we need to fetch additional pages
+          const totalPages = Math.ceil(total / 10000);
+          const additionalPages = [];
+          
+          for (let page = 2; page <= totalPages; page++) {
+            try {
+              const pageResponse = await API.get(`/projects/${id}/project-contacts?page=${page}&limit=10000`);
+              if (pageResponse.data.success) {
+                additionalPages.push(...(pageResponse.data.data || []));
+              }
+            } catch (pageErr) {
+              console.error(`Error fetching page ${page} for KPI:`, pageErr);
+            }
+          }
+          
+          allContactsData = [...contactsData, ...additionalPages];
+        }
+        
+        // Deduplicate contacts by _id (contact ID) - ensure each contact appears only once
+        const contactsMap = new Map();
+        
+        allContactsData.forEach(contact => {
+          const contactId = contact._id?.toString ? contact._id.toString() : String(contact._id);
+          if (!contactId) return; // Skip contacts without IDs
+          
+          const existing = contactsMap.get(contactId);
+          if (!existing) {
+            // First occurrence - add it
+            contactsMap.set(contactId, contact);
+          } else {
+            // Duplicate found - prefer the one with projectContactId (imported) over activity-based
+            const existingHasProjectContact = existing.projectContactId !== null && existing.projectContactId !== undefined;
+            const newHasProjectContact = contact.projectContactId !== null && contact.projectContactId !== undefined;
+            
+            if (newHasProjectContact && !existingHasProjectContact) {
+              // New one is imported (has projectContactId), existing is activity-based - replace
+              contactsMap.set(contactId, contact);
+            }
+          }
+        });
+        
+        // Convert map back to array - this ensures each contact appears only once
+        const uniqueContacts = Array.from(contactsMap.values());
+        setAllContactsForKpi(uniqueContacts);
+      }
+    } catch (err) {
+      console.error('Error fetching all contacts for KPI:', err);
+      setAllContactsForKpi([]);
+    } finally {
+      setLoadingAllContactsForKpi(false);
+    }
+  }, [id]);
+
+  // Function to get filtered prospects based on KPI filter - OPTIMIZED
+  const getKpiFilteredProspects = useCallback((kpiFilter) => {
+    if (!kpiFilter) return [];
+    
+    // Always use allContactsForKpi if available (it contains all contacts, not just paginated ones)
+    // Only fall back to contacts if allContactsForKpi hasn't been loaded yet
+    const contactsToFilter = allContactsForKpi.length > 0 ? allContactsForKpi : contacts;
+    
+    return contactsToFilter.filter(contact => {
+      const contactIdStr = (contact._id?.toString ? contact._id.toString() : contact._id) || '';
+      
+      // Use activityLookups for O(1) lookup instead of filtering all activities
+      const allCachedActivities = contactIdStr ? (activityLookups.byContactId.get(contactIdStr) || []) : [];
+      
+      // Filter by projectId to ensure project-specific activities
+      const contactActivities = allCachedActivities.filter(a => {
+        const activityProjectId = a.projectId?.toString ? a.projectId.toString() : a.projectId;
+        return activityProjectId === id;
+      });
+      
+      // Fallback to notes matching only if no contactId match (should be rare)
+      if (contactActivities.length === 0 && (!contactIdStr || contactIdStr === '')) {
+        // Try to find activities by notes matching (fallback)
+        const fallbackActivities = allProjectActivities.filter(a => {
+          const activityProjectId = a.projectId?.toString ? a.projectId.toString() : a.projectId;
+          if (activityProjectId !== id) return false;
+          
+          const notesLower = a.conversationNotes?.toLowerCase() || '';
+          const contactNameLower = contact.name?.toLowerCase() || '';
+          const contactEmailLower = contact.email?.toLowerCase() || '';
+          return notesLower.includes(contactNameLower) || notesLower.includes(contactEmailLower);
+        });
+        
+        if (fallbackActivities.length === 0) {
+          return false; // No activities found for this contact
+        }
+        
+        // Use fallback activities for this check
+        const fallbackLinkedinActivities = fallbackActivities.filter(a => a.type === 'linkedin');
+        const fallbackCallActivities = fallbackActivities.filter(a => a.type === 'call');
+        const fallbackEmailActivities = fallbackActivities.filter(a => a.type === 'email');
+        
+        let hasMatchingActivity = false;
+        
+        if (kpiFilter.channel === 'linkedin') {
+          if (kpiFilter.metric === 'connectionSent') {
+            hasMatchingActivity = fallbackLinkedinActivities.some(a => a.lnRequestSent === true || a.lnRequestSent === 'Yes');
+          } else if (kpiFilter.metric === 'accepted') {
+            hasMatchingActivity = fallbackLinkedinActivities.some(a => a.connected === true || a.connected === 'Yes');
+          } else if (kpiFilter.metric === 'followUps') {
+            hasMatchingActivity = fallbackLinkedinActivities.length > 1;
+          } else if (kpiFilter.metric === 'cip') {
+            hasMatchingActivity = fallbackLinkedinActivities.some(a => 
+              a.status && (a.status === 'CIP' || a.status === 'Conversations in Progress')
+            );
+          } else if (kpiFilter.metric === 'meetingProposed') {
+            hasMatchingActivity = fallbackLinkedinActivities.some(a => a.status === 'Meeting Proposed');
+          } else if (kpiFilter.metric === 'scheduled') {
+            hasMatchingActivity = fallbackLinkedinActivities.some(a => a.status === 'Meeting Scheduled');
+          } else if (kpiFilter.metric === 'completed') {
+            hasMatchingActivity = fallbackLinkedinActivities.some(a => a.status === 'Meeting Completed');
+          } else if (kpiFilter.metric === 'sql') {
+            hasMatchingActivity = contact.stage === 'SQL';
+          } else if (kpiFilter.metric === 'win') {
+            hasMatchingActivity = contact.stage === 'WON';
+          }
+          // Legacy metrics
+          else if (kpiFilter.metric === 'connectionRequestsSent') {
+            hasMatchingActivity = fallbackLinkedinActivities.some(a => a.lnRequestSent === true || a.lnRequestSent === 'Yes');
+          } else if (kpiFilter.metric === 'connectionAcceptanceRate') {
+            hasMatchingActivity = fallbackLinkedinActivities.some(a => a.connected === true || a.connected === 'Yes');
+          } else if (kpiFilter.metric === 'messagesSent') {
+            hasMatchingActivity = fallbackLinkedinActivities.some(a => a.status && a.status !== '');
+          } else if (kpiFilter.metric === 'messageReplyRate') {
+            hasMatchingActivity = fallbackLinkedinActivities.some(a => 
+              a.status && ['Meeting Proposed', 'Meeting Scheduled', 'Meeting Completed', 'SQL', 'Tech Discussion'].includes(a.status)
+            );
+          } else if (kpiFilter.metric === 'meetingsBooked') {
+            hasMatchingActivity = fallbackLinkedinActivities.some(a => 
+              a.status && ['Meeting Scheduled', 'Meeting Completed', 'In-Person Meeting'].includes(a.status)
+            );
+          }
+        } else if (kpiFilter.channel === 'call') {
+          if (kpiFilter.metric === 'allProspects') {
+            hasMatchingActivity = true;
+          } else if (kpiFilter.metric === 'callsAttempted') {
+            hasMatchingActivity = fallbackCallActivities.length > 0;
+          } else if (kpiFilter.metric === 'callsConnected') {
+            hasMatchingActivity = fallbackCallActivities.some(a => 
+              a.callStatus && !['Ring', 'Busy', 'Switch Off', 'Invalid', 'Hang Up'].includes(a.callStatus)
+            );
+          } else if (kpiFilter.metric === 'decisionMakerReached') {
+            hasMatchingActivity = fallbackCallActivities.some(a => 
+              a.callStatus && !['Ring', 'Busy', 'Switch Off', 'Invalid', 'Hang Up', 'Not Interested'].includes(a.callStatus)
+            );
+          } else if (kpiFilter.metric === 'interested') {
+            hasMatchingActivity = fallbackCallActivities.some(a => a.callStatus === 'Interested');
+          } else if (kpiFilter.metric === 'detailsShared') {
+            hasMatchingActivity = fallbackCallActivities.some(a => a.callStatus === 'Details Shared');
+          } else if (kpiFilter.metric === 'demoBooked') {
+            hasMatchingActivity = fallbackCallActivities.some(a => a.callStatus === 'Demo Booked');
+          } else if (kpiFilter.metric === 'demoCompleted') {
+            hasMatchingActivity = fallbackCallActivities.some(a => a.callStatus === 'Demo Completed');
+          } else if (kpiFilter.metric === 'sql') {
+            hasMatchingActivity = contact.stage === 'SQL';
+          } else if (kpiFilter.metric === 'won') {
+            hasMatchingActivity = contact.stage === 'WON';
+          }
+        } else if (kpiFilter.channel === 'email') {
+          if (kpiFilter.metric === 'emailsSent') {
+            hasMatchingActivity = fallbackEmailActivities.length > 0;
+          } else if (kpiFilter.metric === 'emailOpenRate') {
+            hasMatchingActivity = fallbackEmailActivities.some(a => 
+              a.status && a.status !== 'Bounce' && a.status !== 'Opt-Out' && a.status !== 'No Reply'
+            );
+          } else if (kpiFilter.metric === 'emailReplyRate') {
+            hasMatchingActivity = fallbackEmailActivities.some(a => 
+              a.status && ['Meeting Proposed', 'Meeting Scheduled', 'Meeting Completed', 'SQL', 'Tech Discussion'].includes(a.status)
+            );
+          } else if (kpiFilter.metric === 'meetingsBooked') {
+            hasMatchingActivity = fallbackEmailActivities.some(a => 
+              a.status && ['Meeting Scheduled', 'Meeting Completed', 'In-Person Meeting'].includes(a.status)
+            );
+          }
+        }
+        
+        return hasMatchingActivity;
+      }
+
+      let hasMatchingActivity = false;
+      
+      if (kpiFilter.channel === 'linkedin') {
+        // Backend uses type: 'linkedin'
+        const linkedinActivities = contactActivities.filter(a => a.type === 'linkedin');
+        if (kpiFilter.metric === 'connectionSent') {
+          // Backend checks: lnRequestSent === true or 'Yes'
+          hasMatchingActivity = linkedinActivities.some(a => a.lnRequestSent === true || a.lnRequestSent === 'Yes');
+        } else if (kpiFilter.metric === 'accepted') {
+          // Backend checks: connected === true or 'Yes'
+          hasMatchingActivity = linkedinActivities.some(a => a.connected === true || a.connected === 'Yes');
+        } else if (kpiFilter.metric === 'followUps') {
+          // Backend checks: more than 1 LinkedIn activity for this contact
+          hasMatchingActivity = linkedinActivities.length > 1;
+        } else if (kpiFilter.metric === 'cip') {
+          // Backend checks: status === 'CIP' or 'Conversations in Progress'
+          hasMatchingActivity = linkedinActivities.some(a => 
+            a.status && (a.status === 'CIP' || a.status === 'Conversations in Progress')
+          );
+        } else if (kpiFilter.metric === 'meetingProposed') {
+          // Backend checks: status === 'Meeting Proposed'
+          hasMatchingActivity = linkedinActivities.some(a => a.status === 'Meeting Proposed');
+        } else if (kpiFilter.metric === 'scheduled') {
+          // Backend checks: status === 'Meeting Scheduled'
+          hasMatchingActivity = linkedinActivities.some(a => a.status === 'Meeting Scheduled');
+        } else if (kpiFilter.metric === 'completed') {
+          // Backend checks: status === 'Meeting Completed'
+          hasMatchingActivity = linkedinActivities.some(a => a.status === 'Meeting Completed');
+        } else if (kpiFilter.metric === 'sql') {
+          // Check project contact stage
+          hasMatchingActivity = contact.stage === 'SQL';
+        } else if (kpiFilter.metric === 'win') {
+          // Check project contact stage
+          hasMatchingActivity = contact.stage === 'WON';
+        }
+        // Legacy metrics (for backward compatibility)
+        else if (kpiFilter.metric === 'connectionRequestsSent') {
+          hasMatchingActivity = linkedinActivities.some(a => a.lnRequestSent === true || a.lnRequestSent === 'Yes');
+        } else if (kpiFilter.metric === 'connectionAcceptanceRate') {
+          hasMatchingActivity = linkedinActivities.some(a => a.connected === true || a.connected === 'Yes');
+        } else if (kpiFilter.metric === 'messagesSent') {
+          hasMatchingActivity = linkedinActivities.some(a => a.status && a.status !== '');
+        } else if (kpiFilter.metric === 'messageReplyRate') {
+          hasMatchingActivity = linkedinActivities.some(a => 
+            a.status && ['Meeting Proposed', 'Meeting Scheduled', 'Meeting Completed', 'SQL', 'Tech Discussion'].includes(a.status)
+          );
+        } else if (kpiFilter.metric === 'meetingsBooked') {
+          hasMatchingActivity = linkedinActivities.some(a => 
+            a.status && ['Meeting Scheduled', 'Meeting Completed', 'In-Person Meeting'].includes(a.status)
+          );
+        }
+      } else if (kpiFilter.channel === 'call') {
+        // Backend uses type: 'call' and callStatus field (not status)
+        const callActivities = contactActivities.filter(a => a.type === 'call');
+        if (kpiFilter.metric === 'allProspects') {
+          // Show all prospects (no filtering)
+          hasMatchingActivity = true;
+        } else if (kpiFilter.metric === 'callsAttempted') {
+          // All call activities
+          hasMatchingActivity = callActivities.length > 0;
+        } else if (kpiFilter.metric === 'callsConnected') {
+          // Calls that were answered (not Ring, Busy, Switch Off, Invalid, Hang Up)
+          hasMatchingActivity = callActivities.some(a => 
+            a.callStatus && !['Ring', 'Busy', 'Switch Off', 'Invalid', 'Hang Up'].includes(a.callStatus)
+          );
+        } else if (kpiFilter.metric === 'decisionMakerReached') {
+          // Calls that reached decision maker (answered and not Not Interested)
+          hasMatchingActivity = callActivities.some(a => 
+            a.callStatus && !['Ring', 'Busy', 'Switch Off', 'Invalid', 'Hang Up', 'Not Interested'].includes(a.callStatus)
+          );
+        } else if (kpiFilter.metric === 'interested') {
+          hasMatchingActivity = callActivities.some(a => a.callStatus === 'Interested');
+        } else if (kpiFilter.metric === 'detailsShared') {
+          hasMatchingActivity = callActivities.some(a => a.callStatus === 'Details Shared');
+        } else if (kpiFilter.metric === 'demoBooked') {
+          hasMatchingActivity = callActivities.some(a => a.callStatus === 'Demo Booked');
+        } else if (kpiFilter.metric === 'demoCompleted') {
+          hasMatchingActivity = callActivities.some(a => a.callStatus === 'Demo Completed');
+        } else if (kpiFilter.metric === 'sql') {
+          // Check project contact stage
+          hasMatchingActivity = contact.stage === 'SQL';
+        } else if (kpiFilter.metric === 'won') {
+          // Check project contact stage
+          hasMatchingActivity = contact.stage === 'WON';
+        } else if (kpiFilter.metric === 'callsMade') {
+          // Legacy support
+          hasMatchingActivity = callActivities.length > 0;
+        } else if (kpiFilter.metric === 'callAnswerRate') {
+          // Legacy support
+          hasMatchingActivity = callActivities.some(a => 
+            a.callStatus && !['Ring', 'Busy', 'Switch Off', 'Invalid', 'Hang Up'].includes(a.callStatus)
+          );
+        } else if (kpiFilter.metric === 'callInterestedRate') {
+          // Legacy support
+          hasMatchingActivity = callActivities.some(a => 
+            a.callStatus && ['Interested', 'Details Shared', 'Demo Booked', 'Demo Completed'].includes(a.callStatus)
+          );
+        } else if (kpiFilter.metric === 'meetingsBooked') {
+          // Legacy support
+          hasMatchingActivity = callActivities.some(a => 
+            a.callStatus && ['Demo Booked', 'Demo Completed'].includes(a.callStatus)
+          );
+        }
+      } else if (kpiFilter.channel === 'email') {
+        // Backend uses type: 'email'
+        const emailActivities = contactActivities.filter(a => a.type === 'email');
+        if (kpiFilter.metric === 'emailsSent') {
+          // Backend counts all email activities
+          hasMatchingActivity = emailActivities.length > 0;
+        } else if (kpiFilter.metric === 'emailOpenRate') {
+          // Backend checks: status && status !== 'Bounce' && status !== 'Opt-Out' && status !== 'No Reply'
+          hasMatchingActivity = emailActivities.some(a => 
+            a.status && a.status !== 'Bounce' && a.status !== 'Opt-Out' && a.status !== 'No Reply'
+          );
+        } else if (kpiFilter.metric === 'emailReplyRate') {
+          // Backend checks: status in ['Meeting Proposed', 'Meeting Scheduled', 'Meeting Completed', 'SQL', 'Tech Discussion']
+          hasMatchingActivity = emailActivities.some(a => 
+            a.status && ['Meeting Proposed', 'Meeting Scheduled', 'Meeting Completed', 'SQL', 'Tech Discussion'].includes(a.status)
+          );
+        } else if (kpiFilter.metric === 'meetingsBooked') {
+          // Backend checks: status in ['Meeting Scheduled', 'Meeting Completed', 'In-Person Meeting']
+          hasMatchingActivity = emailActivities.some(a => 
+            a.status && ['Meeting Scheduled', 'Meeting Completed', 'In-Person Meeting'].includes(a.status)
+          );
+        }
+      }
+      
+      return hasMatchingActivity;
+    });
+  }, [allContactsForKpi, contacts, activityLookups, allProjectActivities, id]);
+
+  // Fetch all contacts when KPI modal opens
+  useEffect(() => {
+    if (kpiProspectModal.isOpen && kpiProspectModal.filter) {
+      // Refresh activities to ensure we have all of them for accurate filtering
+      fetchAllProjectActivities().then(() => {
+        fetchAllContactsForKpi();
+      });
+    } else if (!kpiProspectModal.isOpen) {
+      // Clear data when modal closes to free memory
+      setAllContactsForKpi([]);
+    }
+  }, [kpiProspectModal.isOpen, kpiProspectModal.filter, fetchAllContactsForKpi]);
 
   // Memoize select all checked state
   const isAllSelected = useMemo(() => {
@@ -1308,7 +1967,7 @@ export default function ProjectDetail() {
       }
     } catch (err) {
       console.error('Error removing prospects:', err);
-      alert(err.response?.data?.error || 'Failed to remove prospects');
+      alert(err.response?.data?.error || 'Couldn\'t remove those prospects. Try again in a moment.');
     } finally {
       setRemoving(false);
     }
@@ -1390,7 +2049,9 @@ export default function ProjectDetail() {
           </button>
           <div>
             <h1 className="text-2xl font-bold text-gray-900 mb-1">Prospect Management</h1>
-            <p className="text-sm text-gray-600">Track and manage prospect interactions across the entire sales pipeline</p>
+            {project && (
+              <p className="text-lg font-semibold text-indigo-600">{project.companyName}</p>
+            )}
           </div>
         </div>
         <div className="flex items-center gap-3 flex-wrap justify-end">
@@ -1402,6 +2063,15 @@ export default function ProjectDetail() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
             Prospect Analytics
+            </button>
+            <button
+            onClick={() => navigate(`/projects/${id}/report`)}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-lg hover:from-blue-700 hover:to-cyan-700 transition-colors font-medium text-sm shadow-sm"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            Report
             </button>
           <button 
             onClick={handleToggleProspectSuggestions}
@@ -1438,13 +2108,579 @@ export default function ProjectDetail() {
       </div>
 
 
+      {/* KPI Pipeline Section */}
+      {kpiMetrics && (
+        <div className="mb-4">
+          {/* Pipeline Tabs/Scroller */}
+          <div className="mb-3 overflow-x-auto -mx-1 px-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+            <style>{`
+              .scrollbar-thin::-webkit-scrollbar {
+                height: 6px;
+              }
+              .scrollbar-thin::-webkit-scrollbar-track {
+                background: transparent;
+              }
+              .scrollbar-thin::-webkit-scrollbar-thumb {
+                background-color: #cbd5e1;
+                border-radius: 3px;
+              }
+              .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+                background-color: #94a3b8;
+              }
+            `}</style>
+            <div className="flex gap-2 min-w-max pb-2">
+              {/* LinkedIn Pipeline Button - Only show if linkedInOutreach channel is enabled */}
+              {enabledActivityTypes.includes('linkedin') && (
+                <div
+                  onClick={() => setSelectedPipeline('linkedin')}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-medium text-xs whitespace-nowrap transition-all cursor-pointer min-w-[150px] justify-center ${
+                    selectedPipeline === 'linkedin'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                  </svg>
+                  <span>LinkedIn Pipeline</span>
+                </div>
+              )}
+              {/* Cold Calling Pipeline Button - Only show if coldCalling channel is enabled */}
+              {enabledActivityTypes.includes('call') && (
+                <div
+                  onClick={() => setSelectedPipeline('call')}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-medium text-xs whitespace-nowrap transition-all cursor-pointer min-w-[150px] justify-center ${
+                    selectedPipeline === 'call'
+                      ? 'bg-green-600 text-white shadow-md'
+                      : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                  </svg>
+                  <span>Cold Calling Pipeline</span>
+                </div>
+              )}
+              {/* Email Pipeline Button - Only show if coldEmail channel is enabled */}
+              {enabledActivityTypes.includes('email') && (
+                <div
+                  onClick={() => setSelectedPipeline('email')}
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-medium text-xs whitespace-nowrap transition-all cursor-pointer min-w-[150px] justify-center ${
+                    selectedPipeline === 'email'
+                      ? 'bg-blue-600 text-white shadow-md'
+                      : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                  <span>Email Pipeline</span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* LinkedIn KPIs - Only show if linkedInOutreach channel is enabled */}
+          {enabledActivityTypes.includes('linkedin') && selectedPipeline === 'linkedin' && kpiMetrics && (
+            <div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-9 gap-2">
+              {/* Connection Sent */}
+              <button
+                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'linkedin', metric: 'connectionSent' } })}
+                className={`bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                  filterKpi?.channel === 'linkedin' && filterKpi?.metric === 'connectionSent' 
+                    ? 'border-blue-400 ring-2 ring-blue-200' 
+                    : 'border-blue-100'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="w-7 h-7 rounded-lg bg-white/80 border border-blue-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-blue-700 bg-white/70 border border-blue-100 px-2 py-1 rounded-full">Sent</span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.linkedin?.connectionSent || 0}</div>
+                <div className="text-xs text-gray-600 mt-1">Connection Sent</div>
+              </button>
+              
+              {/* Accepted */}
+              <button
+                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'linkedin', metric: 'accepted' } })}
+                className={`bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                  filterKpi?.channel === 'linkedin' && filterKpi?.metric === 'accepted' 
+                    ? 'border-green-400 ring-2 ring-green-200' 
+                    : 'border-green-100'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="w-7 h-7 rounded-lg bg-white/80 border border-green-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-green-700 bg-white/70 border border-green-100 px-2 py-1 rounded-full">Accepted</span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.linkedin?.accepted || 0}</div>
+                <div className="text-xs text-gray-600 mt-1">Accepted</div>
+              </button>
+              
+              {/* Follow-ups */}
+              <button
+                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'linkedin', metric: 'followUps' } })}
+                className={`bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                  filterKpi?.channel === 'linkedin' && filterKpi?.metric === 'followUps' 
+                    ? 'border-purple-400 ring-2 ring-purple-200' 
+                    : 'border-purple-100'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="w-7 h-7 rounded-lg bg-white/80 border border-purple-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-purple-700 bg-white/70 border border-purple-100 px-2 py-1 rounded-full">Follow</span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.linkedin?.followUps || 0}</div>
+                <div className="text-xs text-gray-600 mt-1">Follow-ups</div>
+              </button>
+              
+              {/* CIP */}
+              <button
+                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'linkedin', metric: 'cip' } })}
+                className={`bg-gradient-to-br from-cyan-50 to-blue-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                  filterKpi?.channel === 'linkedin' && filterKpi?.metric === 'cip' 
+                    ? 'border-cyan-400 ring-2 ring-cyan-200' 
+                    : 'border-cyan-100'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="w-7 h-7 rounded-lg bg-white/80 border border-cyan-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-cyan-700 bg-white/70 border border-cyan-100 px-2 py-1 rounded-full">CIP</span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.linkedin?.cip || 0}</div>
+                <div className="text-xs text-gray-600 mt-1">CIP</div>
+              </button>
+              
+              {/* Meeting Proposed */}
+              <button
+                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'linkedin', metric: 'meetingProposed' } })}
+                className={`bg-gradient-to-br from-yellow-50 to-amber-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                  filterKpi?.channel === 'linkedin' && filterKpi?.metric === 'meetingProposed' 
+                    ? 'border-yellow-400 ring-2 ring-yellow-200' 
+                    : 'border-yellow-100'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="w-7 h-7 rounded-lg bg-white/80 border border-yellow-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-yellow-700 bg-white/70 border border-yellow-100 px-2 py-1 rounded-full">Proposed</span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.linkedin?.meetingProposed || 0}</div>
+                <div className="text-xs text-gray-600 mt-1">Meeting Proposed</div>
+              </button>
+              
+              {/* Scheduled */}
+              <button
+                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'linkedin', metric: 'scheduled' } })}
+                className={`bg-gradient-to-br from-orange-50 to-red-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                  filterKpi?.channel === 'linkedin' && filterKpi?.metric === 'scheduled' 
+                    ? 'border-orange-400 ring-2 ring-orange-200' 
+                    : 'border-orange-100'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="w-7 h-7 rounded-lg bg-white/80 border border-orange-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-orange-700 bg-white/70 border border-orange-100 px-2 py-1 rounded-full">Scheduled</span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.linkedin?.scheduled || 0}</div>
+                <div className="text-xs text-gray-600 mt-1">Scheduled</div>
+              </button>
+              
+              {/* Completed */}
+              <button
+                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'linkedin', metric: 'completed' } })}
+                className={`bg-gradient-to-br from-teal-50 to-green-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                  filterKpi?.channel === 'linkedin' && filterKpi?.metric === 'completed' 
+                    ? 'border-teal-400 ring-2 ring-teal-200' 
+                    : 'border-teal-100'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="w-7 h-7 rounded-lg bg-white/80 border border-teal-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-teal-700 bg-white/70 border border-teal-100 px-2 py-1 rounded-full">Done</span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.linkedin?.completed || 0}</div>
+                <div className="text-xs text-gray-600 mt-1">Completed</div>
+              </button>
+              
+              {/* SQL */}
+              <button
+                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'linkedin', metric: 'sql' } })}
+                className={`bg-gradient-to-br from-indigo-50 to-purple-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                  filterKpi?.channel === 'linkedin' && filterKpi?.metric === 'sql' 
+                    ? 'border-indigo-400 ring-2 ring-indigo-200' 
+                    : 'border-indigo-100'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="w-7 h-7 rounded-lg bg-white/80 border border-indigo-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-indigo-700 bg-white/70 border border-indigo-100 px-2 py-1 rounded-full">SQL</span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.linkedin?.sql || 0}</div>
+                <div className="text-xs text-gray-600 mt-1">SQL</div>
+              </button>
+              
+              {/* Win */}
+              <button
+                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'linkedin', metric: 'win' } })}
+                className={`bg-gradient-to-br from-emerald-50 to-green-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                  filterKpi?.channel === 'linkedin' && filterKpi?.metric === 'win' 
+                    ? 'border-emerald-400 ring-2 ring-emerald-200' 
+                    : 'border-emerald-100'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="w-7 h-7 rounded-lg bg-white/80 border border-emerald-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-emerald-700 bg-white/70 border border-emerald-100 px-2 py-1 rounded-full">WON</span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.linkedin?.win || 0}</div>
+                <div className="text-xs text-gray-600 mt-1">Win</div>
+              </button>
+              </div>
+            </div>
+          )}
+
+          {/* Call Pipeline Stages */}
+          {/* Cold Calling Pipeline - Only show if coldCalling channel is enabled */}
+          {enabledActivityTypes.includes('call') && selectedPipeline === 'call' && kpiMetrics && (
+            <div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+                {/* Calls Attempted */}
+                <button
+                  onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'call', metric: 'callsAttempted' } })}
+                  className={`bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                    filterKpi?.channel === 'call' && filterKpi?.metric === 'callsAttempted' 
+                      ? 'border-green-400 ring-2 ring-green-200' 
+                      : 'border-green-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="w-7 h-7 rounded-lg bg-white/80 border border-green-100 flex items-center justify-center">
+                      <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-green-700 bg-white/70 border border-green-100 px-2 py-1 rounded-full">Calls</span>
+                  </div>
+                  <div className="text-2xl font-bold text-gray-900">{kpiMetrics.call?.callsAttempted || 0}</div>
+                  <div className="text-xs text-gray-600 mt-1">Calls Attempted</div>
+                </button>
+
+                {/* Calls Connected */}
+                <button
+                  onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'call', metric: 'callsConnected' } })}
+                  className={`bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                    filterKpi?.channel === 'call' && filterKpi?.metric === 'callsConnected' 
+                      ? 'border-blue-400 ring-2 ring-blue-200' 
+                      : 'border-blue-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="w-7 h-7 rounded-lg bg-white/80 border border-blue-100 flex items-center justify-center">
+                      <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-blue-700 bg-white/70 border border-blue-100 px-2 py-1 rounded-full">Connected</span>
+                  </div>
+                  <div className="text-2xl font-bold text-gray-900">{kpiMetrics.call?.callsConnected || 0}</div>
+                  <div className="text-xs text-gray-600 mt-1">Calls Connected</div>
+                </button>
+
+                {/* Decision Maker Reached */}
+                <button
+                  onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'call', metric: 'decisionMakerReached' } })}
+                  className={`bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                    filterKpi?.channel === 'call' && filterKpi?.metric === 'decisionMakerReached' 
+                      ? 'border-purple-400 ring-2 ring-purple-200' 
+                      : 'border-purple-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="w-7 h-7 rounded-lg bg-white/80 border border-purple-100 flex items-center justify-center">
+                      <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-purple-700 bg-white/70 border border-purple-100 px-2 py-1 rounded-full">DM</span>
+                  </div>
+                  <div className="text-2xl font-bold text-gray-900">{kpiMetrics.call?.decisionMakerReached || 0}</div>
+                  <div className="text-xs text-gray-600 mt-1">Decision Maker Reached</div>
+                </button>
+
+                {/* Interested */}
+                <button
+                  onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'call', metric: 'interested' } })}
+                  className={`bg-gradient-to-br from-yellow-50 to-amber-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                    filterKpi?.channel === 'call' && filterKpi?.metric === 'interested' 
+                      ? 'border-yellow-400 ring-2 ring-yellow-200' 
+                      : 'border-yellow-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="w-7 h-7 rounded-lg bg-white/80 border border-yellow-100 flex items-center justify-center">
+                      <svg className="w-4 h-4 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-yellow-700 bg-white/70 border border-yellow-100 px-2 py-1 rounded-full">Interest</span>
+                  </div>
+                  <div className="text-2xl font-bold text-gray-900">{kpiMetrics.call?.interested || 0}</div>
+                  <div className="text-xs text-gray-600 mt-1">Interested</div>
+                </button>
+
+                {/* Details Shared */}
+                <button
+                  onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'call', metric: 'detailsShared' } })}
+                  className={`bg-gradient-to-br from-indigo-50 to-blue-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                    filterKpi?.channel === 'call' && filterKpi?.metric === 'detailsShared' 
+                      ? 'border-indigo-400 ring-2 ring-indigo-200' 
+                      : 'border-indigo-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="w-7 h-7 rounded-lg bg-white/80 border border-indigo-100 flex items-center justify-center">
+                      <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-indigo-700 bg-white/70 border border-indigo-100 px-2 py-1 rounded-full">Details</span>
+                  </div>
+                  <div className="text-2xl font-bold text-gray-900">{kpiMetrics.call?.detailsShared || 0}</div>
+                  <div className="text-xs text-gray-600 mt-1">Details Shared</div>
+                </button>
+
+                {/* Demo Booked */}
+                <button
+                  onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'call', metric: 'demoBooked' } })}
+                  className={`bg-gradient-to-br from-teal-50 to-cyan-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                    filterKpi?.channel === 'call' && filterKpi?.metric === 'demoBooked' 
+                      ? 'border-teal-400 ring-2 ring-teal-200' 
+                      : 'border-teal-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="w-7 h-7 rounded-lg bg-white/80 border border-teal-100 flex items-center justify-center">
+                      <svg className="w-4 h-4 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-teal-700 bg-white/70 border border-teal-100 px-2 py-1 rounded-full">Demo</span>
+                  </div>
+                  <div className="text-2xl font-bold text-gray-900">{kpiMetrics.call?.demoBooked || 0}</div>
+                  <div className="text-xs text-gray-600 mt-1">Demo Booked</div>
+                </button>
+
+                {/* Demo Completed */}
+                <button
+                  onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'call', metric: 'demoCompleted' } })}
+                  className={`bg-gradient-to-br from-emerald-50 to-green-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                    filterKpi?.channel === 'call' && filterKpi?.metric === 'demoCompleted' 
+                      ? 'border-emerald-400 ring-2 ring-emerald-200' 
+                      : 'border-emerald-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="w-7 h-7 rounded-lg bg-white/80 border border-emerald-100 flex items-center justify-center">
+                      <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-emerald-700 bg-white/70 border border-emerald-100 px-2 py-1 rounded-full">Done</span>
+                  </div>
+                  <div className="text-2xl font-bold text-gray-900">{kpiMetrics.call?.demoCompleted || 0}</div>
+                  <div className="text-xs text-gray-600 mt-1">Demo Completed</div>
+                </button>
+
+                {/* SQL */}
+                <button
+                  onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'call', metric: 'sql' } })}
+                  className={`bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                    filterKpi?.channel === 'call' && filterKpi?.metric === 'sql' 
+                      ? 'border-blue-400 ring-2 ring-blue-200' 
+                      : 'border-blue-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="w-7 h-7 rounded-lg bg-white/80 border border-blue-100 flex items-center justify-center">
+                      <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-blue-700 bg-white/70 border border-blue-100 px-2 py-1 rounded-full">SQL</span>
+                  </div>
+                  <div className="text-2xl font-bold text-gray-900">{kpiMetrics.call?.sql || 0}</div>
+                  <div className="text-xs text-gray-600 mt-1">SQL</div>
+                </button>
+
+                {/* WON */}
+                <button
+                  onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'call', metric: 'won' } })}
+                  className={`bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                    filterKpi?.channel === 'call' && filterKpi?.metric === 'won' 
+                      ? 'border-green-400 ring-2 ring-green-200' 
+                      : 'border-green-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="w-7 h-7 rounded-lg bg-white/80 border border-green-100 flex items-center justify-center">
+                      <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-green-700 bg-white/70 border border-green-100 px-2 py-1 rounded-full">WON</span>
+                  </div>
+                  <div className="text-2xl font-bold text-gray-900">{kpiMetrics.call?.won || 0}</div>
+                  <div className="text-xs text-gray-600 mt-1">WON</div>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Email KPIs */}
+          {/* Email KPIs - Only show if coldEmail channel is enabled */}
+          {enabledActivityTypes.includes('email') && selectedPipeline === 'email' && (
+            <div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+              <button
+                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'emailsSent' } })}
+                className={`bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                  filterKpi?.channel === 'email' && filterKpi?.metric === 'emailsSent' 
+                    ? 'border-blue-400 ring-2 ring-blue-200' 
+                    : 'border-blue-100'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="w-7 h-7 rounded-lg bg-white/80 border border-blue-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-blue-700 bg-white/70 border border-blue-100 px-2 py-1 rounded-full">Emails</span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.email.emailsSent}</div>
+                <div className="text-xs text-gray-600 mt-1">Emails Sent</div>
+              </button>
+              <button
+                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'emailOpenRate' } })}
+                className={`bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                  filterKpi?.channel === 'email' && filterKpi?.metric === 'emailOpenRate' 
+                    ? 'border-green-400 ring-2 ring-green-200' 
+                    : 'border-green-100'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="w-7 h-7 rounded-lg bg-white/80 border border-green-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-green-700 bg-white/70 border border-green-100 px-2 py-1 rounded-full">Rate</span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.email.emailOpenRate}%</div>
+                <div className="text-xs text-gray-600 mt-1">{kpiMetrics.email.emailOpens} opened</div>
+              </button>
+              <button
+                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'emailReplyRate' } })}
+                className={`bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                  filterKpi?.channel === 'email' && filterKpi?.metric === 'emailReplyRate' 
+                    ? 'border-purple-400 ring-2 ring-purple-200' 
+                    : 'border-purple-100'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="w-7 h-7 rounded-lg bg-white/80 border border-purple-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-purple-700 bg-white/70 border border-purple-100 px-2 py-1 rounded-full">Rate</span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.email.emailReplyRate}%</div>
+                <div className="text-xs text-gray-600 mt-1">{kpiMetrics.email.emailReplies} replies</div>
+              </button>
+              <button
+                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'meetingsBooked' } })}
+                className={`bg-gradient-to-br from-yellow-50 to-orange-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                  filterKpi?.channel === 'email' && filterKpi?.metric === 'meetingsBooked' 
+                    ? 'border-yellow-400 ring-2 ring-yellow-200' 
+                    : 'border-yellow-100'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="w-7 h-7 rounded-lg bg-white/80 border border-yellow-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-orange-700 bg-white/70 border border-orange-100 px-2 py-1 rounded-full">Meetings</span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.email.meetingsBooked}</div>
+                <div className="text-xs text-gray-600 mt-1">Meetings Booked</div>
+              </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Filters Section */}
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mb-6">
-        <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
           <svg className="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
           </svg>
           <h3 className="text-sm font-semibold text-gray-900">Filters</h3>
+          </div>
+          {filterKpi && (
+            <button
+              onClick={() => setFilterKpi(null)}
+              className="text-xs text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Clear KPI Filter
+            </button>
+          )}
         </div>
 
         <div className="mb-4">
@@ -1881,14 +3117,6 @@ export default function ProjectDetail() {
       {/* Results Count and Match Stats */}
       <div className="mb-3 flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-4 flex-wrap">
-          <p className="text-sm text-gray-600">
-            Showing <span className="font-semibold text-gray-900">{filteredContacts.length}</span> of <span className="font-semibold text-gray-900">{contacts.length}</span> prospects
-            {(searchQuery || quickFilter || filterStatus || filterActionDate || filterActionDateFrom || filterActionDateTo || filterLastInteraction || filterLastInteractionFrom || filterLastInteractionTo || filterImportDate || filterImportDateFrom || filterImportDateTo || filterNoActivity || filterMatchType) && (
-              <span className="ml-2 text-gray-500">
-                (filtered)
-              </span>
-            )}
-          </p>
           {matchStats && (
             <div className="flex items-center gap-2 flex-wrap">
               {matchStats.imported > 0 && (
@@ -2043,44 +3271,50 @@ export default function ProjectDetail() {
 
             {/* Right Section - Action Buttons */}
             <div className="flex items-center gap-3 flex-wrap">
-              {/* Log Call Button */}
-              <button
-                onClick={() => setBulkActivityModal({ isOpen: true, type: 'call' })}
-                className="group relative inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 text-white text-sm font-bold rounded-xl hover:from-green-600 hover:via-green-700 hover:to-emerald-700 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95 overflow-hidden"
-              >
-                {/* Shine effect on hover */}
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 group-hover:opacity-20 group-hover:animate-shimmer"></div>
-                <svg className="w-5 h-5 relative z-10 transform group-hover:rotate-12 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                </svg>
-                <span className="relative z-10">Log Call</span>
-              </button>
+              {/* Log Call Button - Only show if coldCalling channel is enabled */}
+              {enabledActivityTypes.includes('call') && (
+                <button
+                  onClick={() => setBulkActivityModal({ isOpen: true, type: 'call' })}
+                  className="group relative inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 text-white text-sm font-bold rounded-xl hover:from-green-600 hover:via-green-700 hover:to-emerald-700 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95 overflow-hidden"
+                >
+                  {/* Shine effect on hover */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 group-hover:opacity-20 group-hover:animate-shimmer"></div>
+                  <svg className="w-5 h-5 relative z-10 transform group-hover:rotate-12 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                  </svg>
+                  <span className="relative z-10">Log Call</span>
+                </button>
+              )}
 
-              {/* Log Email Button */}
-              <button
-                onClick={() => setBulkActivityModal({ isOpen: true, type: 'email' })}
-                className="group relative inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 via-blue-600 to-cyan-600 text-white text-sm font-bold rounded-xl hover:from-blue-600 hover:via-blue-700 hover:to-cyan-700 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95 overflow-hidden"
-              >
-                {/* Shine effect on hover */}
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 group-hover:opacity-20 group-hover:animate-shimmer"></div>
-                <svg className="w-5 h-5 relative z-10 transform group-hover:scale-110 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-                <span className="relative z-10">Log Email</span>
-              </button>
+              {/* Log Email Button - Only show if coldEmail channel is enabled */}
+              {enabledActivityTypes.includes('email') && (
+                <button
+                  onClick={() => setBulkActivityModal({ isOpen: true, type: 'email' })}
+                  className="group relative inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 via-blue-600 to-cyan-600 text-white text-sm font-bold rounded-xl hover:from-blue-600 hover:via-blue-700 hover:to-cyan-700 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95 overflow-hidden"
+                >
+                  {/* Shine effect on hover */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 group-hover:opacity-20 group-hover:animate-shimmer"></div>
+                  <svg className="w-5 h-5 relative z-10 transform group-hover:scale-110 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                  <span className="relative z-10">Log Email</span>
+                </button>
+              )}
 
-              {/* Log LinkedIn Button */}
-              <button
-                onClick={() => setBulkActivityModal({ isOpen: true, type: 'linkedin' })}
-                className="group relative inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-700 text-white text-sm font-bold rounded-xl hover:from-blue-800 hover:via-indigo-800 hover:to-purple-800 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95 overflow-hidden"
-              >
-                {/* Shine effect on hover */}
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 group-hover:opacity-20 group-hover:animate-shimmer"></div>
-                <svg className="w-5 h-5 relative z-10 transform group-hover:scale-110 transition-transform duration-300" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
-                </svg>
-                <span className="relative z-10">Log LinkedIn</span>
-              </button>
+              {/* Log LinkedIn Button - Only show if linkedInOutreach channel is enabled */}
+              {enabledActivityTypes.includes('linkedin') && (
+                <button
+                  onClick={() => setBulkActivityModal({ isOpen: true, type: 'linkedin' })}
+                  className="group relative inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-700 text-white text-sm font-bold rounded-xl hover:from-blue-800 hover:via-indigo-800 hover:to-purple-800 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95 overflow-hidden"
+                >
+                  {/* Shine effect on hover */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 group-hover:opacity-20 group-hover:animate-shimmer"></div>
+                  <svg className="w-5 h-5 relative z-10 transform group-hover:scale-110 transition-transform duration-300" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                  </svg>
+                  <span className="relative z-10">Log LinkedIn</span>
+                </button>
+              )}
 
               {/* Remove Button */}
               <button
@@ -2163,6 +3397,112 @@ export default function ProjectDetail() {
       {/* Prospects Table */}
       {filteredContacts.length > 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+          {/* Pagination - Above Table */}
+          {contactsTotal > 0 && (
+            <div className="px-6 py-4 border-b border-gray-200 bg-white flex items-center justify-between">
+              {/* Left side - Showing count */}
+              <div className="text-sm text-gray-700">
+                Showing <span className="font-semibold">{(contactsPage - 1) * CONTACTS_PER_PAGE + 1}</span> to{' '}
+                <span className="font-semibold">
+                  {Math.min(contactsPage * CONTACTS_PER_PAGE, contactsTotal)}
+                </span>{' '}
+                of <span className="font-semibold">{contactsTotal.toLocaleString()}</span> contacts
+              </div>
+
+              {/* Right side - Pagination buttons */}
+              <div className="flex items-center gap-1">
+                {/* Previous Button */}
+                <button
+                  onClick={() => handlePageChange(contactsPage - 1)}
+                  disabled={contactsPage === 1 || loading}
+                  className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white transition-colors"
+                >
+                  Previous
+                </button>
+
+                {/* Page Numbers */}
+                {(() => {
+                  const pages = [];
+                  const maxVisiblePages = 5;
+                  let startPage = Math.max(1, contactsPage - Math.floor(maxVisiblePages / 2));
+                  let endPage = Math.min(contactsTotalPages, startPage + maxVisiblePages - 1);
+                  
+                  // Adjust start if we're near the end
+                  if (endPage - startPage < maxVisiblePages - 1) {
+                    startPage = Math.max(1, endPage - maxVisiblePages + 1);
+                  }
+
+                  // First page
+                  if (startPage > 1) {
+                    pages.push(
+                      <button
+                        key={1}
+                        onClick={() => handlePageChange(1)}
+                        className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                      >
+                        1
+                      </button>
+                    );
+                    if (startPage > 2) {
+                      pages.push(
+                        <span key="ellipsis1" className="px-2 text-gray-500">
+                          ...
+                        </span>
+                      );
+                    }
+                  }
+
+                  // Page range
+                  for (let i = startPage; i <= endPage; i++) {
+                    pages.push(
+                      <button
+                        key={i}
+                        onClick={() => handlePageChange(i)}
+                        className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                          i === contactsPage
+                            ? 'bg-blue-600 text-white border border-blue-600'
+                            : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                        }`}
+                      >
+                        {i}
+                      </button>
+                    );
+                  }
+
+                  // Last page
+                  if (endPage < contactsTotalPages) {
+                    if (endPage < contactsTotalPages - 1) {
+                      pages.push(
+                        <span key="ellipsis2" className="px-2 text-gray-500">
+                          ...
+                        </span>
+                      );
+                    }
+                    pages.push(
+                      <button
+                        key={contactsTotalPages}
+                        onClick={() => handlePageChange(contactsTotalPages)}
+                        className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
+                      >
+                        {contactsTotalPages}
+                      </button>
+                    );
+                  }
+
+                  return pages;
+                })()}
+
+                {/* Next Button */}
+                <button
+                  onClick={() => handlePageChange(contactsPage + 1)}
+                  disabled={contactsPage === contactsTotalPages || loading}
+                  className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white transition-colors"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full table-fixed">
               <thead className="bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-200">
@@ -2179,35 +3519,88 @@ export default function ProjectDetail() {
                   <th className="px-3 py-2.5 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-12">
                     {/* Expand button column */}
                   </th>
-                  <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[20%]">
+                  <th 
+                    className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-[20%] cursor-pointer hover:bg-gray-100 transition-colors"
+                    onClick={() => {
+                      if (sortBy === 'name') {
+                        setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                      } else {
+                        setSortBy('name');
+                        setSortOrder('asc');
+                      }
+                    }}
+                  >
                     <div className="flex items-center gap-1.5">
                       Contact
+                      {sortBy === 'name' ? (
+                        sortOrder === 'asc' ? (
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
                       </svg>
+                        ) : (
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        )
+                      ) : (
+                        <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+                        </svg>
+                      )}
                     </div>
                   </th>
-                  <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[18%]">
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-[18%]">
                     Contact Info
                   </th>
-                  <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[12%]">
-                    <div className="flex items-center gap-2">
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-[12%] relative" ref={statusFilterRef}>
+                    <div 
+                      className="flex items-center gap-2 cursor-pointer hover:bg-gray-100 transition-colors rounded px-1 py-0.5 -mx-1 -my-0.5"
+                      onClick={() => setShowStatusFilter(!showStatusFilter)}
+                    >
                       Status
                       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4" />
                       </svg>
                     </div>
+                    {showStatusFilter && (
+                      <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 min-w-[200px] max-h-96 overflow-y-auto">
+                        <div className="p-2">
+                          <button
+                            onClick={() => {
+                              setFilterStatus('');
+                              setShowStatusFilter(false);
+                            }}
+                            className={`w-full text-left px-3 py-2 text-xs rounded hover:bg-gray-100 ${
+                              !filterStatus ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+                            }`}
+                          >
+                            All Statuses
+                          </button>
+                          {['New', 'Interested', 'Not Interested', 'Details Shared', 'Demo Booked', 'Demo Completed', 'SQL', 'WON', 'Lost', 'CIP', 'No Reply', 'Meeting Proposed', 'Meeting Scheduled', 'Meeting Completed', 'Ring', 'Busy', 'Call Back', 'Hang Up', 'Switch Off', 'Invalid', 'Future', 'Existing', 'Bounce', 'Opt-Out'].map((status) => (
+                            <button
+                              key={status}
+                              onClick={() => {
+                                setFilterStatus(status);
+                                setShowStatusFilter(false);
+                              }}
+                              className={`w-full text-left px-3 py-2 text-xs rounded hover:bg-gray-100 ${
+                                filterStatus === status ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+                              }`}
+                            >
+                              {status}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </th>
-                  <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[15%]">
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-[15%]">
                     Last Interaction
                   </th>
-                  <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[18%]">
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-[18%]">
                     Next Action
                   </th>
-                  <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[13%]">
-                    Assigned To
-                  </th>
-                  <th className="px-4 py-2.5 text-left text-[10px] font-semibold text-gray-700 uppercase tracking-wider w-[12%]">
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider w-[12%]">
                     Actions
                   </th>
                 </tr>
@@ -2313,8 +3706,26 @@ export default function ProjectDetail() {
                     
                     // Only navigate if contact is from databank and has a valid ID
                     if (isFromDatabank && contactIdValue) {
-                      // Navigate to contact activity history page
-                      navigate(`/contacts/${contactIdValue}/activities?projectId=${id}&returnTo=/projects/${id}`);
+                      // Build return URL with current filter params
+                      const currentParams = new URLSearchParams();
+                      if (searchQuery) currentParams.set('search', searchQuery);
+                      if (quickFilter) currentParams.set('quickFilter', quickFilter);
+                      if (filterStatus) currentParams.set('filterStatus', filterStatus);
+                      if (filterActionDate) currentParams.set('filterActionDate', filterActionDate);
+                      if (filterActionDateFrom) currentParams.set('filterActionDateFrom', filterActionDateFrom);
+                      if (filterActionDateTo) currentParams.set('filterActionDateTo', filterActionDateTo);
+                      if (filterLastInteraction) currentParams.set('filterLastInteraction', filterLastInteraction);
+                      if (filterLastInteractionFrom) currentParams.set('filterLastInteractionFrom', filterLastInteractionFrom);
+                      if (filterLastInteractionTo) currentParams.set('filterLastInteractionTo', filterLastInteractionTo);
+                      if (filterImportDate) currentParams.set('filterImportDate', filterImportDate);
+                      if (filterImportDateFrom) currentParams.set('filterImportDateFrom', filterImportDateFrom);
+                      if (filterImportDateTo) currentParams.set('filterImportDateTo', filterImportDateTo);
+                      if (filterNoActivity) currentParams.set('filterNoActivity', 'true');
+                      if (filterMatchType) currentParams.set('filterMatchType', filterMatchType);
+                      
+                      const returnUrl = `/projects/${id}${currentParams.toString() ? '?' + currentParams.toString() : ''}`;
+                      // Navigate to contact activity history page with preserved filters
+                      navigate(`/contacts/${contactIdValue}/activities?projectId=${id}&returnTo=${encodeURIComponent(returnUrl)}`);
                     }
                   };
 
@@ -2333,7 +3744,7 @@ export default function ProjectDetail() {
                             type="checkbox"
                             checked={selectedContacts.has(contactId.toString())}
                             onChange={(e) => handleContactSelect(contactId, e.target.checked)}
-                            className="h-3.5 w-3.5 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
                           />
                         </td>
                         <td className="px-3 py-2.5">
@@ -2357,14 +3768,14 @@ export default function ProjectDetail() {
                         </td>
                         <td className="px-4 py-2.5">
                           <div className="flex items-center gap-2">
-                            <div className="w-8 h-8 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-md">
-                              <span className="text-[10px] font-semibold text-white">
+                            <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-md">
+                              <span className="text-sm font-semibold text-white">
                                 {getInitials(contact.name)}
                               </span>
                             </div>
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <div className={`text-xs font-semibold ${isFromDatabank ? 'text-gray-900 hover:text-blue-600' : 'text-gray-900'}`}>
+                                <div className={`text-sm font-semibold ${isFromDatabank ? 'text-gray-900 hover:text-blue-600' : 'text-gray-900'}`}>
                                   {contact.name || 'N/A'}
                                 </div>
                                 {/* Recommendation Badge - Show only for suggestions (not imported) */}
@@ -2415,35 +3826,42 @@ export default function ProjectDetail() {
                                   </div>
                                 )}
                               </div>
-                              <div className="text-[10px] text-gray-500 mt-0.5">{contact.company || 'N/A'}</div>
+                              <div className="text-xs text-gray-500 mt-0.5">{contact.company || 'N/A'}</div>
                             </div>
                           </div>
                         </td>
                         <td className="px-4 py-2.5">
                           <div className="space-y-0.5">
-                            {contact.email ? (
-                              <div className="text-xs text-gray-900 font-medium flex items-center gap-1">
-                                <svg className="w-2.5 h-2.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            {contact.email ? (() => {
+                              // Check if email contains multiple emails (comma or space separated)
+                              const emailStr = String(contact.email).trim();
+                              const emails = emailStr.split(/[,\s]+/).filter(e => e.trim());
+                              const hasMultipleEmails = emails.length >= 2;
+                              
+                              return (
+                                <div className="text-sm text-gray-900 font-medium flex items-center gap-1">
+                                  <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                                 </svg>
-                                {contact.email}
+                                  {hasMultipleEmails ? `${emails[0]}....` : contact.email}
                               </div>
-                            ) : (
-                              <div className="text-[10px] text-gray-400">No email</div>
+                              );
+                            })() : (
+                              <div className="text-xs text-gray-400">No email</div>
                             )}
                             {contact.firstPhone ? (
-                              <div className="text-[10px] text-gray-500 flex items-center gap-1">
-                                <svg className="w-2.5 h-2.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <div className="text-xs text-gray-500 flex items-center gap-1">
+                                <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                                 </svg>
                                 {contact.firstPhone}
                               </div>
                             ) : (
-                              <div className="text-[10px] text-gray-400">No phone</div>
+                              <div className="text-xs text-gray-400">No phone</div>
                             )}
                             {contact.personLinkedinUrl || contact.companyLinkedinUrl ? (
-                              <div className="text-[10px] text-blue-600 flex items-center gap-1">
-                                <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 24 24">
+                              <div className="text-xs text-blue-600 flex items-center gap-1">
+                                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
                                   <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
                                 </svg>
                                 <a href={contact.personLinkedinUrl || contact.companyLinkedinUrl} target="_blank" rel="noopener noreferrer" className="hover:underline truncate" onClick={(e) => e.stopPropagation()}>
@@ -2451,7 +3869,7 @@ export default function ProjectDetail() {
                                 </a>
                               </div>
                             ) : (
-                              <div className="text-[10px] text-gray-400">No LinkedIn</div>
+                              <div className="text-xs text-gray-400">No LinkedIn</div>
                             )}
                           </div>
                         </td>
@@ -2461,23 +3879,23 @@ export default function ProjectDetail() {
                         <td className="px-4 py-2.5">
                           {contactLastActivity ? (
                             <div>
-                              <div className="text-xs text-gray-900 font-medium">
+                              <div className="text-sm text-gray-900 font-medium">
                                 {formatDate(getActivityDate(contactLastActivity))}
                               </div>
-                              <div className="text-[10px] text-gray-500 mt-0.5">
+                              <div className="text-xs text-gray-500 mt-0.5">
                                 {contactLastActivity.type === 'call' ? 'Call' : 
                                  contactLastActivity.type === 'email' ? 'Email' : 
                                  contactLastActivity.type === 'linkedin' ? 'LinkedIn' : 'Activity'}
                               </div>
                             </div>
                           ) : (
-                            <div className="text-xs text-gray-400">-</div>
+                            <div className="text-sm text-gray-400">-</div>
                           )}
                         </td>
                         <td className="px-4 py-2.5">
                           {nextActionActivity ? (
                             <div className="flex items-center gap-1.5">
-                              <svg className={`w-3.5 h-3.5 flex-shrink-0 ${
+                              <svg className={`w-4 h-4 flex-shrink-0 ${
                                 new Date(nextActionActivity.nextActionDate) < new Date() ? 'text-red-600' :
                                 new Date(nextActionActivity.nextActionDate) <= new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) ? 'text-orange-500' :
                                 'text-gray-400'
@@ -2485,8 +3903,8 @@ export default function ProjectDetail() {
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                               </svg>
                               <div>
-                                <div className="text-xs font-semibold text-gray-900">{nextActionActivity.nextAction}</div>
-                                <div className={`text-[10px] font-medium mt-0.5 ${
+                                <div className="text-sm font-semibold text-gray-900">{nextActionActivity.nextAction}</div>
+                                <div className={`text-xs font-medium mt-0.5 ${
                                   new Date(nextActionActivity.nextActionDate) < new Date() ? 'text-red-600' :
                                   new Date(nextActionActivity.nextActionDate) <= new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) ? 'text-orange-600' :
                                   'text-gray-500'
@@ -2496,56 +3914,62 @@ export default function ProjectDetail() {
                               </div>
                             </div>
                           ) : (
-                            <div className="text-xs text-gray-400">-</div>
+                            <div className="text-sm text-gray-400">-</div>
                           )}
-                        </td>
-                        <td className="px-4 py-2.5 text-xs text-gray-600 font-medium">
-                          {assignedTo || '-'}
                         </td>
                         <td className="px-4 py-2.5">
                           <div className="flex items-center gap-1.5">
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenActivityModal('call', contact);
-                              }}
-                              className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors" 
-                              title="Log Call"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                              </svg>
-                            </button>
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenActivityModal('email', contact);
-                              }}
-                              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" 
-                              title="Log Email"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                              </svg>
-                            </button>
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleOpenActivityModal('linkedin', contact);
-                              }}
-                              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" 
-                              title="Log LinkedIn"
-                            >
-                              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
-                              </svg>
-                            </button>
+                            {/* Log Call Button - Only show if coldCalling channel is enabled */}
+                            {enabledActivityTypes.includes('call') && (
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenActivityModal('call', contact);
+                                }}
+                                className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors" 
+                                title="Log Call"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                                </svg>
+                              </button>
+                            )}
+                            {/* Log Email Button - Only show if coldEmail channel is enabled */}
+                            {enabledActivityTypes.includes('email') && (
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenActivityModal('email', contact);
+                                }}
+                                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" 
+                                title="Log Email"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                </svg>
+                              </button>
+                            )}
+                            {/* Log LinkedIn Button - Only show if linkedInOutreach channel is enabled */}
+                            {enabledActivityTypes.includes('linkedin') && (
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleOpenActivityModal('linkedin', contact);
+                                }}
+                                className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" 
+                                title="Log LinkedIn"
+                              >
+                                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                                  <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                                </svg>
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
                       {isExpanded && (
                         <tr className="animate-fade-in">
-                          <td colSpan="8" className="px-6 py-4 bg-blue-50 border-t-2 border-blue-200 transition-all duration-300">
+                          <td colSpan="7" className="px-6 py-4 bg-blue-50 border-t-2 border-blue-200 transition-all duration-300">
                             {isLoadingActivities ? (
                               <div className="flex items-center justify-center py-8 animate-fade-in">
                                 <div className="flex flex-col items-center gap-2">
@@ -2606,7 +4030,7 @@ export default function ProjectDetail() {
           if (showProspectSuggestions) {
             fetchSimilarContacts();
           } else {
-            fetchImportedContacts();
+            fetchImportedContacts(1, false);
           }
           fetchAllProjectActivities();
         }}
@@ -2620,6 +4044,177 @@ export default function ProjectDetail() {
         projectId={id}
         contacts={contacts}
       />
+
+      {/* KPI Prospect Modal */}
+      {kpiProspectModal.isOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200">
+              <div className="flex-1">
+                <h2 className="text-xl font-bold text-gray-900">
+                  {kpiProspectModal.filter?.channel === 'linkedin' && 'LinkedIn Pipeline'}
+                  {kpiProspectModal.filter?.channel === 'call' && 'Cold Calling Pipeline'}
+                  {kpiProspectModal.filter?.channel === 'email' && 'Email Pipeline'}
+                </h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  {kpiProspectModal.filter?.metric === 'connectionSent' && 'Connection Sent'}
+                  {kpiProspectModal.filter?.metric === 'accepted' && 'Accepted'}
+                  {kpiProspectModal.filter?.metric === 'followUps' && 'Follow-ups'}
+                  {kpiProspectModal.filter?.metric === 'cip' && 'CIP'}
+                  {kpiProspectModal.filter?.metric === 'meetingProposed' && 'Meeting Proposed'}
+                  {kpiProspectModal.filter?.metric === 'scheduled' && 'Scheduled'}
+                  {kpiProspectModal.filter?.metric === 'completed' && 'Completed'}
+                  {kpiProspectModal.filter?.metric === 'sql' && 'SQL'}
+                  {kpiProspectModal.filter?.metric === 'win' && 'Win'}
+                  {/* Legacy metrics */}
+                  {kpiProspectModal.filter?.metric === 'connectionRequestsSent' && 'Connection Requests Sent'}
+                  {kpiProspectModal.filter?.metric === 'connectionAcceptanceRate' && 'Connection Acceptance Rate'}
+                  {kpiProspectModal.filter?.metric === 'messagesSent' && 'Messages Sent'}
+                  {kpiProspectModal.filter?.metric === 'messageReplyRate' && 'Message Reply Rate'}
+                  {kpiProspectModal.filter?.metric === 'allProspects' && 'All Prospects'}
+                  {kpiProspectModal.filter?.metric === 'callsAttempted' && 'Calls Attempted'}
+                  {kpiProspectModal.filter?.metric === 'callsConnected' && 'Calls Connected'}
+                  {kpiProspectModal.filter?.metric === 'decisionMakerReached' && 'Decision Maker Reached'}
+                  {kpiProspectModal.filter?.metric === 'interested' && 'Interested'}
+                  {kpiProspectModal.filter?.metric === 'detailsShared' && 'Details Shared'}
+                  {kpiProspectModal.filter?.metric === 'demoBooked' && 'Demo Booked'}
+                  {kpiProspectModal.filter?.metric === 'demoCompleted' && 'Demo Completed'}
+                  {kpiProspectModal.filter?.metric === 'sql' && 'SQL'}
+                  {kpiProspectModal.filter?.metric === 'won' && 'WON'}
+                  {kpiProspectModal.filter?.metric === 'callsMade' && 'Calls Made'}
+                  {kpiProspectModal.filter?.metric === 'callAnswerRate' && 'Call Answer Rate'}
+                  {kpiProspectModal.filter?.metric === 'callInterestedRate' && 'Call Interested Rate'}
+                  {kpiProspectModal.filter?.metric === 'emailsSent' && 'Emails Sent'}
+                  {kpiProspectModal.filter?.metric === 'emailOpenRate' && 'Email Open Rate'}
+                  {kpiProspectModal.filter?.metric === 'emailReplyRate' && 'Email Reply Rate'}
+                  {kpiProspectModal.filter?.metric === 'meetingsBooked' && 'Meetings Booked'}
+                </p>
+                {!loadingAllContactsForKpi && kpiProspectModal.filter && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Showing all {getKpiFilteredProspects(kpiProspectModal.filter).length} prospects
+                  </p>
+                )}
+              </div>
+              <button
+                onClick={() => setKpiProspectModal({ isOpen: false, filter: null })}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {loadingAllContactsForKpi ? (
+                <div className="text-center py-12 text-gray-500">
+                  <svg className="animate-spin h-8 w-8 mx-auto mb-4 text-gray-400" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  <p className="text-sm font-medium">Loading prospects...</p>
+                </div>
+              ) : (() => {
+                const filteredProspects = getKpiFilteredProspects(kpiProspectModal.filter);
+                
+                if (filteredProspects.length === 0) {
+                  return (
+                    <div className="text-center py-12 text-gray-500">
+                      <svg className="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      <p className="text-sm font-medium">No prospects found for this metric</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">CONTACT</th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">COMPANY</th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">DATE</th>
+                          <th className="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">STATUS</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {filteredProspects.map((contact) => {
+                          const contactIdStr = (contact._id?.toString ? contact._id.toString() : contact._id) || '';
+                          const latestActivity = contactIdStr ? activityLookups.lastActivityByContactId.get(contactIdStr) : null;
+                          const latestStatusData = contactIdStr ? activityLookups.latestActivityStatusByContactId.get(contactIdStr) : null;
+                          const latestStatus = latestStatusData?.status || contact.stage || 'New';
+                          const activityDate = latestActivity ? getActivityDate(latestActivity) : null;
+                          const formattedDate = activityDate ? activityDate.toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric'
+                          }) : 'N/A';
+
+                          // Check if contact is from databank (has _id - MongoDB ObjectId)
+                          const isFromDatabank = contactIdStr && (
+                            (typeof contactIdStr === 'string' && contactIdStr.length === 24) ||
+                            (typeof contact._id === 'object' && contact._id !== null)
+                          );
+
+                          const handleKpiContactRowClick = (e) => {
+                            // Don't navigate if clicking on action buttons or their children
+                            if (
+                              e.target.closest('button') ||
+                              e.target.closest('svg') ||
+                              e.target.closest('a')
+                            ) {
+                              return;
+                            }
+                            
+                            // Only navigate if contact is from databank and has a valid ID
+                            if (isFromDatabank && contactIdStr) {
+                              // Build return URL to go back to the project detail page
+                              const returnUrl = `/projects/${id}`;
+                              // Navigate to contact activity history page
+                              navigate(`/contacts/${contactIdStr}/activities?projectId=${id}&returnTo=${encodeURIComponent(returnUrl)}`);
+                            }
+                          };
+
+                          return (
+                            <tr 
+                              key={contact._id || contact.name} 
+                              onClick={handleKpiContactRowClick}
+                              className={`transition-colors ${
+                                isFromDatabank 
+                                  ? 'hover:bg-blue-50 cursor-pointer' 
+                                  : 'hover:bg-gray-50'
+                              }`}
+                            >
+                              <td className="px-4 py-3 text-sm font-semibold text-gray-900">
+                                {contact.name || 'Unknown'}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-700 font-medium">
+                                {contact.company || 'N/A'}
+                              </td>
+                              <td className="px-4 py-3 text-sm text-gray-600">
+                                {formattedDate}
+                              </td>
+                              <td className="px-4 py-3 text-sm">
+                                <span className="px-2 py-1 text-xs font-semibold bg-green-100 text-green-800 rounded-full border border-green-200">
+                                  {latestStatus}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

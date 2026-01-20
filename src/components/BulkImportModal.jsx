@@ -108,7 +108,7 @@ export default function BulkImportModal({ isOpen, onClose, projectId, onImportSu
       }
     } catch (err) {
       console.error('Import error:', err);
-      setError(err.response?.data?.error || 'Failed to import prospects. Please check your CSV format and try again.');
+      setError(err.response?.data?.error || 'Couldn\'t import those prospects. Double-check your file format and give it another shot.');
     } finally {
       setIsUploading(false);
     }
@@ -279,11 +279,11 @@ export default function BulkImportModal({ isOpen, onClose, projectId, onImportSu
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
               <div className="flex-1">
-                <h4 className="text-sm font-semibold text-yellow-900 mb-2">Important Notes</h4>
+                <h4 className="text-sm font-semibold text-yellow-900 mb-2">Quick heads up</h4>
                 <ul className="text-sm text-yellow-800 space-y-1 list-disc list-inside">
-                  <li>Duplicate emails will be automatically skipped</li>
-                  <li>Invalid email formats will be flagged for review</li>
-                  <li>Import process may take a few minutes for large files</li>
+                  <li>We'll skip any duplicate emails automatically</li>
+                  <li>Invalid email formats get flagged so you can fix them</li>
+                  <li>Large files might take a minute or two to process</li>
                 </ul>
               </div>
             </div>

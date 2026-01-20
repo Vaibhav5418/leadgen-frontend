@@ -228,35 +228,12 @@ export default function BulkActivityLogModal({ isOpen, onClose, type, selectedCo
         setProgress(prev => ({ ...prev, current: i + 1 }));
 
         try {
-          // Include contact name and contact info in conversation notes for proper identification
-          const contactInfo = [];
-          if (contact.name && contact.name !== 'N/A') {
-            contactInfo.push(`Contact: ${contact.name}`);
-          }
+          // Use conversation notes as-is, without adding contact information
           const finalEmail = formData.email || contact.email;
           const finalPhone = formData.phoneNumber || contact.firstPhone;
           const finalLinkedIn = formData.linkedInUrl || contact.personLinkedinUrl || contact.companyLinkedinUrl;
           
-          if (finalEmail) {
-            contactInfo.push(`Email: ${finalEmail}`);
-          }
-          if (finalPhone) {
-            contactInfo.push(`Phone: ${finalPhone}`);
-          }
-          if (finalLinkedIn) {
-            contactInfo.push(`LinkedIn: ${finalLinkedIn}`);
-          }
-          if (contactId) {
-            contactInfo.push(`ID: ${contactId}`);
-          }
-          
-          const notesWithContact = formData.conversationNotes.trim()
-            ? (contactInfo.length > 0
-              ? `${formData.conversationNotes}\n\n[${contactInfo.join(' | ')}]`
-              : formData.conversationNotes)
-            : (contactInfo.length > 0
-              ? `[${contactInfo.join(' | ')}]`
-              : '');
+          const notesWithContact = formData.conversationNotes.trim() || '';
 
           const activityData = {
             projectId,
@@ -334,7 +311,7 @@ export default function BulkActivityLogModal({ isOpen, onClose, type, selectedCo
       }, 1000);
     } catch (error) {
       console.error('Error in bulk activity logging:', error);
-      setErrors({ submit: 'Failed to save some activities. Please try again.' });
+      setErrors({ submit: 'Some activities didn\'t save properly. Check what went wrong and try again.' });
     } finally {
       setLoading(false);
     }
@@ -415,7 +392,7 @@ export default function BulkActivityLogModal({ isOpen, onClose, type, selectedCo
       }
     } catch (error) {
       console.error(`Error saving ${field}:`, error);
-      setErrors({ submit: `Failed to save ${field}. Please try again.` });
+      setErrors({ submit: `Couldn't save ${field}. Try again in a moment.` });
     } finally {
       setSavingField(prev => ({ ...prev, [field]: false }));
     }
@@ -1361,7 +1338,7 @@ export default function BulkActivityLogModal({ isOpen, onClose, type, selectedCo
             {/* Conversation Notes */}
             <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200">
               <label className="block text-xs font-semibold text-gray-700 mb-2">
-                Conversation Notes <span className="text-gray-400 text-xs font-normal">(Optional)</span>
+                Conversation Notes <span className="text-gray-400 text-xs font-normal">(optional, but helpful)</span>
               </label>
               <textarea
                 value={formData.conversationNotes}
@@ -1369,7 +1346,7 @@ export default function BulkActivityLogModal({ isOpen, onClose, type, selectedCo
                 disabled={loading}
                 rows={4}
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-y font-sans hover:border-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
-                placeholder="Document key points, objections, interests, and next steps discussed. This will be applied to all selected contacts... (Optional)"
+                placeholder="Jot down what happened, any concerns they raised, or what to follow up on. This applies to all selected contacts..."
               />
             </div>
 

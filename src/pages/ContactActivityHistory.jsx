@@ -59,7 +59,7 @@ export default function ContactActivityHistory() {
       });
     } catch (err) {
       console.error('Error fetching contact:', err);
-      setError('Failed to load contact details.');
+      setError('Couldn\'t load the contact details. Try refreshing the page.');
     }
   };
 
@@ -104,7 +104,7 @@ export default function ContactActivityHistory() {
       }
     } catch (err) {
       console.error('Error updating contact:', err);
-      alert(err.response?.data?.error || 'Failed to update contact. Please try again.');
+      alert(err.response?.data?.error || 'Couldn\'t save those changes. Give it another try.');
     } finally {
       setSaving(false);
     }
@@ -127,7 +127,7 @@ export default function ContactActivityHistory() {
       setError(null);
     } catch (err) {
       console.error('Error fetching activities:', err);
-      setError('Failed to load activity history.');
+      setError('Having trouble loading the activity history. Refresh the page and try again.');
     } finally {
       setLoading(false);
     }
@@ -1101,11 +1101,19 @@ export default function ContactActivityHistory() {
                       )}
 
                       {/* Conversation Notes */}
-                      <div className="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
-                        <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
-                          {activity.conversationNotes}
-                        </p>
-                      </div>
+                      {activity.conversationNotes && (() => {
+                        // Remove contact information block if present
+                        const notes = activity.conversationNotes.replace(/\[Contact:.*?\|.*?Email:.*?\|.*?Phone:.*?\|.*?LinkedIn:.*?\]/g, '').trim();
+                        // Also remove standalone contact info blocks
+                        const cleanedNotes = notes.replace(/\[Contact:.*?\]/g, '').trim();
+                        return cleanedNotes ? (
+                          <div className="mb-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
+                            <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">
+                              {cleanedNotes}
+                            </p>
+                          </div>
+                        ) : null;
+                      })()}
 
                       {/* Next Action */}
                       {activity.nextAction && (

@@ -76,7 +76,7 @@ export default function MasterDashboard() {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <p className="text-gray-600">Failed to load dashboard data</p>
+          <p className="text-gray-600">Couldn't load the dashboard right now. Try refreshing.</p>
           <button
             onClick={fetchData}
             className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
@@ -148,7 +148,9 @@ export default function MasterDashboard() {
     completed: 0,
     overdueCount: 0,
     completionRate: 0,
-    slaCompliance: 0
+    slaCompliance: 0,
+    chartData: null,
+    projectData: null
   };
 
   // Helper function to clamp values between 0-100 and handle NaN/Infinity
@@ -393,14 +395,14 @@ export default function MasterDashboard() {
   };
 
   const sections = [
-    { id: 'executive', label: 'Executive Summary', icon: '📊' },
-    { id: 'rankings', label: 'Rankings', icon: '🏆' },
-    { id: 'alerts', label: 'Alerts', icon: '⚠️' },
-    { id: 'data', label: 'Data Quality', icon: '📈' },
-    { id: 'linkedin', label: 'LinkedIn', icon: '💼' },
-    { id: 'calls', label: 'Cold Calls', icon: '📞' },
-    { id: 'email', label: 'Email', icon: '✉️' },
-    { id: 'followup', label: 'Follow-ups', icon: '🔄' }
+    { id: 'executive', label: 'Executive Summary' },
+    { id: 'rankings', label: 'Rankings' },
+    { id: 'alerts', label: 'Alerts' },
+    { id: 'data', label: 'Data Quality' },
+    { id: 'linkedin', label: 'LinkedIn' },
+    { id: 'calls', label: 'Cold Calls' },
+    { id: 'email', label: 'Email' },
+    { id: 'followup', label: 'Follow-ups' }
   ];
 
   return (
@@ -449,7 +451,6 @@ export default function MasterDashboard() {
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
               >
-                <span className="text-base">{section.icon}</span>
                 {section.label}
               </button>
             ))}
@@ -1699,7 +1700,7 @@ export default function MasterDashboard() {
         {/* Follow-ups */}
         {activeSection === 'followup' && (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
               <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
                 <h3 className="text-sm font-medium text-gray-600 mb-2">Total Due</h3>
                 <p className="text-3xl font-bold text-gray-900">{(followUp?.totalDue || 0).toLocaleString()}</p>
@@ -1720,6 +1721,240 @@ export default function MasterDashboard() {
                 <h3 className="text-sm font-medium text-gray-600 mb-2">SLA Compliance</h3>
                 <p className="text-3xl font-bold text-gray-900">{(followUp?.slaCompliance || 0).toFixed(2)}%</p>
               </div>
+            </div>
+
+            {/* Visualizations */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Follow-up Status Pie Chart */}
+              <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Follow-up Status Distribution</h3>
+                {followUp?.totalDue > 0 ? (
+                  <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
+                    <div className="h-64">
+                      <Doughnut
+                        data={{
+                          labels: ['Completed', 'Overdue', 'Pending'],
+                          datasets: [{
+                            label: 'Follow-ups',
+                            data: [
+                              followUp.completed || 0,
+                              followUp.overdueCount || 0,
+                              (followUp.totalDue || 0) - (followUp.completed || 0) - (followUp.overdueCount || 0)
+                            ],
+                            backgroundColor: ['#10B981', '#EF4444', '#F59E0B'],
+                            borderColor: ['#059669', '#DC2626', '#D97706'],
+                            borderWidth: 2
+                          }]
+                        }}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          plugins: {
+                            legend: {
+                              position: 'bottom',
+                              labels: {
+                                padding: 15,
+                                font: {
+                                  size: 12
+                                }
+                              }
+                            },
+                            tooltip: {
+                              callbacks: {
+                                label: function(context) {
+                                  const label = context.label || '';
+                                  const value = context.parsed || 0;
+                                  const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                  const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                                  return `${label}: ${value} (${percentage}%)`;
+                                }
+                              }
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  </Suspense>
+                ) : (
+                  <div className="h-64 flex items-center justify-center text-gray-500">
+                    No follow-up data available
+                  </div>
+                )}
+              </div>
+
+              {/* Follow-ups by Project Bar Chart */}
+              {followUp?.projectData && followUp.projectData.labels.length > 0 ? (
+                <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Follow-ups by Project (Top 10)</h3>
+                  <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
+                    <div className="h-64">
+                      <Bar
+                        data={{
+                          labels: followUp.projectData.labels,
+                          datasets: [
+                            {
+                              label: 'Completed',
+                              data: followUp.projectData.completed,
+                              backgroundColor: '#10B981',
+                              borderColor: '#059669',
+                              borderWidth: 1
+                            },
+                            {
+                              label: 'Overdue',
+                              data: followUp.projectData.overdue,
+                              backgroundColor: '#EF4444',
+                              borderColor: '#DC2626',
+                              borderWidth: 1
+                            },
+                            {
+                              label: 'Pending',
+                              data: followUp.projectData.total.map((total, i) => 
+                                total - followUp.projectData.completed[i] - followUp.projectData.overdue[i]
+                              ),
+                              backgroundColor: '#F59E0B',
+                              borderColor: '#D97706',
+                              borderWidth: 1
+                            }
+                          ]
+                        }}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          plugins: {
+                            legend: {
+                              position: 'bottom',
+                              labels: {
+                                padding: 10,
+                                font: {
+                                  size: 12
+                                }
+                              }
+                            },
+                            tooltip: {
+                              mode: 'index',
+                              intersect: false
+                            }
+                          },
+                          scales: {
+                            x: {
+                              stacked: true,
+                              ticks: {
+                                maxRotation: 45,
+                                minRotation: 45,
+                                font: {
+                                  size: 10
+                                }
+                              }
+                            },
+                            y: {
+                              stacked: true,
+                              beginAtZero: true,
+                              ticks: {
+                                stepSize: 1
+                              }
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  </Suspense>
+                </div>
+              ) : (
+                <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Follow-ups by Project</h3>
+                  <div className="h-64 flex items-center justify-center text-gray-500">
+                    No project data available
+                  </div>
+                </div>
+              )}
+
+              {/* Follow-ups Trend Over Time */}
+              {followUp?.chartData && followUp.chartData.labels.length > 0 ? (
+                <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm lg:col-span-2">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Follow-up Trends Over Time</h3>
+                  <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
+                    <div className="h-64">
+                      <Line
+                        data={{
+                          labels: followUp.chartData.labels,
+                          datasets: [
+                            {
+                              label: 'Total Due',
+                              data: followUp.chartData.total,
+                              borderColor: '#3B82F6',
+                              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                              borderWidth: 2,
+                              fill: true,
+                              tension: 0.4
+                            },
+                            {
+                              label: 'Completed',
+                              data: followUp.chartData.completed,
+                              borderColor: '#10B981',
+                              backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                              borderWidth: 2,
+                              fill: true,
+                              tension: 0.4
+                            },
+                            {
+                              label: 'Overdue',
+                              data: followUp.chartData.overdue,
+                              borderColor: '#EF4444',
+                              backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                              borderWidth: 2,
+                              fill: true,
+                              tension: 0.4
+                            }
+                          ]
+                        }}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          plugins: {
+                            legend: {
+                              position: 'bottom',
+                              labels: {
+                                padding: 15,
+                                font: {
+                                  size: 12
+                                }
+                              }
+                            },
+                            tooltip: {
+                              mode: 'index',
+                              intersect: false
+                            }
+                          },
+                          scales: {
+                            x: {
+                              ticks: {
+                                maxRotation: 45,
+                                minRotation: 45,
+                                font: {
+                                  size: 10
+                                }
+                              }
+                            },
+                            y: {
+                              beginAtZero: true,
+                              ticks: {
+                                stepSize: 1
+                              }
+                            }
+                          }
+                        }}
+                      />
+                    </div>
+                  </Suspense>
+                </div>
+              ) : (
+                <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm lg:col-span-2">
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Follow-up Trends Over Time</h3>
+                  <div className="h-64 flex items-center justify-center text-gray-500">
+                    No trend data available
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}

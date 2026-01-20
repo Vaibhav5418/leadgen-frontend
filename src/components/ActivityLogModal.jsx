@@ -90,7 +90,7 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
       }
     } catch (error) {
       console.error('Error fetching activity data:', error);
-      setErrors({ submit: 'Failed to load activity data' });
+      setErrors({ submit: 'Couldn\'t load the activity details. Try refreshing.' });
     }
   };
 
@@ -337,28 +337,8 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
 
     setLoading(true);
     try {
-      // Include contact name and contact info in conversation notes for better filtering
-      const contactInfo = [];
-      if (contactName && contactName !== 'N/A') {
-        contactInfo.push(`Contact: ${contactName}`);
-      }
-      if (formData.email || email) {
-        contactInfo.push(`Email: ${formData.email || email}`);
-      }
-      if (formData.phoneNumber || phoneNumber) {
-        contactInfo.push(`Phone: ${formData.phoneNumber || phoneNumber}`);
-      }
-      if (formData.linkedInUrl || linkedInProfileUrl) {
-        contactInfo.push(`LinkedIn: ${formData.linkedInUrl || linkedInProfileUrl}`);
-      }
-      
-      const notesWithContact = formData.conversationNotes.trim()
-        ? (contactInfo.length > 0
-          ? `${formData.conversationNotes}\n\n[${contactInfo.join(' | ')}]`
-          : formData.conversationNotes)
-        : (contactInfo.length > 0
-          ? `[${contactInfo.join(' | ')}]`
-          : '');
+      // Use conversation notes as-is, without adding contact information
+      const notesWithContact = formData.conversationNotes.trim() || '';
       
       let response;
       
@@ -449,11 +429,11 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
         });
         onClose();
       } else {
-        setErrors({ submit: response.data.error || 'Failed to save activity' });
+        setErrors({ submit: response.data.error || 'Couldn\'t save that activity. Give it another try.' });
       }
     } catch (error) {
       console.error('Error saving activity:', error);
-      const errorMessage = error.response?.data?.error || error.message || 'Failed to save activity';
+      const errorMessage = error.response?.data?.error || error.message || 'Something went wrong saving the activity. Try again.';
       setErrors({ submit: errorMessage });
     } finally {
       setLoading(false);
@@ -505,7 +485,7 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
       }
     } catch (error) {
       console.error(`Error saving ${field}:`, error);
-      setErrors({ submit: `Failed to save ${field}. Please try again.` });
+      setErrors({ submit: `Couldn't save ${field}. Give it another shot.` });
     } finally {
       setSavingField(prev => ({ ...prev, [field]: false }));
     }
@@ -1323,7 +1303,7 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
             {/* Conversation Notes */}
             <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200">
               <label className="block text-xs font-semibold text-gray-700 mb-2">
-                Conversation Notes <span className="text-gray-400 text-xs font-normal">(Optional)</span>
+                Conversation Notes <span className="text-gray-400 text-xs font-normal">(optional, but helpful)</span>
               </label>
               <textarea
                 value={formData.conversationNotes}
@@ -1408,7 +1388,7 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                   <ul className="text-xs text-blue-800 space-y-1">
                     <li className="flex items-start gap-2">
                       <span className="text-blue-500 mt-0.5">•</span>
-                      <span>Conversation notes are optional but recommended for better tracking</span>
+                      <span>Add notes to keep track of what happened during this interaction</span>
                     </li>
                     <li className="flex items-start gap-2">
                       <span className="text-blue-500 mt-0.5">•</span>

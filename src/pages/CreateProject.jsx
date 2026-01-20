@@ -73,7 +73,8 @@ export default function CreateProject() {
     },
 
     // Step 6: Team Allocation
-    assignedTo: ''
+    assignedTo: '',
+    teamMembers: [] // Array of email addresses
   });
 
   const updateFormData = (field, value) => {
@@ -182,12 +183,15 @@ export default function CreateProject() {
               keywords: arrayToString(project.icpDefinition?.keywords),
               exclusionCriteria: arrayToString(project.icpDefinition?.exclusionCriteria)
             },
-            assignedTo: project.assignedTo || ''
+            assignedTo: project.assignedTo || '',
+            teamMembers: Array.isArray(project.teamMembers) && project.teamMembers.length > 0 
+              ? project.teamMembers 
+              : []
           });
         }
       } catch (err) {
         console.error('Error fetching project:', err);
-        setError(err.response?.data?.error || 'Failed to load project');
+        setError(err.response?.data?.error || 'Couldn\'t load the project details. Try refreshing the page.');
       } finally {
         setLoadingProject(false);
       }
@@ -270,11 +274,11 @@ export default function CreateProject() {
       if (response.data.success) {
         navigate('/projects');
       } else {
-        setError(response.data.error || `Failed to ${isEditMode ? 'update' : 'create'} project`);
+        setError(response.data.error || `Couldn't ${isEditMode ? 'update' : 'create'} the project. Something went wrong.`);
       }
     } catch (err) {
       console.error(`Error ${isEditMode ? 'updating' : 'creating'} project:`, err);
-      setError(err.response?.data?.error || err.message || `Failed to ${isEditMode ? 'update' : 'create'} project`);
+      setError(err.response?.data?.error || err.message || `Something went wrong trying to ${isEditMode ? 'update' : 'create'} the project. Try again.`);
     } finally {
       setLoading(false);
     }
@@ -690,9 +694,72 @@ export default function CreateProject() {
               </p>
             </div>
 
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-sm font-medium text-gray-700">Team Members</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newMembers = [...formData.teamMembers, ''];
+                    updateFormData('teamMembers', newMembers);
+                  }}
+                  className="px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                >
+                  + Add Member
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mb-3">
+                Add team member email addresses to grant them access to this project
+              </p>
+              
+              {formData.teamMembers.length === 0 ? (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-center">
+                  <p className="text-sm text-gray-500">No team members added yet</p>
+                  <button
+                    type="button"
+                    onClick={() => updateFormData('teamMembers', [''])}
+                    className="mt-2 text-sm text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Add first team member
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {formData.teamMembers.map((email, index) => (
+                    <div key={index} className="flex items-center gap-2">
+                      <input
+                        type="email"
+                        value={email}
+                        onChange={(e) => {
+                          const newMembers = [...formData.teamMembers];
+                          newMembers[index] = e.target.value.trim();
+                          updateFormData('teamMembers', newMembers);
+                        }}
+                        className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder="team.member@example.com"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newMembers = formData.teamMembers.filter((_, i) => i !== index);
+                          updateFormData('teamMembers', newMembers);
+                        }}
+                        className="px-3 py-2.5 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Remove team member"
+                      >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <p className="text-sm text-blue-800">
-                Additional team assignments (SDRs, Cold Callers, Campaign Managers) can be configured after project creation from the Team Management section.
+                <strong>Note:</strong> Team members will be able to access this project, view all activities, create/edit entries, and their activities will appear in Team Performance.
               </p>
             </div>
           </div>
