@@ -30,13 +30,36 @@ ChartJS.register(
   Legend
 );
 
+// Simple in-memory cache for master dashboard data (per browser tab)
+let cachedMasterDashboard = null;
+let cachedMasterDashboardTimestamp = 0;
+const MASTER_DASHBOARD_CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
 export default function MasterDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState('executive');
 
   useEffect(() => {
-    fetchData();
+    let isMounted = true;
+
+    const load = async () => {
+      const now = Date.now();
+      if (cachedMasterDashboard && (now - cachedMasterDashboardTimestamp) < MASTER_DASHBOARD_CACHE_TTL_MS) {
+        if (isMounted) {
+          setData(cachedMasterDashboard);
+          setLoading(false);
+        }
+      } else {
+        await fetchData();
+      }
+    };
+
+    load();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   const fetchData = async () => {
@@ -44,7 +67,10 @@ export default function MasterDashboard() {
       setLoading(true);
       const response = await API.get('/master-dashboard');
       if (response.data.success) {
-        setData(response.data.data);
+        const dashboardData = response.data.data;
+        setData(dashboardData);
+        cachedMasterDashboard = dashboardData;
+        cachedMasterDashboardTimestamp = Date.now();
       }
     } catch (error) {
       console.error('Error fetching master dashboard data:', error);

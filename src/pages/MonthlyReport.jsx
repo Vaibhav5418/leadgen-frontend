@@ -23,6 +23,11 @@ export default function MonthlyReport() {
   const [allContactsForModal, setAllContactsForModal] = useState([]);
   const [loadingProspects, setLoadingProspects] = useState(false);
 
+  // Simple in-memory cache for monthly report data (per browser tab)
+  // Keyed by projectId so reopening the report is much faster.
+  const cacheKey = id || 'unknown';
+  const cachedEntryRef = React.useRef(null);
+
   // Determine enabled channels
   const enabledChannels = useMemo(() => {
     if (!project) return { call: false, linkedin: false, email: false };
@@ -34,9 +39,20 @@ export default function MonthlyReport() {
   }, [project]);
 
   useEffect(() => {
-    if (id) {
+    if (!id) return;
+
+    // If we have a cached entry for this project, use it for instant render
+    const cached = cachedEntryRef.current;
+    if (cached && cached.projectId === id) {
+      setProject(cached.project);
+      setActivities(cached.activities);
+      setContacts(cached.contacts);
+      setReportData(cached.reportData || {});
+      setLoading(false);
+    } else {
       fetchData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const fetchData = async () => {
@@ -51,17 +67,33 @@ export default function MonthlyReport() {
         API.get(`/projects/${id}/project-contacts?limit=10000`)
       ]);
 
+      let nextProject = project;
+      let nextActivities = activities;
+      let nextContacts = contacts;
+
       if (projectResponse.data.success) {
-        setProject(projectResponse.data.data);
+        nextProject = projectResponse.data.data;
+        setProject(nextProject);
       }
 
       if (activitiesResponse.data.success) {
-        setActivities(activitiesResponse.data.data || []);
+        nextActivities = activitiesResponse.data.data || [];
+        setActivities(nextActivities);
       }
 
       if (contactsResponse.data.success) {
-        setContacts(contactsResponse.data.data || []);
+        nextContacts = contactsResponse.data.data || [];
+        setContacts(nextContacts);
       }
+
+      // Store raw inputs in cache; reportData itself is computed below and can be cached there too
+      cachedEntryRef.current = {
+        projectId: id,
+        project: nextProject,
+        activities: nextActivities,
+        contacts: nextContacts,
+        reportData,
+      };
     } catch (err) {
       console.error('Error fetching data:', err);
       setError(err.response?.data?.error || 'Failed to load report data. Please try again.');

@@ -32,6 +32,13 @@ ChartJS.register(
   Legend
 );
 
+// Simple in-memory cache for dashboard stats (per browser tab)
+// This makes the second visit much faster because we reuse the previous data
+// and only refetch in the background if needed.
+let cachedDashboardStats = null;
+let cachedDashboardTimestamp = 0;
+const DASHBOARD_CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -42,24 +49,33 @@ export default function Dashboard() {
     let isMounted = true;
     const abortController = new AbortController();
 
-    const fetchDashboardStats = async () => {
+    const fetchDashboardStats = async (useCache = true) => {
       try {
+        // Serve from cache first for instant second loads
+        const now = Date.now();
+        if (useCache && cachedDashboardStats && (now - cachedDashboardTimestamp) < DASHBOARD_CACHE_TTL_MS) {
+          if (isMounted) {
+            setStats(cachedDashboardStats);
+            setLoading(false);
+          }
+          return;
+        }
+
         setLoading(true);
-        // Add cache-busting parameter only if needed, but prefer using cache
         const response = await API.get('/dashboard/stats', {
           signal: abortController.signal,
-          // Add timeout to prevent hanging requests
-          timeout: 30000, // 30 seconds
-          // Enable response caching
+          timeout: 30000,
           headers: {
-            'Cache-Control': 'max-age=300' // 5 minutes
+            'Cache-Control': 'max-age=300'
           }
         });
+        const data = response.data?.data || response.data;
         if (isMounted) {
-          setStats(response.data?.data || response.data);
+          setStats(data);
+          cachedDashboardStats = data;
+          cachedDashboardTimestamp = Date.now();
         }
       } catch (err) {
-        // Only log errors that are not cancellations
         const isCanceled = err.name === 'CanceledError' || 
                           err.message === 'canceled' || 
                           err.code === 'ERR_CANCELED' ||
@@ -67,7 +83,6 @@ export default function Dashboard() {
         
         if (!isCanceled && isMounted) {
           console.error('Error fetching dashboard stats:', err);
-          // Show user-friendly error message
           if (err.code === 'ECONNABORTED') {
             console.error('Request timeout - dashboard data is taking too long to load');
           }
@@ -79,11 +94,13 @@ export default function Dashboard() {
       }
     };
 
-    fetchDashboardStats();
+    // First, try to serve from cache (instant). Also refresh in background.
+    fetchDashboardStats(true);
+    // Background refresh (without using cache) after mount
+    fetchDashboardStats(false);
 
     return () => {
       isMounted = false;
-      // Only abort if the request is still pending
       if (!abortController.signal.aborted) {
         abortController.abort();
       }

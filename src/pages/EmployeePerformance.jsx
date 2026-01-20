@@ -34,6 +34,11 @@ ChartJS.register(
   Filler
 );
 
+// Simple in-memory cache for employee performance (per browser tab)
+// Cached by timeFilter so switching away and back is instant for the same period.
+const employeePerformanceCache = {};
+const EMP_PERF_CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
 export default function EmployeePerformance() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -43,7 +48,23 @@ export default function EmployeePerformance() {
   const [timeFilter, setTimeFilter] = useState('last7days');
 
   useEffect(() => {
-    fetchEmployeePerformance();
+    const load = async () => {
+      const key = timeFilter || 'all';
+      const entry = employeePerformanceCache[key];
+      if (entry && (Date.now() - entry.timestamp) < EMP_PERF_CACHE_TTL_MS) {
+        const perfData = entry.data;
+        setData(perfData);
+        if (perfData.employees.length > 0 && !selectedEmployee) {
+          setSelectedEmployee(perfData.employees[0].userId);
+        }
+        setLoading(false);
+      } else {
+        await fetchEmployeePerformance();
+      }
+    };
+
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeFilter]);
 
   const fetchEmployeePerformance = async () => {
@@ -53,9 +74,14 @@ export default function EmployeePerformance() {
         params: { timeFilter }
       });
       if (response.data.success) {
-        setData(response.data.data);
-        if (response.data.data.employees.length > 0 && !selectedEmployee) {
-          setSelectedEmployee(response.data.data.employees[0].userId);
+        const perfData = response.data.data;
+        setData(perfData);
+        employeePerformanceCache[timeFilter || 'all'] = {
+          data: perfData,
+          timestamp: Date.now(),
+        };
+        if (perfData.employees.length > 0 && !selectedEmployee) {
+          setSelectedEmployee(perfData.employees[0].userId);
         }
       }
     } catch (error) {

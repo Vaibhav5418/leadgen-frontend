@@ -32,6 +32,27 @@ ChartJS.register(
   Legend
 );
 
+// Simple in-memory caches for heavy analytics (per browser tab)
+// Keyed by projectId or 'all' so second loads are much faster.
+const prospectAnalyticsCache = {};
+const teamActivityCache = {};
+const teamFunnelsCache = {};
+const ANALYTICS_CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
+const getCachedValue = (cache, key) => {
+  const entry = cache[key];
+  if (!entry) return null;
+  if (Date.now() - entry.timestamp > ANALYTICS_CACHE_TTL_MS) {
+    delete cache[key];
+    return null;
+  }
+  return entry.data;
+};
+
+const setCachedValue = (cache, key, data) => {
+  cache[key] = { data, timestamp: Date.now() };
+};
+
 // Helper function to get the activity date (prioritize activity-specific dates over createdAt)
 const getActivityDate = (activity) => {
   if (activity.type === 'call' && activity.callDate) {
@@ -95,11 +116,20 @@ export default function ProspectDashboard() {
 
   const fetchTeamMemberFunnels = async () => {
     try {
-      setLoadingTeamFunnels(true);
+      const key = selectedProject || 'all';
+      const cached = getCachedValue(teamFunnelsCache, key);
+      if (cached) {
+        setTeamMemberFunnels(cached);
+        setLoadingTeamFunnels(false);
+      } else {
+        setLoadingTeamFunnels(true);
+      }
       const params = selectedProject ? { projectId: selectedProject } : {};
       const response = await API.get('/projects/team-member-funnels', { params });
       if (response.data.success) {
-        setTeamMemberFunnels(response.data.data || []);
+        const data = response.data.data || [];
+        setTeamMemberFunnels(data);
+        setCachedValue(teamFunnelsCache, key, data);
       }
     } catch (error) {
       console.error('Error fetching team member funnels:', error);
@@ -122,11 +152,20 @@ export default function ProspectDashboard() {
 
   const fetchAnalytics = async () => {
     try {
-      setLoading(true);
+      const key = selectedProject || 'all';
+      const cached = getCachedValue(prospectAnalyticsCache, key);
+      if (cached) {
+        setAnalytics(cached);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
       const params = selectedProject ? { projectId: selectedProject } : {};
       const response = await API.get('/projects/prospect-analytics', { params });
       if (response.data.success) {
-        setAnalytics(response.data.data);
+        const data = response.data.data;
+        setAnalytics(data);
+        setCachedValue(prospectAnalyticsCache, key, data);
       }
     } catch (error) {
       console.error('Error fetching prospect analytics:', error);
@@ -137,7 +176,14 @@ export default function ProspectDashboard() {
 
   const fetchTeamActivityData = async () => {
     try {
-      setLoadingTeamActivity(true);
+      const key = `${selectedProject || 'all'}:${teamTimeFilter}`;
+      const cached = getCachedValue(teamActivityCache, key);
+      if (cached) {
+        setTeamActivityData(cached);
+        setLoadingTeamActivity(false);
+      } else {
+        setLoadingTeamActivity(true);
+      }
       const params = {
         timeFilter: teamTimeFilter
       };
@@ -146,7 +192,9 @@ export default function ProspectDashboard() {
       }
       const response = await API.get('/activities/team-performance', { params });
       if (response.data.success) {
-        setTeamActivityData(response.data.data);
+        const data = response.data.data;
+        setTeamActivityData(data);
+        setCachedValue(teamActivityCache, key, data);
       }
     } catch (error) {
       console.error('Error fetching team activity data:', error);

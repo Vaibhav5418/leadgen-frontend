@@ -45,6 +45,10 @@ const getContactImportDate = (contact) => {
   return null;
 };
 
+// Simple in-memory cache for heavy project detail data (per browser tab)
+// Keyed by projectId so second visits are much faster.
+const projectDetailCache = {};
+
 export default function ProjectDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -202,18 +206,29 @@ export default function ProjectDetail() {
       }
       setSearchParams(cleanParams, { replace: true });
       
-      // Fetch project first, then contacts and activities in parallel
+      const cacheEntry = projectDetailCache[id];
+
+      if (cacheEntry) {
+        // Serve cached data for instant second loads
+        if (cacheEntry.project) setProject(cacheEntry.project);
+        if (cacheEntry.kpiMetrics) setKpiMetrics(cacheEntry.kpiMetrics);
+        if (cacheEntry.contacts) setContacts(cacheEntry.contacts);
+        if (cacheEntry.allProjectActivities) setAllProjectActivities(cacheEntry.allProjectActivities);
+        setLoading(false);
+      }
+
+      // Always refresh in background to keep data up to date
       fetchProject().then(() => {
         // Fetch contacts, activities, and KPI metrics in parallel for better performance
         Promise.all([
-        fetchAllProjectActivities().catch(err => {
-          console.error('Error fetching activities:', err);
+          fetchAllProjectActivities().catch(err => {
+            console.error('Error fetching activities:', err);
           }),
-        fetchImportedContacts(1).catch(err => {
-          console.error('Error fetching imported contacts:', err);
+          fetchImportedContacts(1).catch(err => {
+            console.error('Error fetching imported contacts:', err);
           }),
-        fetchKpiMetrics().catch(err => {
-          console.error('Error fetching KPI metrics:', err);
+          fetchKpiMetrics().catch(err => {
+            console.error('Error fetching KPI metrics:', err);
           })
         ]);
       });
@@ -237,7 +252,12 @@ export default function ProjectDetail() {
       setLoading(true);
       const response = await API.get(`/projects/${id}`);
       if (response.data.success) {
-        setProject(response.data.data);
+        const data = response.data.data;
+        setProject(data);
+        projectDetailCache[id] = {
+          ...(projectDetailCache[id] || {}),
+          project: data,
+        };
       }
     } catch (err) {
       console.error('Error fetching project:', err);
@@ -253,7 +273,12 @@ export default function ProjectDetail() {
       setLoadingKpi(true);
       const response = await API.get(`/projects/${id}/kpi-metrics`);
       if (response.data.success) {
-        setKpiMetrics(response.data.data);
+        const data = response.data.data;
+        setKpiMetrics(data);
+        projectDetailCache[id] = {
+          ...(projectDetailCache[id] || {}),
+          kpiMetrics: data,
+        };
       }
     } catch (err) {
       console.error('Error fetching KPI metrics:', err);
@@ -324,6 +349,13 @@ export default function ProjectDetail() {
         }
         
         setContacts(uniqueContacts);
+
+        if (page === 1 && !debouncedSearchQuery) {
+          projectDetailCache[id] = {
+            ...(projectDetailCache[id] || {}),
+            contacts: uniqueContacts,
+          };
+        }
       }
     } catch (err) {
       console.error('Error fetching imported contacts:', err);
@@ -478,6 +510,10 @@ export default function ProjectDetail() {
       if (response.data.success) {
         const activities = response.data.data || [];
         setAllProjectActivities(activities);
+        projectDetailCache[id] = {
+          ...(projectDetailCache[id] || {}),
+          allProjectActivities: activities,
+        };
         // Refresh KPI metrics when activities are updated
         fetchKpiMetrics();
       }
