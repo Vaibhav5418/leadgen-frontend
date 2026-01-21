@@ -92,6 +92,27 @@ export default function ProjectDetail() {
     isOpen: false,
     filter: null // { channel: 'linkedin'|'call'|'email', metric: string }
   });
+
+  // Keep KPI filter state in URL so returning from Activity History preserves the KPI view
+  const openKpiProspectModal = useCallback((filter) => {
+    setKpiProspectModal({ isOpen: true, filter });
+    setFilterKpi(filter);
+    const newParams = new URLSearchParams(searchParams);
+    newParams.set('kpiChannel', filter.channel);
+    newParams.set('kpiMetric', filter.metric);
+    newParams.set('kpiOpen', '1');
+    setSearchParams(newParams, { replace: true });
+  }, [searchParams, setSearchParams]);
+
+  const closeKpiProspectModal = useCallback(() => {
+    setKpiProspectModal({ isOpen: false, filter: null });
+    setFilterKpi(null);
+    const newParams = new URLSearchParams(searchParams);
+    newParams.delete('kpiChannel');
+    newParams.delete('kpiMetric');
+    newParams.delete('kpiOpen');
+    setSearchParams(newParams, { replace: true });
+  }, [searchParams, setSearchParams]);
   const [matchStats, setMatchStats] = useState(null);
   const [expandedContacts, setExpandedContacts] = useState(new Set());
   const [contactActivities, setContactActivities] = useState({});
@@ -253,34 +274,36 @@ export default function ProjectDetail() {
 
   useEffect(() => {
     if (id) {
-      // Always clear filters on mount to ensure a fresh start
-      // This prevents filters from persisting when navigating away and back
-      setSearchQuery('');
-      setQuickFilter('');
-      setFilterStatus('');
-      setFilterActionDate('');
-      setFilterActionDateFrom('');
-      setFilterActionDateTo('');
-      setFilterLastInteraction('');
-      setFilterLastInteractionFrom('');
-      setFilterLastInteractionTo('');
-      setFilterImportDate('');
-      setFilterImportDateFrom('');
-      setFilterImportDateTo('');
-      setFilterNoActivity(false);
-      setFilterMatchType('');
-      
-      // Clear filter URL params (but preserve returnTo and page so pagination state is kept)
-      const returnTo = searchParams.get('returnTo');
-      const pageParam = searchParams.get('page');
-      const cleanParams = new URLSearchParams();
-      if (returnTo) {
-        cleanParams.set('returnTo', returnTo);
+      // Only reset filters when landing fresh. If returning from Activity History (returnTo)
+      // or restoring a KPI view (kpiChannel/kpiMetric), keep state.
+      const hasAnyUrlState =
+        !!searchParams.get('returnTo') ||
+        !!searchParams.get('page') ||
+        !!searchParams.get('kpiChannel') ||
+        !!searchParams.get('kpiMetric') ||
+        searchParams.get('kpiOpen') === '1';
+
+      if (!hasAnyUrlState) {
+        setSearchQuery('');
+        setQuickFilter('');
+        setFilterStatus('');
+        setFilterActionDate('');
+        setFilterActionDateFrom('');
+        setFilterActionDateTo('');
+        setFilterLastInteraction('');
+        setFilterLastInteractionFrom('');
+        setFilterLastInteractionTo('');
+        setFilterImportDate('');
+        setFilterImportDateFrom('');
+        setFilterImportDateTo('');
+        setFilterNoActivity(false);
+        setFilterMatchType('');
+        setFilterKpi(null);
+        setKpiProspectModal({ isOpen: false, filter: null });
+
+        // Clear filter URL params (fresh landing)
+        setSearchParams(new URLSearchParams(), { replace: true });
       }
-      if (pageParam) {
-        cleanParams.set('page', pageParam);
-      }
-      setSearchParams(cleanParams, { replace: true });
       
       const cacheEntry = projectDetailCache[id];
 
@@ -320,6 +343,23 @@ export default function ProjectDetail() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // Restore KPI modal + filter from URL params (so Back returns to the same KPI view)
+  useEffect(() => {
+    if (!id) return;
+    const kpiChannel = searchParams.get('kpiChannel');
+    const kpiMetric = searchParams.get('kpiMetric');
+    const kpiOpen = searchParams.get('kpiOpen') === '1';
+
+    if (kpiChannel && kpiMetric) {
+      const nextFilter = { channel: kpiChannel, metric: kpiMetric };
+      setFilterKpi(nextFilter);
+      if (kpiOpen) {
+        setKpiProspectModal({ isOpen: true, filter: nextFilter });
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, searchParams]);
 
   // When search query changes, fetch matching contacts
   useEffect(() => {
@@ -1490,6 +1530,9 @@ export default function ProjectDetail() {
         } else if (filterKpi.metric === 'callsAttempted') {
           // All call activities
           hasMatchingActivity = callActivities.length > 0;
+        } else if (filterKpi.metric === 'totalCalls') {
+          // Total Calls = total call activities (backend: callsMade)
+          hasMatchingActivity = callActivities.length > 0;
         } else if (filterKpi.metric === 'callsConnected') {
           // Calls that were answered (not Ring, Busy, Switch Off, Invalid, Hang Up)
           hasMatchingActivity = callActivities.some(a => 
@@ -1967,6 +2010,9 @@ export default function ProjectDetail() {
           hasMatchingActivity = true;
         } else if (kpiFilter.metric === 'callsAttempted') {
           // All call activities
+          hasMatchingActivity = callActivities.length > 0;
+        } else if (kpiFilter.metric === 'totalCalls') {
+          // Total Calls = total call activities (backend: callsMade)
           hasMatchingActivity = callActivities.length > 0;
         } else if (kpiFilter.metric === 'callsConnected') {
           // Calls that were answered (not Ring, Busy, Switch Off, Invalid, Hang Up)
@@ -2516,7 +2562,7 @@ export default function ProjectDetail() {
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-9 gap-2">
               {/* Connection Sent */}
               <button
-                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'linkedin', metric: 'connectionSent' } })}
+                onClick={() => openKpiProspectModal({ channel: 'linkedin', metric: 'connectionSent' })}
                 className={`bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                   filterKpi?.channel === 'linkedin' && filterKpi?.metric === 'connectionSent' 
                     ? 'border-blue-400 ring-2 ring-blue-200' 
@@ -2537,7 +2583,7 @@ export default function ProjectDetail() {
               
               {/* Accepted */}
               <button
-                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'linkedin', metric: 'accepted' } })}
+                onClick={() => openKpiProspectModal({ channel: 'linkedin', metric: 'accepted' })}
                 className={`bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                   filterKpi?.channel === 'linkedin' && filterKpi?.metric === 'accepted' 
                     ? 'border-green-400 ring-2 ring-green-200' 
@@ -2558,7 +2604,7 @@ export default function ProjectDetail() {
               
               {/* Follow-ups */}
               <button
-                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'linkedin', metric: 'followUps' } })}
+                onClick={() => openKpiProspectModal({ channel: 'linkedin', metric: 'followUps' })}
                 className={`bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                   filterKpi?.channel === 'linkedin' && filterKpi?.metric === 'followUps' 
                     ? 'border-purple-400 ring-2 ring-purple-200' 
@@ -2579,7 +2625,7 @@ export default function ProjectDetail() {
               
               {/* CIP */}
               <button
-                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'linkedin', metric: 'cip' } })}
+                onClick={() => openKpiProspectModal({ channel: 'linkedin', metric: 'cip' })}
                 className={`bg-gradient-to-br from-cyan-50 to-blue-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                   filterKpi?.channel === 'linkedin' && filterKpi?.metric === 'cip' 
                     ? 'border-cyan-400 ring-2 ring-cyan-200' 
@@ -2600,7 +2646,7 @@ export default function ProjectDetail() {
               
               {/* Meeting Proposed */}
               <button
-                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'linkedin', metric: 'meetingProposed' } })}
+                onClick={() => openKpiProspectModal({ channel: 'linkedin', metric: 'meetingProposed' })}
                 className={`bg-gradient-to-br from-yellow-50 to-amber-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                   filterKpi?.channel === 'linkedin' && filterKpi?.metric === 'meetingProposed' 
                     ? 'border-yellow-400 ring-2 ring-yellow-200' 
@@ -2621,7 +2667,7 @@ export default function ProjectDetail() {
               
               {/* Scheduled */}
               <button
-                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'linkedin', metric: 'scheduled' } })}
+                onClick={() => openKpiProspectModal({ channel: 'linkedin', metric: 'scheduled' })}
                 className={`bg-gradient-to-br from-orange-50 to-red-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                   filterKpi?.channel === 'linkedin' && filterKpi?.metric === 'scheduled' 
                     ? 'border-orange-400 ring-2 ring-orange-200' 
@@ -2642,7 +2688,7 @@ export default function ProjectDetail() {
               
               {/* Completed */}
               <button
-                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'linkedin', metric: 'completed' } })}
+                onClick={() => openKpiProspectModal({ channel: 'linkedin', metric: 'completed' })}
                 className={`bg-gradient-to-br from-teal-50 to-green-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                   filterKpi?.channel === 'linkedin' && filterKpi?.metric === 'completed' 
                     ? 'border-teal-400 ring-2 ring-teal-200' 
@@ -2663,7 +2709,7 @@ export default function ProjectDetail() {
               
               {/* SQL */}
               <button
-                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'linkedin', metric: 'sql' } })}
+                onClick={() => openKpiProspectModal({ channel: 'linkedin', metric: 'sql' })}
                 className={`bg-gradient-to-br from-indigo-50 to-purple-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                   filterKpi?.channel === 'linkedin' && filterKpi?.metric === 'sql' 
                     ? 'border-indigo-400 ring-2 ring-indigo-200' 
@@ -2684,7 +2730,7 @@ export default function ProjectDetail() {
               
               {/* Win */}
               <button
-                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'linkedin', metric: 'win' } })}
+                onClick={() => openKpiProspectModal({ channel: 'linkedin', metric: 'win' })}
                 className={`bg-gradient-to-br from-emerald-50 to-green-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                   filterKpi?.channel === 'linkedin' && filterKpi?.metric === 'win' 
                     ? 'border-emerald-400 ring-2 ring-emerald-200' 
@@ -2708,10 +2754,7 @@ export default function ProjectDetail() {
               <div className="mt-4 flex flex-wrap items-center gap-3 justify-start">
                 <button
                   onClick={() =>
-                    setKpiProspectModal({
-                      isOpen: true,
-                      filter: { channel: 'linkedin', metric: 'todayFollowups' },
-                    })
+                    openKpiProspectModal({ channel: 'linkedin', metric: 'todayFollowups' })
                   }
                   className="px-4 py-2 text-xs font-semibold rounded-lg border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all duration-200 shadow-sm hover:shadow-md"
                 >
@@ -2719,10 +2762,7 @@ export default function ProjectDetail() {
                 </button>
                 <button
                   onClick={() =>
-                    setKpiProspectModal({
-                      isOpen: true,
-                      filter: { channel: 'linkedin', metric: 'tomorrowFollowups' },
-                    })
+                    openKpiProspectModal({ channel: 'linkedin', metric: 'tomorrowFollowups' })
                   }
                   className="px-4 py-2 text-xs font-semibold rounded-lg border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all duration-200 shadow-sm hover:shadow-md"
                 >
@@ -2730,10 +2770,7 @@ export default function ProjectDetail() {
                 </button>
                 <button
                   onClick={() =>
-                    setKpiProspectModal({
-                      isOpen: true,
-                      filter: { channel: 'linkedin', metric: 'missedFollowups' },
-                    })
+                    openKpiProspectModal({ channel: 'linkedin', metric: 'missedFollowups' })
                   }
                   className="px-4 py-2 text-xs font-semibold rounded-lg border border-rose-200 text-rose-700 bg-rose-50 hover:bg-rose-100 transition-all duration-200 shadow-sm hover:shadow-md"
                 >
@@ -2747,10 +2784,10 @@ export default function ProjectDetail() {
           {/* Cold Calling Pipeline - Only show if coldCalling channel is enabled */}
           {enabledActivityTypes.includes('call') && selectedPipeline === 'call' && kpiMetrics && (
             <div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
                 {/* Calls Attempted */}
                 <button
-                  onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'call', metric: 'callsAttempted' } })}
+                onClick={() => openKpiProspectModal({ channel: 'call', metric: 'callsAttempted' })}
                   className={`bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                     filterKpi?.channel === 'call' && filterKpi?.metric === 'callsAttempted' 
                       ? 'border-green-400 ring-2 ring-green-200' 
@@ -2769,9 +2806,30 @@ export default function ProjectDetail() {
                   <div className="text-xs text-gray-600 mt-1">Calls Attempted</div>
                 </button>
 
+                {/* Total Calls */}
+                <button
+                  onClick={() => openKpiProspectModal({ channel: 'call', metric: 'totalCalls' })}
+                  className={`bg-gradient-to-br from-teal-50 to-cyan-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                    filterKpi?.channel === 'call' && filterKpi?.metric === 'totalCalls'
+                      ? 'border-teal-400 ring-2 ring-teal-200'
+                      : 'border-teal-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="w-7 h-7 rounded-lg bg-white/80 border border-teal-100 flex items-center justify-center">
+                      <svg className="w-4 h-4 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5h6m-6 4h6m-6 4h6m-6 4h6" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-teal-700 bg-white/70 border border-teal-100 px-2 py-1 rounded-full">Total</span>
+                  </div>
+                  <div className="text-2xl font-bold text-gray-900">{kpiMetrics.call?.callsMade || 0}</div>
+                  <div className="text-xs text-gray-600 mt-1">Total Calls</div>
+                </button>
+
                 {/* Calls Connected */}
                 <button
-                  onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'call', metric: 'callsConnected' } })}
+                  onClick={() => openKpiProspectModal({ channel: 'call', metric: 'callsConnected' })}
                   className={`bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                     filterKpi?.channel === 'call' && filterKpi?.metric === 'callsConnected' 
                       ? 'border-blue-400 ring-2 ring-blue-200' 
@@ -2792,7 +2850,7 @@ export default function ProjectDetail() {
 
                 {/* Decision Maker Reached */}
                 <button
-                  onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'call', metric: 'decisionMakerReached' } })}
+                  onClick={() => openKpiProspectModal({ channel: 'call', metric: 'decisionMakerReached' })}
                   className={`bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                     filterKpi?.channel === 'call' && filterKpi?.metric === 'decisionMakerReached' 
                       ? 'border-purple-400 ring-2 ring-purple-200' 
@@ -2813,7 +2871,7 @@ export default function ProjectDetail() {
 
                 {/* Interested */}
                 <button
-                  onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'call', metric: 'interested' } })}
+                  onClick={() => openKpiProspectModal({ channel: 'call', metric: 'interested' })}
                   className={`bg-gradient-to-br from-yellow-50 to-amber-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                     filterKpi?.channel === 'call' && filterKpi?.metric === 'interested' 
                       ? 'border-yellow-400 ring-2 ring-yellow-200' 
@@ -2834,7 +2892,7 @@ export default function ProjectDetail() {
 
                 {/* Details Shared */}
                 <button
-                  onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'call', metric: 'detailsShared' } })}
+                  onClick={() => openKpiProspectModal({ channel: 'call', metric: 'detailsShared' })}
                   className={`bg-gradient-to-br from-indigo-50 to-blue-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                     filterKpi?.channel === 'call' && filterKpi?.metric === 'detailsShared' 
                       ? 'border-indigo-400 ring-2 ring-indigo-200' 
@@ -2855,7 +2913,7 @@ export default function ProjectDetail() {
 
                 {/* Demo Booked */}
                 <button
-                  onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'call', metric: 'demoBooked' } })}
+                  onClick={() => openKpiProspectModal({ channel: 'call', metric: 'demoBooked' })}
                   className={`bg-gradient-to-br from-teal-50 to-cyan-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                     filterKpi?.channel === 'call' && filterKpi?.metric === 'demoBooked' 
                       ? 'border-teal-400 ring-2 ring-teal-200' 
@@ -2876,7 +2934,7 @@ export default function ProjectDetail() {
 
                 {/* Demo Completed */}
                 <button
-                  onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'call', metric: 'demoCompleted' } })}
+                  onClick={() => openKpiProspectModal({ channel: 'call', metric: 'demoCompleted' })}
                   className={`bg-gradient-to-br from-emerald-50 to-green-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                     filterKpi?.channel === 'call' && filterKpi?.metric === 'demoCompleted' 
                       ? 'border-emerald-400 ring-2 ring-emerald-200' 
@@ -2897,7 +2955,7 @@ export default function ProjectDetail() {
 
                 {/* SQL */}
                 <button
-                  onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'call', metric: 'sql' } })}
+                  onClick={() => openKpiProspectModal({ channel: 'call', metric: 'sql' })}
                   className={`bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                     filterKpi?.channel === 'call' && filterKpi?.metric === 'sql' 
                       ? 'border-blue-400 ring-2 ring-blue-200' 
@@ -2918,7 +2976,7 @@ export default function ProjectDetail() {
 
                 {/* WON */}
                 <button
-                  onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'call', metric: 'won' } })}
+                  onClick={() => openKpiProspectModal({ channel: 'call', metric: 'won' })}
                   className={`bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                     filterKpi?.channel === 'call' && filterKpi?.metric === 'won' 
                       ? 'border-green-400 ring-2 ring-green-200' 
@@ -2939,7 +2997,7 @@ export default function ProjectDetail() {
 
                 {/* Not Interested */}
                 <button
-                  onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'call', metric: 'notInterested' } })}
+                  onClick={() => openKpiProspectModal({ channel: 'call', metric: 'notInterested' })}
                   className={`bg-gradient-to-br from-red-50 to-pink-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                     filterKpi?.channel === 'call' && filterKpi?.metric === 'notInterested' 
                       ? 'border-red-400 ring-2 ring-red-200' 
@@ -2963,10 +3021,7 @@ export default function ProjectDetail() {
               <div className="mt-4 flex flex-wrap items-center gap-3 justify-start">
                 <button
                   onClick={() =>
-                    setKpiProspectModal({
-                      isOpen: true,
-                      filter: { channel: 'call', metric: 'todayFollowups' },
-                    })
+                    openKpiProspectModal({ channel: 'call', metric: 'todayFollowups' })
                   }
                   className="px-4 py-2 text-xs font-semibold rounded-lg border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all duration-200 shadow-sm hover:shadow-md"
                 >
@@ -2974,10 +3029,7 @@ export default function ProjectDetail() {
                 </button>
                 <button
                   onClick={() =>
-                    setKpiProspectModal({
-                      isOpen: true,
-                      filter: { channel: 'call', metric: 'tomorrowFollowups' },
-                    })
+                    openKpiProspectModal({ channel: 'call', metric: 'tomorrowFollowups' })
                   }
                   className="px-4 py-2 text-xs font-semibold rounded-lg border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all duration-200 shadow-sm hover:shadow-md"
                 >
@@ -2985,10 +3037,7 @@ export default function ProjectDetail() {
                 </button>
                 <button
                   onClick={() =>
-                    setKpiProspectModal({
-                      isOpen: true,
-                      filter: { channel: 'call', metric: 'missedFollowups' },
-                    })
+                    openKpiProspectModal({ channel: 'call', metric: 'missedFollowups' })
                   }
                   className="px-4 py-2 text-xs font-semibold rounded-lg border border-rose-200 text-rose-700 bg-rose-50 hover:bg-rose-100 transition-all duration-200 shadow-sm hover:shadow-md"
                 >
@@ -3005,7 +3054,7 @@ export default function ProjectDetail() {
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-9 gap-2">
               {/* Emails Sent */}
               <button
-                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'emailsSent' } })}
+                onClick={() => openKpiProspectModal({ channel: 'email', metric: 'emailsSent' })}
                 className={`bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                   filterKpi?.channel === 'email' && filterKpi?.metric === 'emailsSent' 
                     ? 'border-blue-400 ring-2 ring-blue-200' 
@@ -3026,7 +3075,7 @@ export default function ProjectDetail() {
               
               {/* Accepted */}
               <button
-                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'accepted' } })}
+                onClick={() => openKpiProspectModal({ channel: 'email', metric: 'accepted' })}
                 className={`bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                   filterKpi?.channel === 'email' && filterKpi?.metric === 'accepted' 
                     ? 'border-green-400 ring-2 ring-green-200' 
@@ -3047,7 +3096,7 @@ export default function ProjectDetail() {
               
               {/* Followups */}
               <button
-                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'followups' } })}
+                onClick={() => openKpiProspectModal({ channel: 'email', metric: 'followups' })}
                 className={`bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                   filterKpi?.channel === 'email' && filterKpi?.metric === 'followups' 
                     ? 'border-purple-400 ring-2 ring-purple-200' 
@@ -3068,7 +3117,7 @@ export default function ProjectDetail() {
               
               {/* CIP */}
               <button
-                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'cip' } })}
+                onClick={() => openKpiProspectModal({ channel: 'email', metric: 'cip' })}
                 className={`bg-gradient-to-br from-amber-50 to-yellow-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                   filterKpi?.channel === 'email' && filterKpi?.metric === 'cip' 
                     ? 'border-amber-400 ring-2 ring-amber-200' 
@@ -3089,7 +3138,7 @@ export default function ProjectDetail() {
               
               {/* Meeting Proposed */}
               <button
-                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'meetingProposed' } })}
+                onClick={() => openKpiProspectModal({ channel: 'email', metric: 'meetingProposed' })}
                 className={`bg-gradient-to-br from-teal-50 to-cyan-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                   filterKpi?.channel === 'email' && filterKpi?.metric === 'meetingProposed' 
                     ? 'border-teal-400 ring-2 ring-teal-200' 
@@ -3110,7 +3159,7 @@ export default function ProjectDetail() {
               
               {/* Scheduled */}
               <button
-                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'scheduled' } })}
+                onClick={() => openKpiProspectModal({ channel: 'email', metric: 'scheduled' })}
                 className={`bg-gradient-to-br from-indigo-50 to-blue-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                   filterKpi?.channel === 'email' && filterKpi?.metric === 'scheduled' 
                     ? 'border-indigo-400 ring-2 ring-indigo-200' 
@@ -3131,7 +3180,7 @@ export default function ProjectDetail() {
               
               {/* Completed */}
               <button
-                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'completed' } })}
+                onClick={() => openKpiProspectModal({ channel: 'email', metric: 'completed' })}
                 className={`bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                   filterKpi?.channel === 'email' && filterKpi?.metric === 'completed' 
                     ? 'border-green-400 ring-2 ring-green-200' 
@@ -3152,7 +3201,7 @@ export default function ProjectDetail() {
               
               {/* SQL */}
               <button
-                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'sql' } })}
+                onClick={() => openKpiProspectModal({ channel: 'email', metric: 'sql' })}
                 className={`bg-gradient-to-br from-pink-50 to-rose-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                   filterKpi?.channel === 'email' && filterKpi?.metric === 'sql' 
                     ? 'border-pink-400 ring-2 ring-pink-200' 
@@ -3173,7 +3222,7 @@ export default function ProjectDetail() {
               
               {/* Email Bounce */}
               <button
-                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'emailBounce' } })}
+                onClick={() => openKpiProspectModal({ channel: 'email', metric: 'emailBounce' })}
                 className={`bg-gradient-to-br from-red-50 to-rose-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
                   filterKpi?.channel === 'email' && filterKpi?.metric === 'emailBounce' 
                     ? 'border-red-400 ring-2 ring-red-200' 
@@ -3197,10 +3246,7 @@ export default function ProjectDetail() {
               <div className="mt-4 flex flex-wrap items-center gap-3 justify-start">
                 <button
                   onClick={() =>
-                    setKpiProspectModal({
-                      isOpen: true,
-                      filter: { channel: 'email', metric: 'todayFollowups' },
-                    })
+                    openKpiProspectModal({ channel: 'email', metric: 'todayFollowups' })
                   }
                   className="px-4 py-2 text-xs font-semibold rounded-lg border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all duration-200 shadow-sm hover:shadow-md"
                 >
@@ -3208,10 +3254,7 @@ export default function ProjectDetail() {
                 </button>
                 <button
                   onClick={() =>
-                    setKpiProspectModal({
-                      isOpen: true,
-                      filter: { channel: 'email', metric: 'tomorrowFollowups' },
-                    })
+                    openKpiProspectModal({ channel: 'email', metric: 'tomorrowFollowups' })
                   }
                   className="px-4 py-2 text-xs font-semibold rounded-lg border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all duration-200 shadow-sm hover:shadow-md"
                 >
@@ -3219,10 +3262,7 @@ export default function ProjectDetail() {
                 </button>
                 <button
                   onClick={() =>
-                    setKpiProspectModal({
-                      isOpen: true,
-                      filter: { channel: 'email', metric: 'missedFollowups' },
-                    })
+                    openKpiProspectModal({ channel: 'email', metric: 'missedFollowups' })
                   }
                   className="px-4 py-2 text-xs font-semibold rounded-lg border border-rose-200 text-rose-700 bg-rose-50 hover:bg-rose-100 transition-all duration-200 shadow-sm hover:shadow-md"
                 >
@@ -4297,6 +4337,12 @@ export default function ProjectDetail() {
                       if (filterMatchType) currentParams.set('filterMatchType', filterMatchType);
                       // Always include current page in return URL (even if page 1)
                       currentParams.set('page', contactsPage.toString());
+                      // Include KPI filter parameters if KPI modal is open
+                      if (filterKpi) {
+                        currentParams.set('kpiChannel', filterKpi.channel);
+                        currentParams.set('kpiMetric', filterKpi.metric);
+                        currentParams.set('kpiOpen', '1');
+                      }
                       
                       const returnUrl = `/projects/${id}${currentParams.toString() ? '?' + currentParams.toString() : ''}`;
                       // Navigate to contact activity history page with preserved filters
@@ -4648,7 +4694,8 @@ export default function ProjectDetail() {
                   {kpiProspectModal.filter?.metric === 'messagesSent' && 'Messages Sent'}
                   {kpiProspectModal.filter?.metric === 'messageReplyRate' && 'Message Reply Rate'}
                   {kpiProspectModal.filter?.metric === 'allProspects' && 'All Prospects'}
-                  {kpiProspectModal.filter?.metric === 'callsAttempted' && 'Calls Attempted'}
+              {kpiProspectModal.filter?.metric === 'callsAttempted' && 'Calls Attempted'}
+              {kpiProspectModal.filter?.metric === 'totalCalls' && 'Total Calls'}
                   {kpiProspectModal.filter?.metric === 'callsConnected' && 'Calls Connected'}
                   {kpiProspectModal.filter?.metric === 'decisionMakerReached' && 'Decision Maker Reached'}
                   {kpiProspectModal.filter?.metric === 'interested' && 'Interested'}
@@ -4681,7 +4728,7 @@ export default function ProjectDetail() {
                 )}
               </div>
               <button
-                onClick={() => setKpiProspectModal({ isOpen: false, filter: null })}
+                onClick={closeKpiProspectModal}
                 className="text-gray-400 hover:text-gray-600 transition-colors"
               >
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -4756,10 +4803,16 @@ export default function ProjectDetail() {
                             
                             // Only navigate if contact is from databank and has a valid ID
                             if (isFromDatabank && contactIdStr) {
-                              // Build return URL to go back to the project detail page with current page
+                              // Build return URL to go back to the project detail page with current page and KPI filters
                               const currentParams = new URLSearchParams();
                               // Always include current page in return URL (even if page 1)
                               currentParams.set('page', contactsPage.toString());
+                              // Include KPI filter parameters if KPI modal is open
+                              if (filterKpi) {
+                                currentParams.set('kpiChannel', filterKpi.channel);
+                                currentParams.set('kpiMetric', filterKpi.metric);
+                                currentParams.set('kpiOpen', '1');
+                              }
                               const returnUrl = `/projects/${id}${currentParams.toString() ? '?' + currentParams.toString() : ''}`;
                               // Navigate to contact activity history page
                               navigate(`/contacts/${contactIdStr}/activities?projectId=${id}&returnTo=${encodeURIComponent(returnUrl)}`);
