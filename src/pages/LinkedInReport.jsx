@@ -122,6 +122,9 @@ export default function LinkedInReport() {
       }
     });
 
+    // Always include the current month in the month-wise view (even if there is no data yet)
+    months.add(getMonthKey(new Date()));
+
     // Sort months chronologically
     const sortedMonths = Array.from(months).sort((a, b) => {
       const [monthA, yearA] = a.split(" '");
@@ -155,6 +158,9 @@ export default function LinkedInReport() {
         years.add(getYearKey(contact.createdAt));
       }
     });
+
+    // Always include the current year in the year-wise view (even if there is no data yet)
+    years.add(getYearKey(new Date()));
 
     // Sort years chronologically
     return Array.from(years).sort((a, b) => parseInt(a) - parseInt(b));

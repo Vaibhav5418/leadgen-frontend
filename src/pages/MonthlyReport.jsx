@@ -146,6 +146,10 @@ export default function MonthlyReport() {
         }
       });
 
+      // Always include the current month in the month-wise view (even if there is no data yet)
+      const today = new Date();
+      periodSet.add(getMonthKey(today));
+
       const sorted = Array.from(periodSet).sort((a, b) => {
         const [monthA, yearA] = a.split(" '");
         const [monthB, yearB] = b.split(" '");
@@ -205,6 +209,23 @@ export default function MonthlyReport() {
           }
         }
       });
+
+      // Always include today's date in the day-wise view (even if there is no data yet)
+      const today = new Date();
+      const todayDayKey = getDayKey(today);
+      const todayMonthKey = getMonthKey(today);
+      const todayMonthName = getMonthName(today);
+
+      if (!monthGroups[todayMonthKey]) {
+        monthGroups[todayMonthKey] = {
+          month: todayMonthName,
+          monthKey: todayMonthKey,
+          periods: []
+        };
+      }
+      if (!monthGroups[todayMonthKey].periods.includes(todayDayKey)) {
+        monthGroups[todayMonthKey].periods.push(todayDayKey);
+      }
 
       // Sort periods within each month and sort months
       Object.keys(monthGroups).forEach(monthKey => {
@@ -1161,106 +1182,106 @@ export default function MonthlyReport() {
         });
       } else {
         // Single channel - use original logic
-        groupedPeriods.forEach((group, groupIndex) => {
-          // Add month header row (only for day view)
-          if (viewMode === 'day' && group.month) {
-            const monthRow = [group.month];
-            for (let i = 0; i < allPeriods.length; i++) {
-              monthRow.push('');
-            }
-            worksheetData.push(monthRow);
+      groupedPeriods.forEach((group, groupIndex) => {
+        // Add month header row (only for day view)
+        if (viewMode === 'day' && group.month) {
+          const monthRow = [group.month];
+          for (let i = 0; i < allPeriods.length; i++) {
+            monthRow.push('');
+          }
+          worksheetData.push(monthRow);
 
-            // Style month header row (yellow background with light borders)
+          // Style month header row (yellow background with light borders)
+          rowStyles[currentRowIndex] = {
+            cells: Array(monthRow.length).fill({
+              font: { bold: true, sz: 12, color: { rgb: '1F2937' } },
+              fill: { fgColor: { rgb: 'FFF9C4' } }, // Yellow background
+              alignment: { horizontal: 'center', vertical: 'center' },
+              border: {
+                top: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                bottom: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                left: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                right: { style: 'thin', color: { rgb: 'E5E7EB' } }
+              }
+            }),
+            merge: { s: { r: currentRowIndex, c: 0 }, e: { r: currentRowIndex, c: allPeriods.length } }
+          };
+          currentRowIndex++;
+        }
+
+        // Add section headers and metrics (only show once per month group)
+        if (groupIndex === 0 || (viewMode === 'day' && groupIndex > 0 && groupedPeriods[groupIndex - 1].monthKey !== group.monthKey)) {
+          Object.keys(groupedMetrics).forEach((section) => {
+            // Add section header row
+            const sectionRow = [section];
+            for (let i = 0; i < allPeriods.length; i++) {
+              sectionRow.push('');
+            }
+            worksheetData.push(sectionRow);
+
+            // Style section header row (amber background with light borders)
             rowStyles[currentRowIndex] = {
-              cells: Array(monthRow.length).fill({
-                font: { bold: true, sz: 12, color: { rgb: '1F2937' } },
-                fill: { fgColor: { rgb: 'FFF9C4' } }, // Yellow background
-                alignment: { horizontal: 'center', vertical: 'center' },
+              cells: Array(sectionRow.length).fill({
+                font: { bold: true, sz: 11, color: { rgb: '1F2937' } },
+                fill: { fgColor: { rgb: 'FFE082' } }, // Amber background
+                alignment: { horizontal: 'left', vertical: 'center' },
                 border: {
                   top: { style: 'thin', color: { rgb: 'E5E7EB' } },
                   bottom: { style: 'thin', color: { rgb: 'E5E7EB' } },
                   left: { style: 'thin', color: { rgb: 'E5E7EB' } },
                   right: { style: 'thin', color: { rgb: 'E5E7EB' } }
                 }
-              }),
-              merge: { s: { r: currentRowIndex, c: 0 }, e: { r: currentRowIndex, c: allPeriods.length } }
+              })
             };
             currentRowIndex++;
-          }
 
-          // Add section headers and metrics (only show once per month group)
-          if (groupIndex === 0 || (viewMode === 'day' && groupIndex > 0 && groupedPeriods[groupIndex - 1].monthKey !== group.monthKey)) {
-            Object.keys(groupedMetrics).forEach((section) => {
-              // Add section header row
-              const sectionRow = [section];
-              for (let i = 0; i < allPeriods.length; i++) {
-                sectionRow.push('');
-              }
-              worksheetData.push(sectionRow);
+            // Add metric rows
+            groupedMetrics[section].forEach((metric) => {
+              const metricRow = [metric.label];
+              allPeriods.forEach((period) => {
+                let value = '';
+                if (metric.isFormula) {
+                  value = `(${reportData[period]?.freshCalls || 0} + ${reportData[period]?.followUps || 0})`;
+                } else if (metric.key === 'responseRate') {
+                  value = `${reportData[period]?.[metric.key] || 0}%`;
+                } else {
+                  value = reportData[period]?.[metric.key] || 0;
+                }
+                metricRow.push(value);
+              });
+              worksheetData.push(metricRow);
 
-              // Style section header row (amber background with light borders)
+              // Style metric row - white background with subtle borders
+              const bgColor = metric.highlight 
+                ? (metric.highlightDark ? 'C8E6C9' : 'E8F5E9') // Green background for highlighted metrics
+                : 'FFFFFF'; // White background
+              
               rowStyles[currentRowIndex] = {
-                cells: Array(sectionRow.length).fill({
-                  font: { bold: true, sz: 11, color: { rgb: '1F2937' } },
-                  fill: { fgColor: { rgb: 'FFE082' } }, // Amber background
-                  alignment: { horizontal: 'left', vertical: 'center' },
+                cells: metricRow.map((cell, colIndex) => ({
+                  font: { 
+                    bold: metric.bold || colIndex === 0, 
+                    sz: 10,
+                    color: { rgb: colIndex === 0 ? '1F2937' : '374151' } // Dark gray text
+                  },
+                  fill: { fgColor: { rgb: bgColor } },
+                  alignment: { 
+                    horizontal: colIndex === 0 ? 'left' : 'center', 
+                    vertical: 'center' 
+                  },
                   border: {
-                    top: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                    top: { style: 'thin', color: { rgb: 'E5E7EB' } }, // Light gray borders
                     bottom: { style: 'thin', color: { rgb: 'E5E7EB' } },
                     left: { style: 'thin', color: { rgb: 'E5E7EB' } },
                     right: { style: 'thin', color: { rgb: 'E5E7EB' } }
-                  }
-                })
+                  },
+                  numFmt: colIndex > 0 && typeof cell === 'number' ? '0' : undefined
+                }))
               };
               currentRowIndex++;
-
-              // Add metric rows
-              groupedMetrics[section].forEach((metric) => {
-                const metricRow = [metric.label];
-                allPeriods.forEach((period) => {
-                  let value = '';
-                  if (metric.isFormula) {
-                    value = `(${reportData[period]?.freshCalls || 0} + ${reportData[period]?.followUps || 0})`;
-                  } else if (metric.key === 'responseRate') {
-                    value = `${reportData[period]?.[metric.key] || 0}%`;
-                  } else {
-                    value = reportData[period]?.[metric.key] || 0;
-                  }
-                  metricRow.push(value);
-                });
-                worksheetData.push(metricRow);
-
-                // Style metric row - white background with subtle borders
-                const bgColor = metric.highlight 
-                  ? (metric.highlightDark ? 'C8E6C9' : 'E8F5E9') // Green background for highlighted metrics
-                  : 'FFFFFF'; // White background
-                
-                rowStyles[currentRowIndex] = {
-                  cells: metricRow.map((cell, colIndex) => ({
-                    font: { 
-                      bold: metric.bold || colIndex === 0, 
-                      sz: 10,
-                      color: { rgb: colIndex === 0 ? '1F2937' : '374151' } // Dark gray text
-                    },
-                    fill: { fgColor: { rgb: bgColor } },
-                    alignment: { 
-                      horizontal: colIndex === 0 ? 'left' : 'center', 
-                      vertical: 'center' 
-                    },
-                    border: {
-                      top: { style: 'thin', color: { rgb: 'E5E7EB' } }, // Light gray borders
-                      bottom: { style: 'thin', color: { rgb: 'E5E7EB' } },
-                      left: { style: 'thin', color: { rgb: 'E5E7EB' } },
-                      right: { style: 'thin', color: { rgb: 'E5E7EB' } }
-                    },
-                    numFmt: colIndex > 0 && typeof cell === 'number' ? '0' : undefined
-                  }))
-                };
-                currentRowIndex++;
-              });
             });
-          }
-        });
+          });
+        }
+      });
       }
 
       // Create worksheet
@@ -1492,113 +1513,113 @@ export default function MonthlyReport() {
           // If only one channel is enabled, show single table (current behavior)
           if (enabledChannelsCount === 1) {
             return (
-              <div className="bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200 border-collapse">
-                    <thead>
-                      <tr className="bg-blue-50">
-                        <th className="px-4 sm:px-6 py-3 text-left text-xs font-bold text-gray-900 uppercase tracking-wider border-r-2 border-gray-300 sticky left-0 bg-blue-50 z-20">
-                          Key Results
-                        </th>
-                        {allPeriods.map((period) => (
-                          <th
-                            key={period}
-                            onClick={() => handleDateHeaderClick(period)}
-                            className="px-3 sm:px-4 py-3 text-center text-xs font-bold text-gray-900 uppercase tracking-wider border-r border-gray-300 last:border-r-0 bg-blue-50 cursor-pointer hover:underline"
+          <div className="bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 border-collapse">
+                <thead>
+                  <tr className="bg-blue-50">
+                    <th className="px-4 sm:px-6 py-3 text-left text-xs font-bold text-gray-900 uppercase tracking-wider border-r-2 border-gray-300 sticky left-0 bg-blue-50 z-20">
+                      Key Results
+                    </th>
+                    {allPeriods.map((period) => (
+                      <th
+                        key={period}
+                        onClick={() => handleDateHeaderClick(period)}
+                        className="px-3 sm:px-4 py-3 text-center text-xs font-bold text-gray-900 uppercase tracking-wider border-r border-gray-300 last:border-r-0 bg-blue-50 cursor-pointer hover:underline"
+                      >
+                        {period}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {groupedPeriods.map((group, groupIndex) => (
+                    <React.Fragment key={group.monthKey || groupIndex}>
+                      {/* Month Title Row (only for day view) */}
+                      {viewMode === 'day' && group.month && (
+                        <tr>
+                          <td 
+                            colSpan={allPeriods.length + 1} 
+                            className="px-4 sm:px-6 py-2.5 bg-yellow-100 text-center font-bold text-sm text-gray-900 border-b-2 border-yellow-300"
                           >
-                            {period}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {groupedPeriods.map((group, groupIndex) => (
-                        <React.Fragment key={group.monthKey || groupIndex}>
-                          {/* Month Title Row (only for day view) */}
-                          {viewMode === 'day' && group.month && (
-                            <tr>
-                              <td 
-                                colSpan={allPeriods.length + 1} 
-                                className="px-4 sm:px-6 py-2.5 bg-yellow-100 text-center font-bold text-sm text-gray-900 border-b-2 border-yellow-300"
-                              >
-                                {group.month}
+                            {group.month}
+                          </td>
+                        </tr>
+                      )}
+                      
+                      {/* Section Headers and Metrics - only show once per month group */}
+                      {groupIndex === 0 || (viewMode === 'day' && groupIndex > 0 && groupedPeriods[groupIndex - 1].monthKey !== group.monthKey) ? (
+                        Object.keys(groupedMetrics).map((section) => (
+                          <React.Fragment key={`${group.monthKey || groupIndex}-${section}`}>
+                            <tr className="bg-amber-50 border-y border-amber-200">
+                              <td colSpan={allPeriods.length + 1} className="px-4 sm:px-6 py-2.5 sticky left-0 bg-amber-50 z-20">
+                                <div className="flex items-center gap-2">
+                                  <div className="w-1 h-5 bg-amber-500 rounded-full"></div>
+                                  <span className="text-xs font-bold text-gray-900">{section}</span>
+                                </div>
                               </td>
                             </tr>
-                          )}
-                          
-                          {/* Section Headers and Metrics - only show once per month group */}
-                          {groupIndex === 0 || (viewMode === 'day' && groupIndex > 0 && groupedPeriods[groupIndex - 1].monthKey !== group.monthKey) ? (
-                            Object.keys(groupedMetrics).map((section) => (
-                              <React.Fragment key={`${group.monthKey || groupIndex}-${section}`}>
-                                <tr className="bg-amber-50 border-y border-amber-200">
-                                  <td colSpan={allPeriods.length + 1} className="px-4 sm:px-6 py-2.5 sticky left-0 bg-amber-50 z-20">
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-1 h-5 bg-amber-500 rounded-full"></div>
-                                      <span className="text-xs font-bold text-gray-900">{section}</span>
-                                    </div>
-                                  </td>
-                                </tr>
-                                {groupedMetrics[section].map((metric) => (
-                                  <tr
-                                    key={`${group.monthKey || groupIndex}-${section}-${metric.key}`}
-                                    className={`${
-                                      metric.highlight
-                                        ? metric.highlightDark 
-                                          ? 'bg-green-100' 
-                                          : 'bg-green-50'
-                                        : 'bg-white hover:bg-gray-50'
-                                    } transition-colors duration-150`}
-                                  >
-                                    <td className={`px-4 sm:px-6 py-3 whitespace-nowrap text-sm border-r-2 border-gray-200 sticky left-0 z-20 ${
-                                      metric.highlight
-                                        ? metric.highlightDark 
-                                          ? 'bg-green-100' 
-                                          : 'bg-green-50'
-                                        : 'bg-white'
-                                    } ${metric.bold ? 'font-bold text-gray-900' : 'font-medium text-gray-700'}`}>
-                                      {metric.label}
+                            {groupedMetrics[section].map((metric) => (
+                              <tr
+                                key={`${group.monthKey || groupIndex}-${section}-${metric.key}`}
+                                className={`${
+                                  metric.highlight
+                                    ? metric.highlightDark 
+                                      ? 'bg-green-100' 
+                                      : 'bg-green-50'
+                                    : 'bg-white hover:bg-gray-50'
+                                } transition-colors duration-150`}
+                              >
+                                <td className={`px-4 sm:px-6 py-3 whitespace-nowrap text-sm border-r-2 border-gray-200 sticky left-0 z-20 ${
+                                  metric.highlight
+                                    ? metric.highlightDark 
+                                      ? 'bg-green-100' 
+                                      : 'bg-green-50'
+                                    : 'bg-white'
+                                } ${metric.bold ? 'font-bold text-gray-900' : 'font-medium text-gray-700'}`}>
+                                  {metric.label}
+                                </td>
+                                {allPeriods.map((period) => {
+                                  const value = metric.isFormula 
+                                    ? `(${reportData[period]?.freshCalls || 0} + ${reportData[period]?.followUps || 0})`
+                                    : (metric.key === 'responseRate' 
+                                        ? `${reportData[period]?.[metric.key] || 0}%`
+                                        : (reportData[period]?.[metric.key] || 0));
+                                  const isClickable = !metric.isFormula && value !== 0 && value !== '0%';
+                                  
+                                  return (
+                                    <td
+                                      key={period}
+                                      onClick={() => isClickable && handleNumberClick(metric, period, section)}
+                                      className={`px-3 sm:px-4 py-3 whitespace-nowrap text-sm text-center border-r border-gray-200 last:border-r-0 ${
+                                        metric.highlight
+                                          ? metric.highlightDark 
+                                            ? 'bg-green-100' 
+                                            : 'bg-green-50'
+                                          : 'bg-white'
+                                      } ${
+                                        metric.bold
+                                          ? 'font-bold text-gray-900'
+                                          : 'font-medium text-gray-700'
+                                      } ${
+                                        isClickable ? 'cursor-pointer hover:bg-blue-50 hover:underline' : ''
+                                      }`}
+                                    >
+                                      {value}
                                     </td>
-                                    {allPeriods.map((period) => {
-                                      const value = metric.isFormula 
-                                        ? `(${reportData[period]?.freshCalls || 0} + ${reportData[period]?.followUps || 0})`
-                                        : (metric.key === 'responseRate' 
-                                            ? `${reportData[period]?.[metric.key] || 0}%`
-                                            : (reportData[period]?.[metric.key] || 0));
-                                      const isClickable = !metric.isFormula && value !== 0 && value !== '0%';
-                                      
-                                      return (
-                                        <td
-                                          key={period}
-                                          onClick={() => isClickable && handleNumberClick(metric, period, section)}
-                                          className={`px-3 sm:px-4 py-3 whitespace-nowrap text-sm text-center border-r border-gray-200 last:border-r-0 ${
-                                            metric.highlight
-                                              ? metric.highlightDark 
-                                                ? 'bg-green-100' 
-                                                : 'bg-green-50'
-                                              : 'bg-white'
-                                          } ${
-                                            metric.bold
-                                              ? 'font-bold text-gray-900'
-                                              : 'font-medium text-gray-700'
-                                          } ${
-                                            isClickable ? 'cursor-pointer hover:bg-blue-50 hover:underline' : ''
-                                          }`}
-                                        >
-                                          {value}
-                                        </td>
-                                      );
-                                    })}
-                                  </tr>
-                                ))}
-                              </React.Fragment>
-                            ))
-                          ) : null}
-                        </React.Fragment>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+                                  );
+                                })}
+                              </tr>
+                            ))}
+                          </React.Fragment>
+                        ))
+                      ) : null}
+                    </React.Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
             );
           }
           
