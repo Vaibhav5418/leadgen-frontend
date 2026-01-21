@@ -265,18 +265,35 @@ export default function CreateProject() {
     setError(null);
 
     try {
+      const toArray = (value) => {
+        if (!value || typeof value !== 'string') return [];
+        return value
+          .split(',')
+          .map((item) => item.trim())
+          .filter(Boolean);
+      };
+
       // Prepare data for API
       const projectData = {
         ...formData,
         icpDefinition: {
           ...formData.icpDefinition,
           // Convert comma-separated strings to arrays
-          targetIndustries: formData.icpDefinition.targetIndustries,
-          targetJobTitles: formData.icpDefinition.targetJobTitles,
-          geographies: formData.icpDefinition.geographies,
-          keywords: formData.icpDefinition.keywords,
-          exclusionCriteria: formData.icpDefinition.exclusionCriteria
-        }
+          targetIndustries: toArray(formData.icpDefinition.targetIndustries),
+          targetJobTitles: toArray(formData.icpDefinition.targetJobTitles),
+          geographies: toArray(formData.icpDefinition.geographies),
+          keywords: toArray(formData.icpDefinition.keywords),
+          exclusionCriteria: toArray(formData.icpDefinition.exclusionCriteria),
+          companySizeMin: Number(formData.icpDefinition.companySizeMin) || 0,
+          companySizeMax: Number(formData.icpDefinition.companySizeMax) || 0
+        },
+        campaignDetails: {
+          ...formData.campaignDetails,
+          leadQuotaCommitted: Number(formData.campaignDetails.leadQuotaCommitted) || 0
+        },
+        teamMembers: Array.isArray(formData.teamMembers)
+          ? formData.teamMembers.map((m) => (m || '').trim()).filter(Boolean)
+          : []
       };
 
       let response;

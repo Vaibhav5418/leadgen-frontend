@@ -427,7 +427,8 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
           emailDate: '',
           linkedinDate: ''
         });
-        onClose();
+        // Pass true to indicate successful save (for navigation back)
+        onClose(true);
       } else {
         setErrors({ submit: response.data.error || 'Couldn\'t save that activity. Give it another try.' });
       }

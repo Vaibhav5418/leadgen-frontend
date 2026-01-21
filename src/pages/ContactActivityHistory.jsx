@@ -3,6 +3,21 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import API from '../api/axios';
 import ActivityLogModal from '../components/ActivityLogModal';
 
+// Helper function to get the activity date (prioritize activity-specific dates over createdAt)
+const getActivityDate = (activity) => {
+  if (activity.type === 'call' && activity.callDate) {
+    return new Date(activity.callDate);
+  }
+  if (activity.type === 'email' && activity.emailDate) {
+    return new Date(activity.emailDate);
+  }
+  if (activity.type === 'linkedin' && activity.linkedinDate) {
+    return new Date(activity.linkedinDate);
+  }
+  // Fallback to createdAt if activity-specific date is not available
+  return new Date(activity.createdAt);
+};
+
 export default function ContactActivityHistory() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -150,7 +165,7 @@ export default function ContactActivityHistory() {
     });
   };
 
-  const handleCloseActivityModal = () => {
+  const handleCloseActivityModal = (shouldNavigateBack = false) => {
     setActivityModal({
       isOpen: false,
       type: null,
@@ -164,8 +179,17 @@ export default function ContactActivityHistory() {
       activityId: null,
       editMode: false
     });
-    // Refresh activities after saving
-    fetchActivities();
+    
+    // If activity was successfully saved, navigate back to Prospect Management (preserves page number)
+    if (shouldNavigateBack && returnTo) {
+      // Small delay to ensure activity is saved before navigating
+      setTimeout(() => {
+        navigate(returnTo);
+      }, 100);
+    } else {
+      // Refresh activities if not navigating back
+      fetchActivities();
+    }
   };
 
 
@@ -178,15 +202,19 @@ export default function ContactActivityHistory() {
     return name.substring(0, 2).toUpperCase();
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
+  const formatDate = (dateInput) => {
+    if (!dateInput) return 'N/A';
+    // Handle both Date objects and date strings
+    const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+    if (isNaN(date.getTime())) return 'N/A';
     return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   };
 
-  const formatDateTime = (dateString) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
+  const formatDateTime = (dateInput) => {
+    if (!dateInput) return 'N/A';
+    // Handle both Date objects and date strings
+    const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+    if (isNaN(date.getTime())) return 'N/A';
     return date.toLocaleString('en-US', { 
       year: 'numeric', 
       month: 'short', 
@@ -237,11 +265,13 @@ export default function ContactActivityHistory() {
     }
   };
 
-  // Filter activities based on active filter
-  const filteredActivities = activities.filter(activity => {
-    if (activeFilter === 'all') return true;
-    return activity.type === activeFilter;
-  });
+  // Filter activities based on active filter and sort by activity date
+  const filteredActivities = activities
+    .filter(activity => {
+      if (activeFilter === 'all') return true;
+      return activity.type === activeFilter;
+    })
+    .sort((a, b) => getActivityDate(b) - getActivityDate(a));
 
   // Group activities by type for stats
   const callActivities = activities.filter(a => a.type === 'call');
@@ -677,7 +707,7 @@ export default function ContactActivityHistory() {
             {(() => {
               const linkedInActivities = activities.filter(a => a.type === 'linkedin' && a.status);
               const latestStatus = linkedInActivities.length > 0 
-                ? linkedInActivities.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0].status
+                ? linkedInActivities.sort((a, b) => getActivityDate(b) - getActivityDate(a))[0].status
                 : null;
               
               if (!latestStatus) return null;
@@ -934,7 +964,7 @@ export default function ContactActivityHistory() {
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                               </svg>
-                              <span className="font-medium">{formatDateTime(activity.createdAt)}</span>
+                              <span className="font-medium">{formatDateTime(getActivityDate(activity))}</span>
                             </div>
                             {activity.projectId?.companyName && (
                               <>

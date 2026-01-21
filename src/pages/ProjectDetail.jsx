@@ -20,6 +20,16 @@ const getActivityDate = (activity) => {
   return new Date(activity.createdAt);
 };
 
+// Avoid noisy logs in production
+const devLog = (...args) => {
+  try {
+    // Vite injects import.meta.env.DEV
+    if (import.meta?.env?.DEV) console.log(...args);
+  } catch (_) {
+    // ignore
+  }
+};
+
 // Helper function to get the import date from a contact
 // Uses the ObjectId timestamp (first 8 hex characters) to get creation date
 const getContactImportDate = (contact) => {
@@ -62,6 +72,7 @@ export default function ProjectDetail() {
   const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const searchTimeoutRef = useRef(null);
+  const hasInitializedSearchEffect = useRef(false);
   const [quickFilter, setQuickFilter] = useState(searchParams.get('quickFilter') || '');
   const [filterStatus, setFilterStatus] = useState(searchParams.get('filterStatus') || '');
   const [filterActionDate, setFilterActionDate] = useState(searchParams.get('filterActionDate') || '');
@@ -129,6 +140,67 @@ export default function ProjectDetail() {
     // If no channels are enabled, default to all (for backward compatibility)
     return enabled.length > 0 ? enabled : ['call', 'email', 'linkedin'];
   }, [project?.channels]);
+
+  // Calculate follow-up counts for LinkedIn and Email (backend only provides for calls)
+  const linkedinEmailFollowups = useMemo(() => {
+    if (!allProjectActivities || allProjectActivities.length === 0) {
+      return { linkedin: { today: 0, tomorrow: 0, missed: 0 }, email: { today: 0, tomorrow: 0, missed: 0 } };
+    }
+
+    const now = new Date();
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const dayAfterTomorrow = new Date(tomorrow);
+    dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
+
+    const linkedinToday = new Set();
+    const linkedinTomorrow = new Set();
+    const linkedinMissed = new Set();
+    const emailToday = new Set();
+    const emailTomorrow = new Set();
+    const emailMissed = new Set();
+
+    allProjectActivities.forEach(activity => {
+      if (!activity.nextActionDate || !activity.contactId) return;
+      
+      const d = new Date(activity.nextActionDate);
+      d.setHours(0, 0, 0, 0);
+      const contactIdStr = activity.contactId.toString ? activity.contactId.toString() : activity.contactId;
+
+      if (activity.type === 'linkedin') {
+        if (d >= today && d < tomorrow) {
+          linkedinToday.add(contactIdStr);
+        } else if (d >= tomorrow && d < dayAfterTomorrow) {
+          linkedinTomorrow.add(contactIdStr);
+        } else if (d < today) {
+          linkedinMissed.add(contactIdStr);
+        }
+      } else if (activity.type === 'email') {
+        if (d >= today && d < tomorrow) {
+          emailToday.add(contactIdStr);
+        } else if (d >= tomorrow && d < dayAfterTomorrow) {
+          emailTomorrow.add(contactIdStr);
+        } else if (d < today) {
+          emailMissed.add(contactIdStr);
+        }
+      }
+    });
+
+    return {
+      linkedin: {
+        today: linkedinToday.size,
+        tomorrow: linkedinTomorrow.size,
+        missed: linkedinMissed.size
+      },
+      email: {
+        today: emailToday.size,
+        tomorrow: emailTomorrow.size,
+        missed: emailMissed.size
+      }
+    };
+  }, [allProjectActivities]);
 
   // Auto-select first enabled pipeline if current selection is not enabled
   useEffect(() => {
@@ -198,11 +270,15 @@ export default function ProjectDetail() {
       setFilterNoActivity(false);
       setFilterMatchType('');
       
-      // Clear filter URL params (but preserve returnTo if it exists for navigation)
+      // Clear filter URL params (but preserve returnTo and page so pagination state is kept)
       const returnTo = searchParams.get('returnTo');
+      const pageParam = searchParams.get('page');
       const cleanParams = new URLSearchParams();
       if (returnTo) {
         cleanParams.set('returnTo', returnTo);
+      }
+      if (pageParam) {
+        cleanParams.set('page', pageParam);
       }
       setSearchParams(cleanParams, { replace: true });
       
@@ -219,13 +295,22 @@ export default function ProjectDetail() {
 
       // Always refresh in background to keep data up to date
       fetchProject().then(() => {
+        // Get page from URL params or default to 1
+        const pageFromUrl = searchParams.get('page');
+        const initialPage = pageFromUrl ? parseInt(pageFromUrl, 10) : 1;
+        
+        // Update contactsPage state to match URL
+        if (initialPage !== contactsPage) {
+          setContactsPage(initialPage);
+        }
+        
         // Fetch contacts, activities, and KPI metrics in parallel for better performance
         Promise.all([
-          fetchAllProjectActivities().catch(err => {
-            console.error('Error fetching activities:', err);
+        fetchAllProjectActivities().catch(err => {
+          console.error('Error fetching activities:', err);
           }),
-          fetchImportedContacts(1).catch(err => {
-            console.error('Error fetching imported contacts:', err);
+          fetchImportedContacts(initialPage).catch(err => {
+          console.error('Error fetching imported contacts:', err);
           }),
           fetchKpiMetrics().catch(err => {
             console.error('Error fetching KPI metrics:', err);
@@ -238,14 +323,48 @@ export default function ProjectDetail() {
 
   // When search query changes, fetch matching contacts
   useEffect(() => {
-    if (id) {
-      // Reset to page 1 when search changes
-      setContactsPage(1);
-      // Fetch contacts with search query (backend handles filtering)
-      fetchImportedContacts(1);
+    if (!id) return;
+
+    // Skip the first run so we don't override page restored from URL
+    if (!hasInitializedSearchEffect.current) {
+      hasInitializedSearchEffect.current = true;
+      return;
     }
+
+    // Reset to page 1 when search actually changes
+    setContactsPage(1);
+
+    // Update URL to remove page param when search changes
+    const newParams = new URLSearchParams(searchParams);
+    newParams.delete('page');
+    setSearchParams(newParams, { replace: true });
+
+    // Fetch contacts with search query (backend handles filtering)
+    fetchImportedContacts(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearchQuery, id]);
+
+  // Restore page from URL params when URL changes (e.g., returning from navigation)
+  useEffect(() => {
+    if (!id) return;
+    
+    const pageParam = searchParams.get('page');
+    const pageNum = pageParam ? parseInt(pageParam, 10) : 1;
+    
+    // Only update if page changed and we're not in the middle of a search
+    // Restore page when returning from navigation (e.g., Activity History)
+    if (pageNum !== contactsPage && pageNum >= 1 && !debouncedSearchQuery) {
+      // Use a small delay to ensure any ongoing operations complete
+      const timeoutId = setTimeout(() => {
+        if (pageNum !== contactsPage) {
+          setContactsPage(pageNum);
+          fetchImportedContacts(pageNum);
+        }
+      }, 50);
+      return () => clearTimeout(timeoutId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams.get('page'), id, searchParams]);
 
   const fetchProject = async () => {
     try {
@@ -287,8 +406,11 @@ export default function ProjectDetail() {
     }
   };
 
-  // Pagination state
-  const [contactsPage, setContactsPage] = useState(1);
+  // Pagination state - initialize from URL params
+  const [contactsPage, setContactsPage] = useState(() => {
+    const pageParam = searchParams.get('page');
+    return pageParam ? parseInt(pageParam, 10) : 1;
+  });
   const [contactsTotal, setContactsTotal] = useState(0);
   const [contactsTotalPages, setContactsTotalPages] = useState(1);
   const CONTACTS_PER_PAGE = 50; // Load 50 contacts per page
@@ -349,7 +471,7 @@ export default function ProjectDetail() {
         }
         
         setContacts(uniqueContacts);
-
+        
         if (page === 1 && !debouncedSearchQuery) {
           projectDetailCache[id] = {
             ...(projectDetailCache[id] || {}),
@@ -364,12 +486,20 @@ export default function ProjectDetail() {
     }
   };
 
-  // Handle page change
+  // Handle page change - update URL params
   const handlePageChange = useCallback((newPage) => {
     if (newPage >= 1 && newPage !== contactsPage) {
+      // Update URL params with new page
+      const newParams = new URLSearchParams(searchParams);
+      if (newPage === 1) {
+        newParams.delete('page');
+      } else {
+        newParams.set('page', newPage.toString());
+      }
+      setSearchParams(newParams, { replace: true });
       fetchImportedContacts(newPage);
     }
-  }, [contactsPage, id]);
+  }, [contactsPage, id, searchParams, setSearchParams]);
 
   // Fetch similar contacts from databank (including suggestions)
   const fetchSimilarContacts = async () => {
@@ -387,7 +517,7 @@ export default function ProjectDetail() {
             return !deletedContactIds.has(contactIdStr);
           });
           if (beforeFilter !== contactsData.length) {
-            console.log(`Filtered out ${beforeFilter - contactsData.length} previously deleted contact(s) from similar contacts`);
+            devLog(`Filtered out ${beforeFilter - contactsData.length} previously deleted contact(s) from similar contacts`);
           }
         }
         
@@ -728,7 +858,7 @@ export default function ProjectDetail() {
     });
   };
 
-  const handleCloseActivityModal = async () => {
+  const handleCloseActivityModal = async (shouldNavigateBack = false) => {
     setActivityModal({
       isOpen: false,
       type: null,
@@ -857,15 +987,19 @@ export default function ProjectDetail() {
     );
   };
 
-  const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
+  const formatDate = (dateInput) => {
+    if (!dateInput) return 'N/A';
+    // Handle both Date objects and date strings
+    const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+    if (isNaN(date.getTime())) return 'N/A';
     return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
   };
 
-  const formatDateTime = (dateString) => {
-    if (!dateString) return 'N/A';
-    const date = new Date(dateString);
+  const formatDateTime = (dateInput) => {
+    if (!dateInput) return 'N/A';
+    // Handle both Date objects and date strings
+    const date = dateInput instanceof Date ? dateInput : new Date(dateInput);
+    if (isNaN(date.getTime())) return 'N/A';
     return date.toLocaleString('en-US', { 
       year: 'numeric', 
       month: 'short', 
@@ -1020,7 +1154,7 @@ export default function ProjectDetail() {
           ) : (
             <div className="space-y-4 animate-fade-in">
               {activities
-                .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+                .sort((a, b) => getActivityDate(b) - getActivityDate(a))
                 .map((activity, index) => (
                 <div 
                   key={activity._id} 
@@ -1059,7 +1193,7 @@ export default function ProjectDetail() {
                     </div>
                   </div>
                   <div className="flex-shrink-0 text-xs text-gray-500 text-right whitespace-nowrap">
-                    {formatDateTime(activity.createdAt)}
+                    {formatDateTime(getActivityDate(activity))}
                   </div>
                 </div>
               ))}
@@ -1124,8 +1258,12 @@ export default function ProjectDetail() {
             if (actionDate < today || actionDate >= tomorrow) return false;
             break;
           case 'this-week':
+            // Calculate week start (Monday) and end (Sunday)
+            const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+            const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Convert Sunday (0) to 6 days from Monday
             const weekStart = new Date(today);
-            weekStart.setDate(today.getDate() - today.getDay());
+            weekStart.setDate(today.getDate() - daysFromMonday);
+            weekStart.setHours(0, 0, 0, 0);
             const weekEnd = new Date(weekStart);
             weekEnd.setDate(weekStart.getDate() + 7);
             if (actionDate < weekStart || actionDate >= weekEnd) return false;
@@ -1178,8 +1316,12 @@ export default function ProjectDetail() {
             if (interactionDate < today || interactionDate >= tomorrow) return false;
             break;
           case 'this-week':
+            // Calculate week start (Monday) and end (Sunday)
+            const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+            const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Convert Sunday (0) to 6 days from Monday
             const weekStart = new Date(today);
-            weekStart.setDate(today.getDate() - today.getDay());
+            weekStart.setDate(today.getDate() - daysFromMonday);
+            weekStart.setHours(0, 0, 0, 0);
             const weekEnd = new Date(weekStart);
             weekEnd.setDate(weekStart.getDate() + 7);
             if (interactionDate < weekStart || interactionDate >= weekEnd) return false;
@@ -1360,6 +1502,8 @@ export default function ProjectDetail() {
           );
         } else if (filterKpi.metric === 'interested') {
           hasMatchingActivity = callActivities.some(a => a.callStatus === 'Interested');
+        } else if (filterKpi.metric === 'notInterested') {
+          hasMatchingActivity = callActivities.some(a => a.callStatus === 'Not Interested');
         } else if (filterKpi.metric === 'detailsShared') {
           hasMatchingActivity = callActivities.some(a => a.callStatus === 'Details Shared');
         } else if (filterKpi.metric === 'demoBooked') {
@@ -1397,18 +1541,41 @@ export default function ProjectDetail() {
         if (filterKpi.metric === 'emailsSent') {
           // Backend counts all email activities
           hasMatchingActivity = emailActivities.length > 0;
-        } else if (filterKpi.metric === 'emailOpenRate') {
-          // Backend checks: status && status !== 'Bounce' && status !== 'Opt-Out' && status !== 'No Reply'
+        } else if (filterKpi.metric === 'accepted') {
+          // Accepted: emails that were opened (not bounced, opt-out, or no reply)
+          hasMatchingActivity = emailActivities.some(a => 
+            a.status && a.status !== 'Bounce' && a.status !== 'Opt-Out' && a.status !== 'No Reply'
+          );
+        } else if (filterKpi.metric === 'followups') {
+          // Followups: contacts with more than 1 email activity
+          hasMatchingActivity = emailActivities.length > 1;
+        } else if (filterKpi.metric === 'cip') {
+          // CIP: Conversations in Progress
+          hasMatchingActivity = emailActivities.some(a => 
+            a.status && (a.status === 'CIP' || a.status === 'Conversations in Progress')
+          );
+        } else if (filterKpi.metric === 'meetingProposed') {
+          hasMatchingActivity = emailActivities.some(a => a.status === 'Meeting Proposed');
+        } else if (filterKpi.metric === 'scheduled') {
+          hasMatchingActivity = emailActivities.some(a => a.status === 'Meeting Scheduled');
+        } else if (filterKpi.metric === 'completed') {
+          hasMatchingActivity = emailActivities.some(a => a.status === 'Meeting Completed');
+        } else if (filterKpi.metric === 'sql') {
+          // SQL: check project contact stage
+          hasMatchingActivity = contact.stage === 'SQL';
+        } else if (filterKpi.metric === 'emailBounce') {
+          hasMatchingActivity = emailActivities.some(a => a.status === 'Bounce');
+        }
+        // Legacy metrics (for backward compatibility)
+        else if (filterKpi.metric === 'emailOpenRate') {
           hasMatchingActivity = emailActivities.some(a => 
             a.status && a.status !== 'Bounce' && a.status !== 'Opt-Out' && a.status !== 'No Reply'
           );
         } else if (filterKpi.metric === 'emailReplyRate') {
-          // Backend checks: status in ['Meeting Proposed', 'Meeting Scheduled', 'Meeting Completed', 'SQL', 'Tech Discussion']
           hasMatchingActivity = emailActivities.some(a => 
             a.status && ['Meeting Proposed', 'Meeting Scheduled', 'Meeting Completed', 'SQL', 'Tech Discussion'].includes(a.status)
           );
         } else if (filterKpi.metric === 'meetingsBooked') {
-          // Backend checks: status in ['Meeting Scheduled', 'Meeting Completed', 'In-Person Meeting']
           hasMatchingActivity = emailActivities.some(a => 
             a.status && ['Meeting Scheduled', 'Meeting Completed', 'In-Person Meeting'].includes(a.status)
           );
@@ -1426,28 +1593,10 @@ export default function ProjectDetail() {
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
       
-      const contactId = contact._id || contact.name;
-      const contactIdStr = contact._id?.toString ? contact._id.toString() : contact._id;
-      // Filter activities by contactId and ensure they belong to current project
-      const contactActivities = allProjectActivities.filter(a => {
-        // Ensure activity belongs to current project
-        const activityProjectId = a.projectId?.toString ? a.projectId.toString() : a.projectId;
-        if (activityProjectId !== id) return false; // Skip activities from other projects
-        // Prioritize contactId matching for data isolation
-        if (contactIdStr && a.contactId) {
-          const activityContactIdStr = a.contactId.toString ? a.contactId.toString() : a.contactId;
-          if (activityContactIdStr === contactIdStr) return true;
-        }
-        // Fallback to notes matching only if contactId is not available
-        if (!contactIdStr || !a.contactId) {
-          const notesLower = a.conversationNotes?.toLowerCase() || '';
-          const contactNameLower = contact.name?.toLowerCase() || '';
-          const contactEmailLower = contact.email?.toLowerCase() || '';
-          return notesLower.includes(contactNameLower) || notesLower.includes(contactEmailLower);
-        }
-        return false;
-      });
+      const contactIdStr = (contact._id?.toString ? contact._id.toString() : contact._id) || '';
       
+      // Check all activities for this contact to find any action due today
+      const contactActivities = contactIdStr ? (activityLookups.byContactId.get(contactIdStr) || []) : [];
       const hasDueToday = contactActivities.some(activity => {
         if (!activity.nextActionDate) return false;
         const actionDate = new Date(activity.nextActionDate);
@@ -1652,6 +1801,8 @@ export default function ProjectDetail() {
             );
           } else if (kpiFilter.metric === 'interested') {
             hasMatchingActivity = fallbackCallActivities.some(a => a.callStatus === 'Interested');
+          } else if (kpiFilter.metric === 'notInterested') {
+            hasMatchingActivity = fallbackCallActivities.some(a => a.callStatus === 'Not Interested');
           } else if (kpiFilter.metric === 'detailsShared') {
             hasMatchingActivity = fallbackCallActivities.some(a => a.callStatus === 'Details Shared');
           } else if (kpiFilter.metric === 'demoBooked') {
@@ -1662,11 +1813,59 @@ export default function ProjectDetail() {
             hasMatchingActivity = contact.stage === 'SQL';
           } else if (kpiFilter.metric === 'won') {
             hasMatchingActivity = contact.stage === 'WON';
+          } else if (kpiFilter.metric === 'followups' || kpiFilter.metric === 'todayFollowups' || kpiFilter.metric === 'tomorrowFollowups' || kpiFilter.metric === 'missedFollowups') {
+            const now = new Date();
+            const today = new Date(now);
+            today.setHours(0, 0, 0, 0);
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const dayAfterTomorrow = new Date(tomorrow);
+            dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
+
+            hasMatchingActivity = fallbackCallActivities.some(a => {
+              if (!a.nextActionDate) return false;
+              const d = new Date(a.nextActionDate);
+              d.setHours(0, 0, 0, 0);
+              if (kpiFilter.metric === 'followups') {
+                // Show all follow-ups (today, tomorrow, or missed)
+                return true;
+              } else if (kpiFilter.metric === 'todayFollowups') {
+                return d >= today && d < tomorrow;
+              } else if (kpiFilter.metric === 'tomorrowFollowups') {
+                return d >= tomorrow && d < dayAfterTomorrow;
+              } else if (kpiFilter.metric === 'missedFollowups') {
+                return d < today;
+              }
+              return false;
+            });
           }
         } else if (kpiFilter.channel === 'email') {
-          if (kpiFilter.metric === 'emailsSent') {
+          if (kpiFilter.metric === 'followups') {
+            // Show all email activities with nextActionDate
+            hasMatchingActivity = fallbackEmailActivities.some(a => a.nextActionDate != null);
+          } else if (kpiFilter.metric === 'emailsSent') {
             hasMatchingActivity = fallbackEmailActivities.length > 0;
-          } else if (kpiFilter.metric === 'emailOpenRate') {
+          } else if (kpiFilter.metric === 'accepted') {
+            hasMatchingActivity = fallbackEmailActivities.some(a => 
+              a.status && a.status !== 'Bounce' && a.status !== 'Opt-Out' && a.status !== 'No Reply'
+            );
+          } else if (kpiFilter.metric === 'cip') {
+            hasMatchingActivity = fallbackEmailActivities.some(a => 
+              a.status && (a.status === 'CIP' || a.status === 'Conversations in Progress')
+            );
+          } else if (kpiFilter.metric === 'meetingProposed') {
+            hasMatchingActivity = fallbackEmailActivities.some(a => a.status === 'Meeting Proposed');
+          } else if (kpiFilter.metric === 'scheduled') {
+            hasMatchingActivity = fallbackEmailActivities.some(a => a.status === 'Meeting Scheduled');
+          } else if (kpiFilter.metric === 'completed') {
+            hasMatchingActivity = fallbackEmailActivities.some(a => a.status === 'Meeting Completed');
+          } else if (kpiFilter.metric === 'sql') {
+            hasMatchingActivity = contact.stage === 'SQL';
+          } else if (kpiFilter.metric === 'emailBounce') {
+            hasMatchingActivity = fallbackEmailActivities.some(a => a.status === 'Bounce');
+          }
+          // Legacy metrics (for backward compatibility)
+          else if (kpiFilter.metric === 'emailOpenRate') {
             hasMatchingActivity = fallbackEmailActivities.some(a => 
               a.status && a.status !== 'Bounce' && a.status !== 'Opt-Out' && a.status !== 'No Reply'
             );
@@ -1718,6 +1917,31 @@ export default function ProjectDetail() {
         } else if (kpiFilter.metric === 'win') {
           // Check project contact stage
           hasMatchingActivity = contact.stage === 'WON';
+        } else if (kpiFilter.metric === 'followups' || kpiFilter.metric === 'todayFollowups' || kpiFilter.metric === 'tomorrowFollowups' || kpiFilter.metric === 'missedFollowups') {
+          const now = new Date();
+          const today = new Date(now);
+          today.setHours(0, 0, 0, 0);
+          const tomorrow = new Date(today);
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          const dayAfterTomorrow = new Date(tomorrow);
+          dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
+
+          hasMatchingActivity = linkedinActivities.some(a => {
+            if (!a.nextActionDate) return false;
+            const d = new Date(a.nextActionDate);
+            d.setHours(0, 0, 0, 0);
+            if (kpiFilter.metric === 'followups') {
+              // Show all follow-ups (today, tomorrow, or missed)
+              return true;
+            } else if (kpiFilter.metric === 'todayFollowups') {
+              return d >= today && d < tomorrow;
+            } else if (kpiFilter.metric === 'tomorrowFollowups') {
+              return d >= tomorrow && d < dayAfterTomorrow;
+            } else if (kpiFilter.metric === 'missedFollowups') {
+              return d < today;
+            }
+            return false;
+          });
         }
         // Legacy metrics (for backward compatibility)
         else if (kpiFilter.metric === 'connectionRequestsSent') {
@@ -1756,6 +1980,8 @@ export default function ProjectDetail() {
           );
         } else if (kpiFilter.metric === 'interested') {
           hasMatchingActivity = callActivities.some(a => a.callStatus === 'Interested');
+        } else if (kpiFilter.metric === 'notInterested') {
+          hasMatchingActivity = callActivities.some(a => a.callStatus === 'Not Interested');
         } else if (kpiFilter.metric === 'detailsShared') {
           hasMatchingActivity = callActivities.some(a => a.callStatus === 'Details Shared');
         } else if (kpiFilter.metric === 'demoBooked') {
@@ -1768,6 +1994,32 @@ export default function ProjectDetail() {
         } else if (kpiFilter.metric === 'won') {
           // Check project contact stage
           hasMatchingActivity = contact.stage === 'WON';
+        } else if (kpiFilter.metric === 'followups' || kpiFilter.metric === 'todayFollowups' || kpiFilter.metric === 'tomorrowFollowups' || kpiFilter.metric === 'missedFollowups') {
+          // Filter by nextActionDate
+          const now = new Date();
+          const today = new Date(now);
+          today.setHours(0, 0, 0, 0);
+          const tomorrow = new Date(today);
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          const dayAfterTomorrow = new Date(tomorrow);
+          dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
+
+          hasMatchingActivity = callActivities.some(a => {
+            if (!a.nextActionDate) return false;
+            const d = new Date(a.nextActionDate);
+            d.setHours(0, 0, 0, 0);
+            if (kpiFilter.metric === 'followups') {
+              // Show all follow-ups (today, tomorrow, or missed)
+              return true;
+            } else if (kpiFilter.metric === 'todayFollowups') {
+              return d >= today && d < tomorrow;
+            } else if (kpiFilter.metric === 'tomorrowFollowups') {
+              return d >= tomorrow && d < dayAfterTomorrow;
+            } else if (kpiFilter.metric === 'missedFollowups') {
+              return d < today;
+            }
+            return false;
+          });
         } else if (kpiFilter.metric === 'callsMade') {
           // Legacy support
           hasMatchingActivity = callActivities.length > 0;
@@ -1790,21 +2042,63 @@ export default function ProjectDetail() {
       } else if (kpiFilter.channel === 'email') {
         // Backend uses type: 'email'
         const emailActivities = contactActivities.filter(a => a.type === 'email');
-        if (kpiFilter.metric === 'emailsSent') {
+        if (kpiFilter.metric === 'followups' || kpiFilter.metric === 'todayFollowups' || kpiFilter.metric === 'tomorrowFollowups' || kpiFilter.metric === 'missedFollowups') {
+          const now = new Date();
+          const today = new Date(now);
+          today.setHours(0, 0, 0, 0);
+          const tomorrow = new Date(today);
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          const dayAfterTomorrow = new Date(tomorrow);
+          dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
+
+          hasMatchingActivity = emailActivities.some(a => {
+            if (!a.nextActionDate) return false;
+            const d = new Date(a.nextActionDate);
+            d.setHours(0, 0, 0, 0);
+            if (kpiFilter.metric === 'followups') {
+              // Show all follow-ups (today, tomorrow, or missed)
+              return true;
+            } else if (kpiFilter.metric === 'todayFollowups') {
+              return d >= today && d < tomorrow;
+            } else if (kpiFilter.metric === 'tomorrowFollowups') {
+              return d >= tomorrow && d < dayAfterTomorrow;
+            } else if (kpiFilter.metric === 'missedFollowups') {
+              return d < today;
+            }
+            return false;
+          });
+        } else if (kpiFilter.metric === 'emailsSent') {
           // Backend counts all email activities
           hasMatchingActivity = emailActivities.length > 0;
-        } else if (kpiFilter.metric === 'emailOpenRate') {
-          // Backend checks: status && status !== 'Bounce' && status !== 'Opt-Out' && status !== 'No Reply'
+        } else if (kpiFilter.metric === 'accepted') {
+          hasMatchingActivity = emailActivities.some(a => 
+            a.status && a.status !== 'Bounce' && a.status !== 'Opt-Out' && a.status !== 'No Reply'
+          );
+        } else if (kpiFilter.metric === 'cip') {
+          hasMatchingActivity = emailActivities.some(a => 
+            a.status && (a.status === 'CIP' || a.status === 'Conversations in Progress')
+          );
+        } else if (kpiFilter.metric === 'meetingProposed') {
+          hasMatchingActivity = emailActivities.some(a => a.status === 'Meeting Proposed');
+        } else if (kpiFilter.metric === 'scheduled') {
+          hasMatchingActivity = emailActivities.some(a => a.status === 'Meeting Scheduled');
+        } else if (kpiFilter.metric === 'completed') {
+          hasMatchingActivity = emailActivities.some(a => a.status === 'Meeting Completed');
+        } else if (kpiFilter.metric === 'sql') {
+          hasMatchingActivity = contact.stage === 'SQL';
+        } else if (kpiFilter.metric === 'emailBounce') {
+          hasMatchingActivity = emailActivities.some(a => a.status === 'Bounce');
+        }
+        // Legacy metrics (for backward compatibility)
+        else if (kpiFilter.metric === 'emailOpenRate') {
           hasMatchingActivity = emailActivities.some(a => 
             a.status && a.status !== 'Bounce' && a.status !== 'Opt-Out' && a.status !== 'No Reply'
           );
         } else if (kpiFilter.metric === 'emailReplyRate') {
-          // Backend checks: status in ['Meeting Proposed', 'Meeting Scheduled', 'Meeting Completed', 'SQL', 'Tech Discussion']
           hasMatchingActivity = emailActivities.some(a => 
             a.status && ['Meeting Proposed', 'Meeting Scheduled', 'Meeting Completed', 'SQL', 'Tech Discussion'].includes(a.status)
           );
         } else if (kpiFilter.metric === 'meetingsBooked') {
-          // Backend checks: status in ['Meeting Scheduled', 'Meeting Completed', 'In-Person Meeting']
           hasMatchingActivity = emailActivities.some(a => 
             a.status && ['Meeting Scheduled', 'Meeting Completed', 'In-Person Meeting'].includes(a.status)
           );
@@ -1935,7 +2229,7 @@ export default function ProjectDetail() {
             return true;
           });
           
-          console.log(`Removed ${prevContacts.length - filtered.length} contact(s) from UI`);
+          devLog(`Removed ${prevContacts.length - filtered.length} contact(s) from UI`);
           return filtered;
         });
         
@@ -1986,7 +2280,7 @@ export default function ProjectDetail() {
               });
               
               if (prevContacts.length !== filtered.length) {
-                console.log(`Removed ${prevContacts.length - filtered.length} contact(s) that reappeared after refresh`);
+                devLog(`Removed ${prevContacts.length - filtered.length} contact(s) that reappeared after refresh`);
               }
               return filtered;
             });
@@ -1999,7 +2293,7 @@ export default function ProjectDetail() {
         }, 1000); // Increased delay to ensure backend deletion is complete
         
         // Show success message
-        console.log(`Successfully removed ${deletedCount} prospect(s)`);
+        devLog(`Successfully removed ${deletedCount} prospect(s)`);
       }
     } catch (err) {
       console.error('Error removing prospects:', err);
@@ -2084,10 +2378,10 @@ export default function ProjectDetail() {
             </svg>
           </button>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-1">Prospect Management</h1>
             {project && (
-              <p className="text-lg font-semibold text-indigo-600">{project.companyName}</p>
+              <h1 className="text-3xl font-bold text-indigo-600 mb-1">{project.companyName}</h1>
             )}
+            <p className="text-lg font-semibold text-gray-700">Prospect Management</p>
           </div>
         </div>
         <div className="flex items-center gap-3 flex-wrap justify-end">
@@ -2185,13 +2479,13 @@ export default function ProjectDetail() {
               {enabledActivityTypes.includes('call') && (
                 <div
                   onClick={() => setSelectedPipeline('call')}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-medium text-xs whitespace-nowrap transition-all cursor-pointer min-w-[150px] justify-center ${
+                  className={`flex items-center justify-center gap-2.5 px-6 py-3 rounded-xl font-semibold text-sm whitespace-nowrap transition-all duration-200 cursor-pointer min-w-[200px] ${
                     selectedPipeline === 'call'
-                      ? 'bg-green-600 text-white shadow-md'
-                      : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                      ? 'bg-gradient-to-r from-green-600 to-green-700 text-white shadow-lg shadow-green-500/30 hover:shadow-xl hover:shadow-green-500/40'
+                      : 'bg-white text-gray-700 border-2 border-gray-200 hover:border-gray-300 hover:bg-gray-50 shadow-sm'
                   }`}
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                   </svg>
                   <span>Cold Calling Pipeline</span>
@@ -2409,6 +2703,43 @@ export default function ProjectDetail() {
                 <div className="text-xs text-gray-600 mt-1">Win</div>
               </button>
               </div>
+
+              {/* Follow-up summary chips for LinkedIn */}
+              <div className="mt-4 flex flex-wrap items-center gap-3 justify-start">
+                <button
+                  onClick={() =>
+                    setKpiProspectModal({
+                      isOpen: true,
+                      filter: { channel: 'linkedin', metric: 'todayFollowups' },
+                    })
+                  }
+                  className="px-4 py-2 text-xs font-semibold rounded-lg border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all duration-200 shadow-sm hover:shadow-md"
+                >
+                  Today&apos;s Follow-ups ({linkedinEmailFollowups.linkedin.today})
+                </button>
+                <button
+                  onClick={() =>
+                    setKpiProspectModal({
+                      isOpen: true,
+                      filter: { channel: 'linkedin', metric: 'tomorrowFollowups' },
+                    })
+                  }
+                  className="px-4 py-2 text-xs font-semibold rounded-lg border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all duration-200 shadow-sm hover:shadow-md"
+                >
+                  Tomorrow&apos;s Follow-ups ({linkedinEmailFollowups.linkedin.tomorrow})
+                </button>
+                <button
+                  onClick={() =>
+                    setKpiProspectModal({
+                      isOpen: true,
+                      filter: { channel: 'linkedin', metric: 'missedFollowups' },
+                    })
+                  }
+                  className="px-4 py-2 text-xs font-semibold rounded-lg border border-rose-200 text-rose-700 bg-rose-50 hover:bg-rose-100 transition-all duration-200 shadow-sm hover:shadow-md"
+                >
+                  Missed Follow-ups ({linkedinEmailFollowups.linkedin.missed})
+                </button>
+              </div>
             </div>
           )}
 
@@ -2605,6 +2936,64 @@ export default function ProjectDetail() {
                   <div className="text-2xl font-bold text-gray-900">{kpiMetrics.call?.won || 0}</div>
                   <div className="text-xs text-gray-600 mt-1">WON</div>
                 </button>
+
+                {/* Not Interested */}
+                <button
+                  onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'call', metric: 'notInterested' } })}
+                  className={`bg-gradient-to-br from-red-50 to-pink-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                    filterKpi?.channel === 'call' && filterKpi?.metric === 'notInterested' 
+                      ? 'border-red-400 ring-2 ring-red-200' 
+                      : 'border-red-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="w-7 h-7 rounded-lg bg-white/80 border border-red-100 flex items-center justify-center">
+                      <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-red-700 bg-white/70 border border-red-100 px-2 py-1 rounded-full">Not Interested</span>
+                  </div>
+                  <div className="text-2xl font-bold text-gray-900">{kpiMetrics.call?.notInterested || 0}</div>
+                  <div className="text-xs text-gray-600 mt-1">Not Interested</div>
+                </button>
+              </div>
+
+              {/* Follow-up summary chips for Cold Calling */}
+              <div className="mt-4 flex flex-wrap items-center gap-3 justify-start">
+                <button
+                  onClick={() =>
+                    setKpiProspectModal({
+                      isOpen: true,
+                      filter: { channel: 'call', metric: 'todayFollowups' },
+                    })
+                  }
+                  className="px-4 py-2 text-xs font-semibold rounded-lg border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all duration-200 shadow-sm hover:shadow-md"
+                >
+                  Today&apos;s Follow-ups ({kpiMetrics.call?.todayFollowups || 0})
+                </button>
+                <button
+                  onClick={() =>
+                    setKpiProspectModal({
+                      isOpen: true,
+                      filter: { channel: 'call', metric: 'tomorrowFollowups' },
+                    })
+                  }
+                  className="px-4 py-2 text-xs font-semibold rounded-lg border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all duration-200 shadow-sm hover:shadow-md"
+                >
+                  Tomorrow&apos;s Follow-ups ({kpiMetrics.call?.tomorrowFollowups || 0})
+                </button>
+                <button
+                  onClick={() =>
+                    setKpiProspectModal({
+                      isOpen: true,
+                      filter: { channel: 'call', metric: 'missedFollowups' },
+                    })
+                  }
+                  className="px-4 py-2 text-xs font-semibold rounded-lg border border-rose-200 text-rose-700 bg-rose-50 hover:bg-rose-100 transition-all duration-200 shadow-sm hover:shadow-md"
+                >
+                  Missed Follow-ups ({kpiMetrics.call?.missedFollowups || 0})
+                </button>
               </div>
             </div>
           )}
@@ -2613,7 +3002,8 @@ export default function ProjectDetail() {
           {/* Email KPIs - Only show if coldEmail channel is enabled */}
           {enabledActivityTypes.includes('email') && selectedPipeline === 'email' && (
             <div>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-9 gap-2">
+              {/* Emails Sent */}
               <button
                 onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'emailsSent' } })}
                 className={`bg-gradient-to-br from-blue-50 to-indigo-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
@@ -2628,15 +3018,17 @@ export default function ProjectDetail() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                     </svg>
                   </div>
-                  <span className="text-xs font-semibold text-blue-700 bg-white/70 border border-blue-100 px-2 py-1 rounded-full">Emails</span>
+                  <span className="text-xs font-semibold text-blue-700 bg-white/70 border border-blue-100 px-2 py-1 rounded-full">Sent</span>
                 </div>
-                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.email.emailsSent}</div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.email?.emailsSent || 0}</div>
                 <div className="text-xs text-gray-600 mt-1">Emails Sent</div>
               </button>
+              
+              {/* Accepted */}
               <button
-                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'emailOpenRate' } })}
+                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'accepted' } })}
                 className={`bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
-                  filterKpi?.channel === 'email' && filterKpi?.metric === 'emailOpenRate' 
+                  filterKpi?.channel === 'email' && filterKpi?.metric === 'accepted' 
                     ? 'border-green-400 ring-2 ring-green-200' 
                     : 'border-green-100'
                 }`}
@@ -2644,19 +3036,20 @@ export default function ProjectDetail() {
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="w-7 h-7 rounded-lg bg-white/80 border border-green-100 flex items-center justify-center">
                     <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   </div>
-                  <span className="text-xs font-semibold text-green-700 bg-white/70 border border-green-100 px-2 py-1 rounded-full">Rate</span>
+                  <span className="text-xs font-semibold text-green-700 bg-white/70 border border-green-100 px-2 py-1 rounded-full">Accepted</span>
                 </div>
-                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.email.emailOpenRate}%</div>
-                <div className="text-xs text-gray-600 mt-1">{kpiMetrics.email.emailOpens} opened</div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.email?.accepted || 0}</div>
+                <div className="text-xs text-gray-600 mt-1">Accepted</div>
               </button>
+              
+              {/* Followups */}
               <button
-                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'emailReplyRate' } })}
+                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'followups' } })}
                 className={`bg-gradient-to-br from-purple-50 to-indigo-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
-                  filterKpi?.channel === 'email' && filterKpi?.metric === 'emailReplyRate' 
+                  filterKpi?.channel === 'email' && filterKpi?.metric === 'followups' 
                     ? 'border-purple-400 ring-2 ring-purple-200' 
                     : 'border-purple-100'
                 }`}
@@ -2664,33 +3057,177 @@ export default function ProjectDetail() {
                 <div className="flex items-center justify-between mb-1.5">
                   <div className="w-7 h-7 rounded-lg bg-white/80 border border-purple-100 flex items-center justify-center">
                     <svg className="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
                   </div>
-                  <span className="text-xs font-semibold text-purple-700 bg-white/70 border border-purple-100 px-2 py-1 rounded-full">Rate</span>
+                  <span className="text-xs font-semibold text-purple-700 bg-white/70 border border-purple-100 px-2 py-1 rounded-full">Followups</span>
                 </div>
-                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.email.emailReplyRate}%</div>
-                <div className="text-xs text-gray-600 mt-1">{kpiMetrics.email.emailReplies} replies</div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.email?.followups || 0}</div>
+                <div className="text-xs text-gray-600 mt-1">Follow-ups</div>
               </button>
+              
+              {/* CIP */}
               <button
-                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'meetingsBooked' } })}
-                className={`bg-gradient-to-br from-yellow-50 to-orange-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
-                  filterKpi?.channel === 'email' && filterKpi?.metric === 'meetingsBooked' 
-                    ? 'border-yellow-400 ring-2 ring-yellow-200' 
-                    : 'border-yellow-100'
+                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'cip' } })}
+                className={`bg-gradient-to-br from-amber-50 to-yellow-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                  filterKpi?.channel === 'email' && filterKpi?.metric === 'cip' 
+                    ? 'border-amber-400 ring-2 ring-amber-200' 
+                    : 'border-amber-100'
                 }`}
               >
                 <div className="flex items-center justify-between mb-1.5">
-                  <div className="w-7 h-7 rounded-lg bg-white/80 border border-yellow-100 flex items-center justify-center">
-                    <svg className="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <div className="w-7 h-7 rounded-lg bg-white/80 border border-amber-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-amber-700 bg-white/70 border border-amber-100 px-2 py-1 rounded-full">CIP</span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.email?.cip || 0}</div>
+                <div className="text-xs text-gray-600 mt-1">CIP</div>
+              </button>
+              
+              {/* Meeting Proposed */}
+              <button
+                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'meetingProposed' } })}
+                className={`bg-gradient-to-br from-teal-50 to-cyan-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                  filterKpi?.channel === 'email' && filterKpi?.metric === 'meetingProposed' 
+                    ? 'border-teal-400 ring-2 ring-teal-200' 
+                    : 'border-teal-100'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="w-7 h-7 rounded-lg bg-white/80 border border-teal-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-teal-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
                   </div>
-                  <span className="text-xs font-semibold text-orange-700 bg-white/70 border border-orange-100 px-2 py-1 rounded-full">Meetings</span>
+                  <span className="text-xs font-semibold text-teal-700 bg-white/70 border border-teal-100 px-2 py-1 rounded-full">Proposed</span>
                 </div>
-                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.email.meetingsBooked}</div>
-                <div className="text-xs text-gray-600 mt-1">Meetings Booked</div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.email?.meetingProposed || 0}</div>
+                <div className="text-xs text-gray-600 mt-1">Meeting Proposed</div>
               </button>
+              
+              {/* Scheduled */}
+              <button
+                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'scheduled' } })}
+                className={`bg-gradient-to-br from-indigo-50 to-blue-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                  filterKpi?.channel === 'email' && filterKpi?.metric === 'scheduled' 
+                    ? 'border-indigo-400 ring-2 ring-indigo-200' 
+                    : 'border-indigo-100'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="w-7 h-7 rounded-lg bg-white/80 border border-indigo-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-indigo-700 bg-white/70 border border-indigo-100 px-2 py-1 rounded-full">Scheduled</span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.email?.scheduled || 0}</div>
+                <div className="text-xs text-gray-600 mt-1">Scheduled</div>
+              </button>
+              
+              {/* Completed */}
+              <button
+                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'completed' } })}
+                className={`bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                  filterKpi?.channel === 'email' && filterKpi?.metric === 'completed' 
+                    ? 'border-green-400 ring-2 ring-green-200' 
+                    : 'border-green-100'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="w-7 h-7 rounded-lg bg-white/80 border border-green-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-green-700 bg-white/70 border border-green-100 px-2 py-1 rounded-full">Completed</span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.email?.completed || 0}</div>
+                <div className="text-xs text-gray-600 mt-1">Completed</div>
+              </button>
+              
+              {/* SQL */}
+              <button
+                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'sql' } })}
+                className={`bg-gradient-to-br from-pink-50 to-rose-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                  filterKpi?.channel === 'email' && filterKpi?.metric === 'sql' 
+                    ? 'border-pink-400 ring-2 ring-pink-200' 
+                    : 'border-pink-100'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="w-7 h-7 rounded-lg bg-white/80 border border-pink-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-pink-700 bg-white/70 border border-pink-100 px-2 py-1 rounded-full">SQL</span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.email?.sql || 0}</div>
+                <div className="text-xs text-gray-600 mt-1">SQL</div>
+              </button>
+              
+              {/* Email Bounce */}
+              <button
+                onClick={() => setKpiProspectModal({ isOpen: true, filter: { channel: 'email', metric: 'emailBounce' } })}
+                className={`bg-gradient-to-br from-red-50 to-rose-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                  filterKpi?.channel === 'email' && filterKpi?.metric === 'emailBounce' 
+                    ? 'border-red-400 ring-2 ring-red-200' 
+                    : 'border-red-100'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="w-7 h-7 rounded-lg bg-white/80 border border-red-100 flex items-center justify-center">
+                    <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </div>
+                  <span className="text-xs font-semibold text-red-700 bg-white/70 border border-red-100 px-2 py-1 rounded-full">Bounce</span>
+                </div>
+                <div className="text-2xl font-bold text-gray-900">{kpiMetrics.email?.emailBounce || 0}</div>
+                <div className="text-xs text-gray-600 mt-1">Email Bounce</div>
+              </button>
+              </div>
+
+              {/* Follow-up summary chips for Email */}
+              <div className="mt-4 flex flex-wrap items-center gap-3 justify-start">
+                <button
+                  onClick={() =>
+                    setKpiProspectModal({
+                      isOpen: true,
+                      filter: { channel: 'email', metric: 'todayFollowups' },
+                    })
+                  }
+                  className="px-4 py-2 text-xs font-semibold rounded-lg border border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all duration-200 shadow-sm hover:shadow-md"
+                >
+                  Today&apos;s Follow-ups ({linkedinEmailFollowups.email.today})
+                </button>
+                <button
+                  onClick={() =>
+                    setKpiProspectModal({
+                      isOpen: true,
+                      filter: { channel: 'email', metric: 'tomorrowFollowups' },
+                    })
+                  }
+                  className="px-4 py-2 text-xs font-semibold rounded-lg border border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 transition-all duration-200 shadow-sm hover:shadow-md"
+                >
+                  Tomorrow&apos;s Follow-ups ({linkedinEmailFollowups.email.tomorrow})
+                </button>
+                <button
+                  onClick={() =>
+                    setKpiProspectModal({
+                      isOpen: true,
+                      filter: { channel: 'email', metric: 'missedFollowups' },
+                    })
+                  }
+                  className="px-4 py-2 text-xs font-semibold rounded-lg border border-rose-200 text-rose-700 bg-rose-50 hover:bg-rose-100 transition-all duration-200 shadow-sm hover:shadow-md"
+                >
+                  Missed Follow-ups ({linkedinEmailFollowups.email.missed})
+                </button>
               </div>
             </div>
           )}
@@ -3309,47 +3846,47 @@ export default function ProjectDetail() {
             <div className="flex items-center gap-3 flex-wrap">
               {/* Log Call Button - Only show if coldCalling channel is enabled */}
               {enabledActivityTypes.includes('call') && (
-                <button
-                  onClick={() => setBulkActivityModal({ isOpen: true, type: 'call' })}
-                  className="group relative inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 text-white text-sm font-bold rounded-xl hover:from-green-600 hover:via-green-700 hover:to-emerald-700 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95 overflow-hidden"
-                >
-                  {/* Shine effect on hover */}
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 group-hover:opacity-20 group-hover:animate-shimmer"></div>
-                  <svg className="w-5 h-5 relative z-10 transform group-hover:rotate-12 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                  </svg>
-                  <span className="relative z-10">Log Call</span>
-                </button>
+              <button
+                onClick={() => setBulkActivityModal({ isOpen: true, type: 'call' })}
+                className="group relative inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-green-500 via-green-600 to-emerald-600 text-white text-sm font-bold rounded-xl hover:from-green-600 hover:via-green-700 hover:to-emerald-700 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95 overflow-hidden"
+              >
+                {/* Shine effect on hover */}
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 group-hover:opacity-20 group-hover:animate-shimmer"></div>
+                <svg className="w-5 h-5 relative z-10 transform group-hover:rotate-12 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                </svg>
+                <span className="relative z-10">Log Call</span>
+              </button>
               )}
 
               {/* Log Email Button - Only show if coldEmail channel is enabled */}
               {enabledActivityTypes.includes('email') && (
-                <button
-                  onClick={() => setBulkActivityModal({ isOpen: true, type: 'email' })}
-                  className="group relative inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 via-blue-600 to-cyan-600 text-white text-sm font-bold rounded-xl hover:from-blue-600 hover:via-blue-700 hover:to-cyan-700 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95 overflow-hidden"
-                >
-                  {/* Shine effect on hover */}
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 group-hover:opacity-20 group-hover:animate-shimmer"></div>
-                  <svg className="w-5 h-5 relative z-10 transform group-hover:scale-110 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                  <span className="relative z-10">Log Email</span>
-                </button>
+              <button
+                onClick={() => setBulkActivityModal({ isOpen: true, type: 'email' })}
+                className="group relative inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 via-blue-600 to-cyan-600 text-white text-sm font-bold rounded-xl hover:from-blue-600 hover:via-blue-700 hover:to-cyan-700 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95 overflow-hidden"
+              >
+                {/* Shine effect on hover */}
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 group-hover:opacity-20 group-hover:animate-shimmer"></div>
+                <svg className="w-5 h-5 relative z-10 transform group-hover:scale-110 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                </svg>
+                <span className="relative z-10">Log Email</span>
+              </button>
               )}
 
               {/* Log LinkedIn Button - Only show if linkedInOutreach channel is enabled */}
               {enabledActivityTypes.includes('linkedin') && (
-                <button
-                  onClick={() => setBulkActivityModal({ isOpen: true, type: 'linkedin' })}
-                  className="group relative inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-700 text-white text-sm font-bold rounded-xl hover:from-blue-800 hover:via-indigo-800 hover:to-purple-800 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95 overflow-hidden"
-                >
-                  {/* Shine effect on hover */}
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 group-hover:opacity-20 group-hover:animate-shimmer"></div>
-                  <svg className="w-5 h-5 relative z-10 transform group-hover:scale-110 transition-transform duration-300" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
-                  </svg>
-                  <span className="relative z-10">Log LinkedIn</span>
-                </button>
+              <button
+                onClick={() => setBulkActivityModal({ isOpen: true, type: 'linkedin' })}
+                className="group relative inline-flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-700 text-white text-sm font-bold rounded-xl hover:from-blue-800 hover:via-indigo-800 hover:to-purple-800 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:scale-105 active:scale-95 overflow-hidden"
+              >
+                {/* Shine effect on hover */}
+                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white to-transparent opacity-0 group-hover:opacity-20 group-hover:animate-shimmer"></div>
+                <svg className="w-5 h-5 relative z-10 transform group-hover:scale-110 transition-transform duration-300" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                </svg>
+                <span className="relative z-10">Log LinkedIn</span>
+              </button>
               )}
 
               {/* Remove Button */}
@@ -3758,6 +4295,8 @@ export default function ProjectDetail() {
                       if (filterImportDateTo) currentParams.set('filterImportDateTo', filterImportDateTo);
                       if (filterNoActivity) currentParams.set('filterNoActivity', 'true');
                       if (filterMatchType) currentParams.set('filterMatchType', filterMatchType);
+                      // Always include current page in return URL (even if page 1)
+                      currentParams.set('page', contactsPage.toString());
                       
                       const returnUrl = `/projects/${id}${currentParams.toString() ? '?' + currentParams.toString() : ''}`;
                       // Navigate to contact activity history page with preserved filters
@@ -3957,48 +4496,48 @@ export default function ProjectDetail() {
                           <div className="flex items-center gap-1.5">
                             {/* Log Call Button - Only show if coldCalling channel is enabled */}
                             {enabledActivityTypes.includes('call') && (
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleOpenActivityModal('call', contact);
-                                }}
-                                className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors" 
-                                title="Log Call"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                                </svg>
-                              </button>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenActivityModal('call', contact);
+                              }}
+                              className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors" 
+                              title="Log Call"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                              </svg>
+                            </button>
                             )}
                             {/* Log Email Button - Only show if coldEmail channel is enabled */}
                             {enabledActivityTypes.includes('email') && (
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleOpenActivityModal('email', contact);
-                                }}
-                                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" 
-                                title="Log Email"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                                </svg>
-                              </button>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenActivityModal('email', contact);
+                              }}
+                              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors" 
+                              title="Log Email"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                              </svg>
+                            </button>
                             )}
                             {/* Log LinkedIn Button - Only show if linkedInOutreach channel is enabled */}
                             {enabledActivityTypes.includes('linkedin') && (
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleOpenActivityModal('linkedin', contact);
-                                }}
-                                className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" 
-                                title="Log LinkedIn"
-                              >
-                                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                                  <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
-                                </svg>
-                              </button>
+                            <button 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenActivityModal('linkedin', contact);
+                              }}
+                              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors" 
+                              title="Log LinkedIn"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                                <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z"/>
+                              </svg>
+                            </button>
                             )}
                           </div>
                         </td>
@@ -4096,7 +4635,7 @@ export default function ProjectDetail() {
                 <p className="text-sm text-gray-600 mt-1">
                   {kpiProspectModal.filter?.metric === 'connectionSent' && 'Connection Sent'}
                   {kpiProspectModal.filter?.metric === 'accepted' && 'Accepted'}
-                  {kpiProspectModal.filter?.metric === 'followUps' && 'Follow-ups'}
+                  {(kpiProspectModal.filter?.metric === 'followUps' || kpiProspectModal.filter?.metric === 'followups') && 'Follow-ups'}
                   {kpiProspectModal.filter?.metric === 'cip' && 'CIP'}
                   {kpiProspectModal.filter?.metric === 'meetingProposed' && 'Meeting Proposed'}
                   {kpiProspectModal.filter?.metric === 'scheduled' && 'Scheduled'}
@@ -4122,6 +4661,15 @@ export default function ProjectDetail() {
                   {kpiProspectModal.filter?.metric === 'callAnswerRate' && 'Call Answer Rate'}
                   {kpiProspectModal.filter?.metric === 'callInterestedRate' && 'Call Interested Rate'}
                   {kpiProspectModal.filter?.metric === 'emailsSent' && 'Emails Sent'}
+                  {kpiProspectModal.filter?.metric === 'accepted' && 'Accepted'}
+                  {kpiProspectModal.filter?.metric === 'followups' && 'Follow-ups'}
+                  {kpiProspectModal.filter?.metric === 'cip' && 'CIP'}
+                  {kpiProspectModal.filter?.metric === 'meetingProposed' && 'Meeting Proposed'}
+                  {kpiProspectModal.filter?.metric === 'scheduled' && 'Scheduled'}
+                  {kpiProspectModal.filter?.metric === 'completed' && 'Completed'}
+                  {kpiProspectModal.filter?.metric === 'sql' && 'SQL'}
+                  {kpiProspectModal.filter?.metric === 'emailBounce' && 'Email Bounce'}
+                  {/* Legacy metrics */}
                   {kpiProspectModal.filter?.metric === 'emailOpenRate' && 'Email Open Rate'}
                   {kpiProspectModal.filter?.metric === 'emailReplyRate' && 'Email Reply Rate'}
                   {kpiProspectModal.filter?.metric === 'meetingsBooked' && 'Meetings Booked'}
@@ -4208,8 +4756,11 @@ export default function ProjectDetail() {
                             
                             // Only navigate if contact is from databank and has a valid ID
                             if (isFromDatabank && contactIdStr) {
-                              // Build return URL to go back to the project detail page
-                              const returnUrl = `/projects/${id}`;
+                              // Build return URL to go back to the project detail page with current page
+                              const currentParams = new URLSearchParams();
+                              // Always include current page in return URL (even if page 1)
+                              currentParams.set('page', contactsPage.toString());
+                              const returnUrl = `/projects/${id}${currentParams.toString() ? '?' + currentParams.toString() : ''}`;
                               // Navigate to contact activity history page
                               navigate(`/contacts/${contactIdStr}/activities?projectId=${id}&returnTo=${encodeURIComponent(returnUrl)}`);
                             }

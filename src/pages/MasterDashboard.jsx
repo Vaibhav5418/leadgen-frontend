@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import API from '../api/axios';
 import {
   Chart as ChartJS,
@@ -39,14 +39,15 @@ export default function MasterDashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState('executive');
+  const isMountedRef = useRef(true);
 
   useEffect(() => {
-    let isMounted = true;
+    isMountedRef.current = true;
 
     const load = async () => {
       const now = Date.now();
       if (cachedMasterDashboard && (now - cachedMasterDashboardTimestamp) < MASTER_DASHBOARD_CACHE_TTL_MS) {
-        if (isMounted) {
+        if (isMountedRef.current) {
           setData(cachedMasterDashboard);
           setLoading(false);
         }
@@ -58,15 +59,16 @@ export default function MasterDashboard() {
     load();
 
     return () => {
-      isMounted = false;
+      isMountedRef.current = false;
     };
   }, []);
 
   const fetchData = async () => {
+    if (!isMountedRef.current) return;
     try {
       setLoading(true);
       const response = await API.get('/master-dashboard');
-      if (response.data.success) {
+      if (response.data.success && isMountedRef.current) {
         const dashboardData = response.data.data;
         setData(dashboardData);
         cachedMasterDashboard = dashboardData;
@@ -75,7 +77,7 @@ export default function MasterDashboard() {
     } catch (error) {
       console.error('Error fetching master dashboard data:', error);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) setLoading(false);
     }
   };
 

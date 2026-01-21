@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import API from '../api/axios';
+import * as XLSX from 'xlsx-js-style';
 
 export default function MonthlyReport() {
   const { id } = useParams();
@@ -132,7 +133,8 @@ export default function MonthlyReport() {
       activities.forEach(activity => {
         const date = activity.callDate ? new Date(activity.callDate) : 
                      activity.emailDate ? new Date(activity.emailDate) : 
-                     new Date(activity.createdAt);
+                     activity.linkedinDate ? new Date(activity.linkedinDate) :
+                     (activity.createdAt ? new Date(activity.createdAt) : null);
         if (date && !isNaN(date.getTime())) {
           periodSet.add(getMonthKey(date));
         }
@@ -384,58 +386,87 @@ export default function MonthlyReport() {
 
       // Calculate LinkedIn metrics
       if (enabledChannels.linkedin && linkedInActivities.length > 0) {
-        const contactActivities = {};
+        // Count unique contacts per period for each metric
+        const periodMetrics = {};
+        allPeriods.forEach(period => {
+          periodMetrics[period] = {
+            connectionRequestSent: new Set(),
+            connectionAccepted: new Set(),
+            existingConnection: new Set(),
+            conversationsInProgress: new Set(),
+            meetingProposed: new Set(),
+            meetingScheduled: new Set(),
+            meetingCompleted: new Set(),
+            firstMessageSent: new Set(),
+            followupMessagesSent: new Set()
+          };
+        });
+
+        // Process each LinkedIn activity once and classify by template + status
         linkedInActivities.forEach(activity => {
-          if (!activity.createdAt) return;
+          // Use activity-specific date (linkedinDate) if available, otherwise use createdAt
+          const activityDate = activity.linkedinDate ? new Date(activity.linkedinDate) : 
+                              (activity.createdAt ? new Date(activity.createdAt) : null);
+          if (!activityDate) return;
+          
           const contactId = activity.contactId?.toString() || 'unknown';
-          if (!contactActivities[contactId]) {
-            contactActivities[contactId] = [];
-          }
-          contactActivities[contactId].push(activity);
-        });
+          const period = viewMode === 'day'
+            ? getDayKey(activityDate)
+            : getMonthKey(activityDate);
+          if (!periodMetrics[period]) return;
 
-        linkedInActivities.forEach(activity => {
-          if (!activity.createdAt) return;
-          const period = viewMode === 'day' ? getDayKey(new Date(activity.createdAt)) : getMonthKey(new Date(activity.createdAt));
-          if (!data[period]) return;
-
-          if (activity.lnRequestSent === 'Yes') {
-            data[period].connectionRequestSent++;
+          // Connection Request Sent - count unique contacts per period
+          // Include activities with lnRequestSent === 'Yes' OR introduction-message template
+          // Check template field (handle empty string, null, undefined)
+          const template = activity.template?.trim() || '';
+          if (activity.lnRequestSent === 'Yes' || template === 'introduction-message') {
+            periodMetrics[period].connectionRequestSent.add(contactId);
           }
+
+          // Existing Connection - count unique contacts per period
           if (activity.lnRequestSent === 'Existing Connect') {
-            data[period].existingConnection++;
+            periodMetrics[period].existingConnection.add(contactId);
           }
+
+          // Connection Accepted - count unique contacts per period
           if (activity.connected === 'Yes') {
-            data[period].connectionAccepted++;
+            periodMetrics[period].connectionAccepted.add(contactId);
           }
+
+          // Status-based metrics - count unique contacts per period
           if (activity.status === 'CIP') {
-            data[period].conversationsInProgress++;
+            periodMetrics[period].conversationsInProgress.add(contactId);
           } else if (activity.status === 'Meeting Proposed') {
-            data[period].meetingProposed++;
+            periodMetrics[period].meetingProposed.add(contactId);
           } else if (activity.status === 'Meeting Scheduled') {
-            data[period].meetingScheduled++;
+            periodMetrics[period].meetingScheduled.add(contactId);
           } else if (activity.status === 'Meeting Completed') {
-            data[period].meetingCompleted++;
+            periodMetrics[period].meetingCompleted.add(contactId);
+          }
+
+          // Template-based metrics:
+          // - Introduction Message template → First Message Sent
+          // - Follow-up Message template   → Follow-up Messages Sent
+          if (template === 'introduction-message') {
+            periodMetrics[period].firstMessageSent.add(contactId);
+          } else if (template === 'follow-up-message') {
+            periodMetrics[period].followupMessagesSent.add(contactId);
           }
         });
 
-        // Calculate First Message Sent and Followup Messages
-        Object.keys(contactActivities).forEach(contactId => {
-          const contactActs = contactActivities[contactId].sort((a, b) => 
-            new Date(a.createdAt) - new Date(b.createdAt)
-          );
-
-          contactActs.forEach((activity, index) => {
-            if (!activity.createdAt || !activity.conversationNotes) return;
-            const period = viewMode === 'day' ? getDayKey(new Date(activity.createdAt)) : getMonthKey(new Date(activity.createdAt));
-            if (!data[period]) return;
-
-            if (index === 0) {
-              data[period].firstMessageSent++;
-            } else {
-              data[period].followupMessagesSent++;
-            }
-          });
+        // Convert Sets to counts in data object
+        allPeriods.forEach(period => {
+          if (data[period] && periodMetrics[period]) {
+            data[period].connectionRequestSent = periodMetrics[period].connectionRequestSent.size;
+            data[period].connectionAccepted = periodMetrics[period].connectionAccepted.size;
+            data[period].existingConnection = periodMetrics[period].existingConnection.size;
+            data[period].conversationsInProgress = periodMetrics[period].conversationsInProgress.size;
+            data[period].meetingProposed = periodMetrics[period].meetingProposed.size;
+            data[period].meetingScheduled = periodMetrics[period].meetingScheduled.size;
+            data[period].meetingCompleted = periodMetrics[period].meetingCompleted.size;
+            data[period].firstMessageSent = periodMetrics[period].firstMessageSent.size;
+            data[period].followupMessagesSent = periodMetrics[period].followupMessagesSent.size;
+          }
         });
       }
 
@@ -599,7 +630,8 @@ export default function MonthlyReport() {
 
       const activityDate = a.callDate ? new Date(a.callDate) : 
                           a.emailDate ? new Date(a.emailDate) : 
-                          new Date(a.createdAt);
+                          a.linkedinDate ? new Date(a.linkedinDate) :
+                          (a.createdAt ? new Date(a.createdAt) : null);
       if (!activityDate || isNaN(activityDate.getTime())) return;
 
       const activityPeriod = viewMode === 'day' ? getDayKey(activityDate) : getMonthKey(activityDate);
@@ -645,6 +677,31 @@ export default function MonthlyReport() {
     
     const contactsToFilter = allContactsForModal.length > 0 ? allContactsForModal : contacts;
     
+    // Get all LinkedIn activities for first/followup message checks
+    const allLinkedInActivities = activities.filter(a => a.type === 'linkedin');
+    
+    // Special case: show all prospects for a given period across all channels
+    if (channel === 'all' && metric === 'allForPeriod') {
+      return contactsToFilter.filter(contact => {
+        const contactIdStr = (contact._id?.toString ? contact._id.toString() : contact._id) || '';
+        
+        // Check if contact has any activity in this period (any channel)
+        const periodsForContact = activitiesIndex.contactPeriods.get(contactIdStr);
+        const hasActivityInPeriod = periodsForContact ? periodsForContact.has(period) : false;
+        
+        // Also include contacts whose data was allocated in this period
+        let allocatedInPeriod = false;
+        if (contact.createdAt) {
+          const contactPeriod = viewMode === 'day' 
+            ? getDayKey(new Date(contact.createdAt)) 
+            : getMonthKey(new Date(contact.createdAt));
+          allocatedInPeriod = contactPeriod === period;
+        }
+        
+        return hasActivityInPeriod || allocatedInPeriod;
+      });
+    }
+    
     // Get activities for this period and channel from index
     const periodActivities = activitiesIndex.byPeriodAndType.get(period)?.get(channel) || [];
     
@@ -656,7 +713,7 @@ export default function MonthlyReport() {
         contactIdsWithActivities.add(contactIdStr);
       }
     });
-
+    
     // Filter contacts
     return contactsToFilter.filter(contact => {
       const contactIdStr = (contact._id?.toString ? contact._id.toString() : contact._id) || '';
@@ -671,7 +728,7 @@ export default function MonthlyReport() {
         if (channel === 'email' && a.type !== 'email') return false;
         return true;
       });
-
+      
       // Check if activity matches the metric
       if (channel === 'call') {
         switch (metric) {
@@ -708,6 +765,15 @@ export default function MonthlyReport() {
             return false;
         }
       } else if (channel === 'linkedin') {
+        // Filter activities to only those in this period
+        const periodActivities = channelActivities.filter(a => {
+          if (!a.createdAt) return false;
+          const activityPeriod = viewMode === 'day' ? getDayKey(new Date(a.createdAt)) : getMonthKey(new Date(a.createdAt));
+          return activityPeriod === period;
+        });
+
+        if (periodActivities.length === 0) return false;
+
         switch (metric) {
           case 'dataResearch':
             if (contact.createdAt) {
@@ -716,27 +782,35 @@ export default function MonthlyReport() {
             }
             return false;
           case 'connectionRequestSent':
-            return channelActivities.some(a => a.lnRequestSent === 'Yes');
+            // Include activities with lnRequestSent === 'Yes' OR introduction-message template
+            return periodActivities.some(a => {
+              const template = a.template?.trim() || '';
+              return a.lnRequestSent === 'Yes' || template === 'introduction-message';
+            });
           case 'connectionAccepted':
-            return channelActivities.some(a => a.connected === 'Yes');
+            return periodActivities.some(a => a.connected === 'Yes');
           case 'firstMessageSent':
-            // First message is the first activity with conversation notes
-            const sortedActivities = channelActivities.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-            return sortedActivities.length > 0 && sortedActivities[0].conversationNotes;
+            // Count contacts that had an Introduction Message template in this period
+            return periodActivities.some(a => {
+              const template = a.template?.trim() || '';
+              return template === 'introduction-message';
+            });
           case 'followupMessagesSent':
-            // Followup messages are subsequent activities with conversation notes
-            const sorted = channelActivities.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-            return sorted.length > 1 && sorted.slice(1).some(a => a.conversationNotes);
+            // Count contacts that had a Follow-up Message template in this period
+            return periodActivities.some(a => {
+              const template = a.template?.trim() || '';
+              return template === 'follow-up-message';
+            });
           case 'existingConnection':
-            return channelActivities.some(a => a.lnRequestSent === 'Existing Connect');
+            return periodActivities.some(a => a.lnRequestSent === 'Existing Connect');
           case 'conversationsInProgress':
-            return channelActivities.some(a => a.status === 'CIP');
+            return periodActivities.some(a => a.status === 'CIP');
           case 'meetingProposed':
-            return channelActivities.some(a => a.status === 'Meeting Proposed');
+            return periodActivities.some(a => a.status === 'Meeting Proposed');
           case 'meetingScheduled':
-            return channelActivities.some(a => a.status === 'Meeting Scheduled');
+            return periodActivities.some(a => a.status === 'Meeting Scheduled');
           case 'meetingCompleted':
-            return channelActivities.some(a => a.status === 'Meeting Completed');
+            return periodActivities.some(a => a.status === 'Meeting Completed');
           default:
             return false;
         }
@@ -763,7 +837,7 @@ export default function MonthlyReport() {
       
       return false;
     });
-  }, [allContactsForModal, contacts, activitiesIndex, viewMode, getDayKey, getMonthKey]);
+  }, [allContactsForModal, contacts, activitiesIndex, activities, viewMode, getDayKey, getMonthKey]);
 
   // Fetch all contacts when modal opens - use existing contacts if available
   useEffect(() => {
@@ -838,6 +912,417 @@ export default function MonthlyReport() {
       section: section
     });
   }, [reportData, getChannelFromSection]);
+
+  // Handle date header click - show all prospects for that period
+  const handleDateHeaderClick = useCallback((period) => {
+    // If there is no data for this period, do nothing
+    const periodData = reportData[period];
+    if (!periodData || Object.values(periodData).every(value => !value || value === 0)) {
+      return;
+    }
+    
+    setProspectModal({
+      isOpen: true,
+      metric: 'allForPeriod',
+      period,
+      channel: 'all',
+      section: 'All Channels'
+    });
+  }, [reportData]);
+
+  // Export to Excel with enhanced formatting
+  const exportToExcel = useCallback(() => {
+    if (allPeriods.length === 0 || !reportData) {
+      alert('No data available to export');
+      return;
+    }
+
+    try {
+      const workbook = XLSX.utils.book_new();
+      const worksheetData = [];
+
+      // Add title row
+      const titleRow = [`Monthly Report - ${project?.companyName || 'Report'}`];
+      for (let i = 0; i < allPeriods.length; i++) {
+        titleRow.push('');
+      }
+      worksheetData.push(titleRow);
+
+      // Add subtitle row with view mode and date
+      const subtitleRow = [`${viewMode === 'day' ? 'Day' : 'Month'} View - Exported on ${new Date().toLocaleDateString()}`];
+      for (let i = 0; i < allPeriods.length; i++) {
+        subtitleRow.push('');
+      }
+      worksheetData.push(subtitleRow);
+
+      // Add empty row for spacing
+      worksheetData.push(Array(allPeriods.length + 1).fill(''));
+
+      // Add header row
+      const headerRow = ['Key Results', ...allPeriods];
+      worksheetData.push(headerRow);
+
+      // Track row positions for styling
+      let currentRowIndex = 0;
+      const rowStyles = [];
+
+      // Style title row
+      rowStyles[currentRowIndex] = {
+        cells: Array(titleRow.length).fill({
+          font: { bold: true, sz: 16, color: { rgb: '1E3A8A' } },
+          fill: { fgColor: { rgb: 'FFFFFF' } }, // White background
+          alignment: { horizontal: 'left', vertical: 'center' }
+        }),
+        merge: { s: { r: currentRowIndex, c: 0 }, e: { r: currentRowIndex, c: allPeriods.length } }
+      };
+      currentRowIndex++;
+
+      // Style subtitle row
+      rowStyles[currentRowIndex] = {
+        cells: Array(subtitleRow.length).fill({
+          font: { sz: 10, color: { rgb: '6B7280' } },
+          fill: { fgColor: { rgb: 'FFFFFF' } }, // White background
+          alignment: { horizontal: 'left', vertical: 'center' }
+        }),
+        merge: { s: { r: currentRowIndex, c: 0 }, e: { r: currentRowIndex, c: allPeriods.length } }
+      };
+      currentRowIndex++;
+
+      // Empty row (no special styling)
+      currentRowIndex++;
+
+      // Style header row - white background with dark text
+      rowStyles[currentRowIndex] = {
+        cells: Array(headerRow.length).fill({
+          font: { bold: true, color: { rgb: '1F2937' }, sz: 11 }, // Dark gray text
+          fill: { fgColor: { rgb: 'FFFFFF' } }, // White background
+          alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+          border: {
+            top: { style: 'thin', color: { rgb: 'E5E7EB' } }, // Light gray border
+            bottom: { style: 'thin', color: { rgb: 'E5E7EB' } },
+            left: { style: 'thin', color: { rgb: 'E5E7EB' } },
+            right: { style: 'thin', color: { rgb: 'E5E7EB' } }
+          }
+        })
+      };
+      currentRowIndex++;
+
+      // Count enabled channels
+      const enabledChannelsCount = Object.values(enabledChannels).filter(Boolean).length;
+      const sections = Object.keys(groupedMetrics);
+      
+      // If multiple channels, export each section as a separate table
+      if (enabledChannelsCount > 1) {
+        sections.forEach((section, sectionIndex) => {
+          // Add section title row (only for first section or when starting a new section)
+          if (sectionIndex > 0) {
+            // Add empty row for spacing between tables
+            worksheetData.push(Array(allPeriods.length + 1).fill(''));
+            currentRowIndex++;
+          }
+          
+          // Add section title
+          const sectionTitleRow = [section];
+          for (let i = 0; i < allPeriods.length; i++) {
+            sectionTitleRow.push('');
+          }
+          worksheetData.push(sectionTitleRow);
+          
+          // Style section title row
+          rowStyles[currentRowIndex] = {
+            cells: Array(sectionTitleRow.length).fill({
+              font: { bold: true, sz: 14, color: { rgb: '1E3A8A' } },
+              fill: { fgColor: { rgb: 'FFFFFF' } },
+              alignment: { horizontal: 'left', vertical: 'center' }
+            }),
+            merge: { s: { r: currentRowIndex, c: 0 }, e: { r: currentRowIndex, c: allPeriods.length } }
+          };
+          currentRowIndex++;
+          
+          // Add header row for this section
+          const sectionHeaderRow = ['Key Results', ...allPeriods];
+          worksheetData.push(sectionHeaderRow);
+          
+          // Style section header row
+          rowStyles[currentRowIndex] = {
+            cells: Array(sectionHeaderRow.length).fill({
+              font: { bold: true, color: { rgb: '1F2937' }, sz: 11 },
+              fill: { fgColor: { rgb: 'FFFFFF' } },
+              alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+              border: {
+                top: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                bottom: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                left: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                right: { style: 'thin', color: { rgb: 'E5E7EB' } }
+              }
+            })
+          };
+          currentRowIndex++;
+          
+          // Process each month group for this section
+          groupedPeriods.forEach((group, groupIndex) => {
+            // Add month header row (only for day view)
+            if (viewMode === 'day' && group.month) {
+              const monthRow = [group.month];
+              for (let i = 0; i < allPeriods.length; i++) {
+                monthRow.push('');
+              }
+              worksheetData.push(monthRow);
+
+              // Style month header row
+              rowStyles[currentRowIndex] = {
+                cells: Array(monthRow.length).fill({
+                  font: { bold: true, sz: 12, color: { rgb: '1F2937' } },
+                  fill: { fgColor: { rgb: 'FFF9C4' } },
+                  alignment: { horizontal: 'center', vertical: 'center' },
+                  border: {
+                    top: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                    bottom: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                    left: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                    right: { style: 'thin', color: { rgb: 'E5E7EB' } }
+                  }
+                }),
+                merge: { s: { r: currentRowIndex, c: 0 }, e: { r: currentRowIndex, c: allPeriods.length } }
+              };
+              currentRowIndex++;
+            }
+
+            // Add section header and metrics (only show once per month group)
+            if (groupIndex === 0 || (viewMode === 'day' && groupIndex > 0 && groupedPeriods[groupIndex - 1].monthKey !== group.monthKey)) {
+              // Add section header row
+              const sectionRow = [section];
+              for (let i = 0; i < allPeriods.length; i++) {
+                sectionRow.push('');
+              }
+              worksheetData.push(sectionRow);
+
+              // Style section header row
+              rowStyles[currentRowIndex] = {
+                cells: Array(sectionRow.length).fill({
+                  font: { bold: true, sz: 11, color: { rgb: '1F2937' } },
+                  fill: { fgColor: { rgb: 'FFE082' } },
+                  alignment: { horizontal: 'left', vertical: 'center' },
+                  border: {
+                    top: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                    bottom: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                    left: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                    right: { style: 'thin', color: { rgb: 'E5E7EB' } }
+                  }
+                })
+              };
+              currentRowIndex++;
+
+              // Add metric rows for this section
+              groupedMetrics[section].forEach((metric) => {
+                const metricRow = [metric.label];
+                allPeriods.forEach((period) => {
+                  let value = '';
+                  if (metric.isFormula) {
+                    value = `(${reportData[period]?.freshCalls || 0} + ${reportData[period]?.followUps || 0})`;
+                  } else if (metric.key === 'responseRate') {
+                    value = `${reportData[period]?.[metric.key] || 0}%`;
+                  } else {
+                    value = reportData[period]?.[metric.key] || 0;
+                  }
+                  metricRow.push(value);
+                });
+                worksheetData.push(metricRow);
+
+                // Style metric row
+                const bgColor = metric.highlight 
+                  ? (metric.highlightDark ? 'C8E6C9' : 'E8F5E9')
+                  : 'FFFFFF';
+                
+                rowStyles[currentRowIndex] = {
+                  cells: metricRow.map((cell, colIndex) => ({
+                    font: { 
+                      bold: metric.bold || colIndex === 0, 
+                      sz: 10,
+                      color: { rgb: colIndex === 0 ? '1F2937' : '374151' }
+                    },
+                    fill: { fgColor: { rgb: bgColor } },
+                    alignment: { 
+                      horizontal: colIndex === 0 ? 'left' : 'center', 
+                      vertical: 'center' 
+                    },
+                    border: {
+                      top: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                      bottom: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                      left: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                      right: { style: 'thin', color: { rgb: 'E5E7EB' } }
+                    },
+                    numFmt: colIndex > 0 && typeof cell === 'number' ? '0' : undefined
+                  }))
+                };
+                currentRowIndex++;
+              });
+            }
+          });
+        });
+      } else {
+        // Single channel - use original logic
+        groupedPeriods.forEach((group, groupIndex) => {
+          // Add month header row (only for day view)
+          if (viewMode === 'day' && group.month) {
+            const monthRow = [group.month];
+            for (let i = 0; i < allPeriods.length; i++) {
+              monthRow.push('');
+            }
+            worksheetData.push(monthRow);
+
+            // Style month header row (yellow background with light borders)
+            rowStyles[currentRowIndex] = {
+              cells: Array(monthRow.length).fill({
+                font: { bold: true, sz: 12, color: { rgb: '1F2937' } },
+                fill: { fgColor: { rgb: 'FFF9C4' } }, // Yellow background
+                alignment: { horizontal: 'center', vertical: 'center' },
+                border: {
+                  top: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                  bottom: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                  left: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                  right: { style: 'thin', color: { rgb: 'E5E7EB' } }
+                }
+              }),
+              merge: { s: { r: currentRowIndex, c: 0 }, e: { r: currentRowIndex, c: allPeriods.length } }
+            };
+            currentRowIndex++;
+          }
+
+          // Add section headers and metrics (only show once per month group)
+          if (groupIndex === 0 || (viewMode === 'day' && groupIndex > 0 && groupedPeriods[groupIndex - 1].monthKey !== group.monthKey)) {
+            Object.keys(groupedMetrics).forEach((section) => {
+              // Add section header row
+              const sectionRow = [section];
+              for (let i = 0; i < allPeriods.length; i++) {
+                sectionRow.push('');
+              }
+              worksheetData.push(sectionRow);
+
+              // Style section header row (amber background with light borders)
+              rowStyles[currentRowIndex] = {
+                cells: Array(sectionRow.length).fill({
+                  font: { bold: true, sz: 11, color: { rgb: '1F2937' } },
+                  fill: { fgColor: { rgb: 'FFE082' } }, // Amber background
+                  alignment: { horizontal: 'left', vertical: 'center' },
+                  border: {
+                    top: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                    bottom: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                    left: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                    right: { style: 'thin', color: { rgb: 'E5E7EB' } }
+                  }
+                })
+              };
+              currentRowIndex++;
+
+              // Add metric rows
+              groupedMetrics[section].forEach((metric) => {
+                const metricRow = [metric.label];
+                allPeriods.forEach((period) => {
+                  let value = '';
+                  if (metric.isFormula) {
+                    value = `(${reportData[period]?.freshCalls || 0} + ${reportData[period]?.followUps || 0})`;
+                  } else if (metric.key === 'responseRate') {
+                    value = `${reportData[period]?.[metric.key] || 0}%`;
+                  } else {
+                    value = reportData[period]?.[metric.key] || 0;
+                  }
+                  metricRow.push(value);
+                });
+                worksheetData.push(metricRow);
+
+                // Style metric row - white background with subtle borders
+                const bgColor = metric.highlight 
+                  ? (metric.highlightDark ? 'C8E6C9' : 'E8F5E9') // Green background for highlighted metrics
+                  : 'FFFFFF'; // White background
+                
+                rowStyles[currentRowIndex] = {
+                  cells: metricRow.map((cell, colIndex) => ({
+                    font: { 
+                      bold: metric.bold || colIndex === 0, 
+                      sz: 10,
+                      color: { rgb: colIndex === 0 ? '1F2937' : '374151' } // Dark gray text
+                    },
+                    fill: { fgColor: { rgb: bgColor } },
+                    alignment: { 
+                      horizontal: colIndex === 0 ? 'left' : 'center', 
+                      vertical: 'center' 
+                    },
+                    border: {
+                      top: { style: 'thin', color: { rgb: 'E5E7EB' } }, // Light gray borders
+                      bottom: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                      left: { style: 'thin', color: { rgb: 'E5E7EB' } },
+                      right: { style: 'thin', color: { rgb: 'E5E7EB' } }
+                    },
+                    numFmt: colIndex > 0 && typeof cell === 'number' ? '0' : undefined
+                  }))
+                };
+                currentRowIndex++;
+              });
+            });
+          }
+        });
+      }
+
+      // Create worksheet
+      const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+
+      // Apply styles to cells and handle merges
+      Object.keys(worksheet).forEach((cellAddress) => {
+        if (cellAddress.startsWith('!')) return;
+        
+        const cell = XLSX.utils.decode_cell(cellAddress);
+        const rowStyle = rowStyles[cell.r];
+        
+        if (rowStyle) {
+          // Handle merged cells
+          if (rowStyle.merge && cell.c === 0) {
+            if (!worksheet['!merges']) worksheet['!merges'] = [];
+            worksheet['!merges'].push(rowStyle.merge);
+          }
+          
+          const cellStyle = rowStyle.cells[cell.c];
+          if (cellStyle) {
+            worksheet[cellAddress].s = cellStyle;
+          }
+        }
+      });
+
+      // Set column widths
+      const colWidths = [{ wch: 28 }]; // Key Results column (wider for better readability)
+      allPeriods.forEach(() => {
+        colWidths.push({ wch: 14 }); // Period columns
+      });
+      worksheet['!cols'] = colWidths;
+
+      // Set row heights
+      worksheet['!rows'] = [];
+      rowStyles.forEach((rowStyle, index) => {
+        if (rowStyle && rowStyle.merge) {
+          worksheet['!rows'][index] = { hpt: 25 }; // Taller for month headers
+        } else if (index === 0) {
+          worksheet['!rows'][index] = { hpt: 22 }; // Header row
+        } else {
+          worksheet['!rows'][index] = { hpt: 18 }; // Regular rows
+        }
+      });
+
+      // Freeze first column and header row (accounting for title rows)
+      worksheet['!freeze'] = { xSplit: 1, ySplit: 4, topLeftCell: 'B5', activePane: 'bottomRight', state: 'frozen' };
+
+      // Add worksheet to workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Report');
+
+      // Generate filename
+      const viewModeText = viewMode === 'day' ? 'Day' : 'Month';
+      const filename = `${project?.companyName || 'Report'}_${viewModeText}_View_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+      // Write file
+      XLSX.writeFile(workbook, filename);
+    } catch (error) {
+      console.error('Error exporting to Excel:', error);
+      alert('Failed to export report. Please try again.');
+    }
+  }, [allPeriods, reportData, groupedPeriods, groupedMetrics, viewMode, project]);
 
   if (loading) {
     return (
@@ -938,27 +1423,41 @@ export default function MonthlyReport() {
               </div>
             </div>
 
-            {/* View Mode Toggle */}
-            <div className="flex items-center gap-2 bg-gray-100 rounded-xl p-1.5 border border-gray-200 shadow-inner">
+            {/* View Mode Toggle and Export */}
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 bg-gray-100 rounded-xl p-1.5 border border-gray-200 shadow-inner">
+                <button
+                  onClick={() => setViewMode('day')}
+                  className={`px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    viewMode === 'day'
+                      ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-200'
+                      : 'text-gray-700 hover:bg-white hover:text-gray-900'
+                  }`}
+                >
+                  Day View
+                </button>
+                <button
+                  onClick={() => setViewMode('month')}
+                  className={`px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    viewMode === 'month'
+                      ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-200'
+                      : 'text-gray-700 hover:bg-white hover:text-gray-900'
+                  }`}
+                >
+                  Month View
+                </button>
+              </div>
+              
+              {/* Export Button */}
               <button
-                onClick={() => setViewMode('day')}
-                className={`px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
-                  viewMode === 'day'
-                    ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-200'
-                    : 'text-gray-700 hover:bg-white hover:text-gray-900'
-                }`}
+                onClick={exportToExcel}
+                disabled={allPeriods.length === 0 || calculating}
+                className="px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 font-semibold text-sm flex items-center gap-2 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Day View
-              </button>
-              <button
-                onClick={() => setViewMode('month')}
-                className={`px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
-                  viewMode === 'month'
-                    ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-200'
-                    : 'text-gray-700 hover:bg-white hover:text-gray-900'
-                }`}
-              >
-                Month View
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Export Excel
               </button>
             </div>
           </div>
@@ -985,114 +1484,237 @@ export default function MonthlyReport() {
             <h3 className="text-lg font-semibold text-gray-900 mb-2">No Data Available</h3>
             <p className="text-gray-500">There is no data available for this period.</p>
           </div>
-        ) : (
-          <div className="bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 border-collapse">
-                <thead>
-                  <tr className="bg-blue-50">
-                    <th className="px-4 sm:px-6 py-3 text-left text-xs font-bold text-gray-900 uppercase tracking-wider border-r-2 border-gray-300 sticky left-0 bg-blue-50 z-20">
-                      Key Results
-                    </th>
-                    {allPeriods.map((period) => (
-                      <th
-                        key={period}
-                        className="px-3 sm:px-4 py-3 text-center text-xs font-bold text-gray-900 uppercase tracking-wider border-r border-gray-300 last:border-r-0 bg-blue-50"
-                      >
-                        {period}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {groupedPeriods.map((group, groupIndex) => (
-                    <React.Fragment key={group.monthKey || groupIndex}>
-                      {/* Month Title Row (only for day view) */}
-                      {viewMode === 'day' && group.month && (
-                        <tr>
-                          <td 
-                            colSpan={allPeriods.length + 1} 
-                            className="px-4 sm:px-6 py-2.5 bg-yellow-100 text-center font-bold text-sm text-gray-900 border-b-2 border-yellow-300"
+        ) : (() => {
+          // Count enabled channels
+          const enabledChannelsCount = Object.values(enabledChannels).filter(Boolean).length;
+          const sections = Object.keys(groupedMetrics);
+          
+          // If only one channel is enabled, show single table (current behavior)
+          if (enabledChannelsCount === 1) {
+            return (
+              <div className="bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200 border-collapse">
+                    <thead>
+                      <tr className="bg-blue-50">
+                        <th className="px-4 sm:px-6 py-3 text-left text-xs font-bold text-gray-900 uppercase tracking-wider border-r-2 border-gray-300 sticky left-0 bg-blue-50 z-20">
+                          Key Results
+                        </th>
+                        {allPeriods.map((period) => (
+                          <th
+                            key={period}
+                            onClick={() => handleDateHeaderClick(period)}
+                            className="px-3 sm:px-4 py-3 text-center text-xs font-bold text-gray-900 uppercase tracking-wider border-r border-gray-300 last:border-r-0 bg-blue-50 cursor-pointer hover:underline"
                           >
-                            {group.month}
-                          </td>
-                        </tr>
-                      )}
-                      
-                      {/* Section Headers and Metrics - only show once per month group */}
-                      {groupIndex === 0 || (viewMode === 'day' && groupIndex > 0 && groupedPeriods[groupIndex - 1].monthKey !== group.monthKey) ? (
-                        Object.keys(groupedMetrics).map((section) => (
-                          <React.Fragment key={`${group.monthKey || groupIndex}-${section}`}>
-                            <tr className="bg-amber-50 border-y border-amber-200">
-                              <td colSpan={allPeriods.length + 1} className="px-4 sm:px-6 py-2.5 sticky left-0 bg-amber-50 z-20">
-                                <div className="flex items-center gap-2">
-                                  <div className="w-1 h-5 bg-amber-500 rounded-full"></div>
-                                  <span className="text-xs font-bold text-gray-900">{section}</span>
-                                </div>
+                            {period}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {groupedPeriods.map((group, groupIndex) => (
+                        <React.Fragment key={group.monthKey || groupIndex}>
+                          {/* Month Title Row (only for day view) */}
+                          {viewMode === 'day' && group.month && (
+                            <tr>
+                              <td 
+                                colSpan={allPeriods.length + 1} 
+                                className="px-4 sm:px-6 py-2.5 bg-yellow-100 text-center font-bold text-sm text-gray-900 border-b-2 border-yellow-300"
+                              >
+                                {group.month}
                               </td>
                             </tr>
-                            {groupedMetrics[section].map((metric) => (
-                              <tr
-                                key={`${group.monthKey || groupIndex}-${section}-${metric.key}`}
-                                className={`${
-                                  metric.highlight
-                                    ? metric.highlightDark 
-                                      ? 'bg-green-100' 
-                                      : 'bg-green-50'
-                                    : 'bg-white hover:bg-gray-50'
-                                } transition-colors duration-150`}
-                              >
-                                <td className={`px-4 sm:px-6 py-3 whitespace-nowrap text-sm border-r-2 border-gray-200 sticky left-0 z-20 ${
-                                  metric.highlight
-                                    ? metric.highlightDark 
-                                      ? 'bg-green-100' 
-                                      : 'bg-green-50'
-                                    : 'bg-white'
-                                } ${metric.bold ? 'font-bold text-gray-900' : 'font-medium text-gray-700'}`}>
-                                  {metric.label}
-                                </td>
-                                {allPeriods.map((period) => {
-                                  const value = metric.isFormula 
-                                    ? `(${reportData[period]?.freshCalls || 0} + ${reportData[period]?.followUps || 0})`
-                                    : (metric.key === 'responseRate' 
-                                        ? `${reportData[period]?.[metric.key] || 0}%`
-                                        : (reportData[period]?.[metric.key] || 0));
-                                  const isClickable = !metric.isFormula && value !== 0 && value !== '0%';
-                                  
-                                  return (
-                                    <td
-                                      key={period}
-                                      onClick={() => isClickable && handleNumberClick(metric, period, section)}
-                                      className={`px-3 sm:px-4 py-3 whitespace-nowrap text-sm text-center border-r border-gray-200 last:border-r-0 ${
-                                        metric.highlight
-                                          ? metric.highlightDark 
-                                            ? 'bg-green-100' 
-                                            : 'bg-green-50'
-                                          : 'bg-white'
-                                      } ${
-                                        metric.bold
-                                          ? 'font-bold text-gray-900'
-                                          : 'font-medium text-gray-700'
-                                      } ${
-                                        isClickable ? 'cursor-pointer hover:bg-blue-50 hover:underline' : ''
-                                      }`}
-                                    >
-                                      {value}
+                          )}
+                          
+                          {/* Section Headers and Metrics - only show once per month group */}
+                          {groupIndex === 0 || (viewMode === 'day' && groupIndex > 0 && groupedPeriods[groupIndex - 1].monthKey !== group.monthKey) ? (
+                            Object.keys(groupedMetrics).map((section) => (
+                              <React.Fragment key={`${group.monthKey || groupIndex}-${section}`}>
+                                <tr className="bg-amber-50 border-y border-amber-200">
+                                  <td colSpan={allPeriods.length + 1} className="px-4 sm:px-6 py-2.5 sticky left-0 bg-amber-50 z-20">
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-1 h-5 bg-amber-500 rounded-full"></div>
+                                      <span className="text-xs font-bold text-gray-900">{section}</span>
+                                    </div>
+                                  </td>
+                                </tr>
+                                {groupedMetrics[section].map((metric) => (
+                                  <tr
+                                    key={`${group.monthKey || groupIndex}-${section}-${metric.key}`}
+                                    className={`${
+                                      metric.highlight
+                                        ? metric.highlightDark 
+                                          ? 'bg-green-100' 
+                                          : 'bg-green-50'
+                                        : 'bg-white hover:bg-gray-50'
+                                    } transition-colors duration-150`}
+                                  >
+                                    <td className={`px-4 sm:px-6 py-3 whitespace-nowrap text-sm border-r-2 border-gray-200 sticky left-0 z-20 ${
+                                      metric.highlight
+                                        ? metric.highlightDark 
+                                          ? 'bg-green-100' 
+                                          : 'bg-green-50'
+                                        : 'bg-white'
+                                    } ${metric.bold ? 'font-bold text-gray-900' : 'font-medium text-gray-700'}`}>
+                                      {metric.label}
                                     </td>
-                                  );
-                                })}
+                                    {allPeriods.map((period) => {
+                                      const value = metric.isFormula 
+                                        ? `(${reportData[period]?.freshCalls || 0} + ${reportData[period]?.followUps || 0})`
+                                        : (metric.key === 'responseRate' 
+                                            ? `${reportData[period]?.[metric.key] || 0}%`
+                                            : (reportData[period]?.[metric.key] || 0));
+                                      const isClickable = !metric.isFormula && value !== 0 && value !== '0%';
+                                      
+                                      return (
+                                        <td
+                                          key={period}
+                                          onClick={() => isClickable && handleNumberClick(metric, period, section)}
+                                          className={`px-3 sm:px-4 py-3 whitespace-nowrap text-sm text-center border-r border-gray-200 last:border-r-0 ${
+                                            metric.highlight
+                                              ? metric.highlightDark 
+                                                ? 'bg-green-100' 
+                                                : 'bg-green-50'
+                                              : 'bg-white'
+                                          } ${
+                                            metric.bold
+                                              ? 'font-bold text-gray-900'
+                                              : 'font-medium text-gray-700'
+                                          } ${
+                                            isClickable ? 'cursor-pointer hover:bg-blue-50 hover:underline' : ''
+                                          }`}
+                                        >
+                                          {value}
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                ))}
+                              </React.Fragment>
+                            ))
+                          ) : null}
+                        </React.Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          }
+          
+          // If multiple channels are enabled, show separate tables for each channel
+          return (
+            <div className="space-y-6">
+              {sections.map((section) => (
+                <div key={section} className="bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 border-collapse">
+                      <thead>
+                        <tr className="bg-blue-50">
+                          <th className="px-4 sm:px-6 py-3 text-left text-xs font-bold text-gray-900 uppercase tracking-wider border-r-2 border-gray-300 sticky left-0 bg-blue-50 z-20">
+                            Key Results
+                          </th>
+                          {allPeriods.map((period) => (
+                            <th
+                              key={period}
+                              onClick={() => handleDateHeaderClick(period)}
+                              className="px-3 sm:px-4 py-3 text-center text-xs font-bold text-gray-900 uppercase tracking-wider border-r border-gray-300 last:border-r-0 bg-blue-50 cursor-pointer hover:underline"
+                            >
+                              {period}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {groupedPeriods.map((group, groupIndex) => (
+                          <React.Fragment key={group.monthKey || groupIndex}>
+                            {/* Month Title Row (only for day view) */}
+                            {viewMode === 'day' && group.month && (
+                              <tr>
+                                <td 
+                                  colSpan={allPeriods.length + 1} 
+                                  className="px-4 sm:px-6 py-2.5 bg-yellow-100 text-center font-bold text-sm text-gray-900 border-b-2 border-yellow-300"
+                                >
+                                  {group.month}
+                                </td>
                               </tr>
-                            ))}
+                            )}
+                            
+                            {/* Section Header and Metrics - only show once per month group */}
+                            {groupIndex === 0 || (viewMode === 'day' && groupIndex > 0 && groupedPeriods[groupIndex - 1].monthKey !== group.monthKey) ? (
+                              <React.Fragment>
+                                <tr className="bg-amber-50 border-y border-amber-200">
+                                  <td colSpan={allPeriods.length + 1} className="px-4 sm:px-6 py-2.5 sticky left-0 bg-amber-50 z-20">
+                                    <div className="flex items-center gap-2">
+                                      <div className="w-1 h-5 bg-amber-500 rounded-full"></div>
+                                      <span className="text-xs font-bold text-gray-900">{section}</span>
+                                    </div>
+                                  </td>
+                                </tr>
+                                {groupedMetrics[section].map((metric) => (
+                                  <tr
+                                    key={`${group.monthKey || groupIndex}-${section}-${metric.key}`}
+                                    className={`${
+                                      metric.highlight
+                                        ? metric.highlightDark 
+                                          ? 'bg-green-100' 
+                                          : 'bg-green-50'
+                                        : 'bg-white hover:bg-gray-50'
+                                    } transition-colors duration-150`}
+                                  >
+                                    <td className={`px-4 sm:px-6 py-3 whitespace-nowrap text-sm border-r-2 border-gray-200 sticky left-0 z-20 ${
+                                      metric.highlight
+                                        ? metric.highlightDark 
+                                          ? 'bg-green-100' 
+                                          : 'bg-green-50'
+                                        : 'bg-white'
+                                    } ${metric.bold ? 'font-bold text-gray-900' : 'font-medium text-gray-700'}`}>
+                                      {metric.label}
+                                    </td>
+                                    {allPeriods.map((period) => {
+                                      const value = metric.isFormula 
+                                        ? `(${reportData[period]?.freshCalls || 0} + ${reportData[period]?.followUps || 0})`
+                                        : (metric.key === 'responseRate' 
+                                            ? `${reportData[period]?.[metric.key] || 0}%`
+                                            : (reportData[period]?.[metric.key] || 0));
+                                      const isClickable = !metric.isFormula && value !== 0 && value !== '0%';
+                                      
+                                      return (
+                                        <td
+                                          key={period}
+                                          onClick={() => isClickable && handleNumberClick(metric, period, section)}
+                                          className={`px-3 sm:px-4 py-3 whitespace-nowrap text-sm text-center border-r border-gray-200 last:border-r-0 ${
+                                            metric.highlight
+                                              ? metric.highlightDark 
+                                                ? 'bg-green-100' 
+                                                : 'bg-green-50'
+                                              : 'bg-white'
+                                          } ${
+                                            metric.bold
+                                              ? 'font-bold text-gray-900'
+                                              : 'font-medium text-gray-700'
+                                          } ${
+                                            isClickable ? 'cursor-pointer hover:bg-blue-50 hover:underline' : ''
+                                          }`}
+                                        >
+                                          {value}
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                ))}
+                              </React.Fragment>
+                            ) : null}
                           </React.Fragment>
-                        ))
-                      ) : null}
-                    </React.Fragment>
-                  ))}
-                </tbody>
-              </table>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
 
       {/* Prospect Modal */}
@@ -1103,7 +1725,14 @@ export default function MonthlyReport() {
             <div className="flex items-center justify-between p-6 border-b border-gray-200">
               <div className="flex-1">
                 <h2 className="text-xl font-bold text-gray-900">
-                  {prospectModal.metric && metrics.find(m => m.key === prospectModal.metric)?.label} - {prospectModal.section}
+                  {(() => {
+                    if (!prospectModal.metric) return '';
+                    if (prospectModal.metric === 'allForPeriod') {
+                      return `All Prospects - ${prospectModal.section}`;
+                    }
+                    const metricDef = metrics.find(m => m.key === prospectModal.metric);
+                    return `${metricDef?.label || prospectModal.metric} - ${prospectModal.section}`;
+                  })()}
                 </h2>
                 <p className="text-sm text-gray-600 mt-1">
                   Period: {prospectModal.period}

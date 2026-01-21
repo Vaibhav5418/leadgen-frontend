@@ -203,12 +203,18 @@ export default function LinkedInReport() {
 
     // Calculate metrics per period
     activities.forEach(activity => {
-      if (!activity.createdAt) return;
-      const period = viewMode === 'month' ? getMonthKey(activity.createdAt) : getYearKey(activity.createdAt);
+      // Use activity-specific date (linkedinDate) if available, otherwise use createdAt
+      const activityDate = activity.linkedinDate ? new Date(activity.linkedinDate) : 
+                          (activity.createdAt ? new Date(activity.createdAt) : null);
+      if (!activityDate) return;
+      
+      const period = viewMode === 'month' ? getMonthKey(activityDate) : getYearKey(activityDate);
       if (!data[period]) return;
 
       // Connection Request Sent
-      if (activity.lnRequestSent === 'Yes') {
+      // Include activities with lnRequestSent === 'Yes' OR introduction-message template
+      const template = activity.template?.trim() || '';
+      if (activity.lnRequestSent === 'Yes' || template === 'introduction-message') {
         data[period].connectionRequestSent++;
       }
 
@@ -234,25 +240,52 @@ export default function LinkedInReport() {
       }
     });
 
-    // Calculate First Message Sent and Followup Messages
-    Object.keys(contactActivities).forEach(contactId => {
-      const contactActs = contactActivities[contactId].sort((a, b) => 
-        new Date(a.createdAt) - new Date(b.createdAt)
-      );
+    // Calculate First Message Sent and Followup Messages based on template
+    // Count unique prospects (contacts) per period, not total activities
+    const firstMessageSentByPeriod = {};
+    const followupMessagesSentByPeriod = {};
+    
+    activities.forEach(activity => {
+      // Use activity-specific date (linkedinDate) if available, otherwise use createdAt
+      const activityDate = activity.linkedinDate ? new Date(activity.linkedinDate) : 
+                          (activity.createdAt ? new Date(activity.createdAt) : null);
+      if (!activityDate) return;
+      
+      const period = viewMode === 'month' ? getMonthKey(activityDate) : getYearKey(activityDate);
+      if (!data[period]) return;
 
-      contactActs.forEach((activity, index) => {
-        if (!activity.createdAt || !activity.conversationNotes) return;
-        const period = viewMode === 'month' ? getMonthKey(activity.createdAt) : getYearKey(activity.createdAt);
-        if (!data[period]) return;
+      // Initialize Sets for this period if not exists
+      if (!firstMessageSentByPeriod[period]) {
+        firstMessageSentByPeriod[period] = new Set();
+      }
+      if (!followupMessagesSentByPeriod[period]) {
+        followupMessagesSentByPeriod[period] = new Set();
+      }
 
-        // First Message Sent (first activity with conversation notes for this contact)
-        if (index === 0) {
-          data[period].firstMessageSent++;
-        } else {
-          // Followup Messages sent (subsequent activities with conversation notes)
-          data[period].followupMessagesSent++;
-        }
-      });
+      // Get contactId for unique prospect counting
+      const contactId = activity.contactId?.toString() || 'unknown';
+      
+      // First Message Sent - count unique prospects with introduction-message template
+      // Check template field (handle empty string, null, undefined)
+      const template = activity.template?.trim() || '';
+      if (template === 'introduction-message') {
+        firstMessageSentByPeriod[period].add(contactId);
+      }
+      
+      // Followup Messages Sent - count unique prospects with follow-up-message template
+      if (template === 'follow-up-message') {
+        followupMessagesSentByPeriod[period].add(contactId);
+      }
+    });
+    
+    // Update data with unique prospect counts
+    Object.keys(data).forEach(period => {
+      if (firstMessageSentByPeriod[period]) {
+        data[period].firstMessageSent = firstMessageSentByPeriod[period].size;
+      }
+      if (followupMessagesSentByPeriod[period]) {
+        data[period].followupMessagesSent = followupMessagesSentByPeriod[period].size;
+      }
     });
 
     setReportData(data);
