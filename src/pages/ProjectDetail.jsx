@@ -356,7 +356,14 @@ export default function ProjectDetail() {
       setFilterKpi(nextFilter);
       if (kpiOpen) {
         setKpiProspectModal({ isOpen: true, filter: nextFilter });
+      } else {
+        // If params exist but modal shouldn't be open, ensure modal is closed
+        setKpiProspectModal(prev => prev.isOpen ? { isOpen: false, filter: null } : prev);
       }
+    } else {
+      // Clear KPI state if params are removed from URL
+      setFilterKpi(null);
+      setKpiProspectModal({ isOpen: false, filter: null });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, searchParams]);
@@ -2785,27 +2792,6 @@ export default function ProjectDetail() {
           {enabledActivityTypes.includes('call') && selectedPipeline === 'call' && kpiMetrics && (
             <div>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
-                {/* Calls Attempted */}
-                <button
-                onClick={() => openKpiProspectModal({ channel: 'call', metric: 'callsAttempted' })}
-                  className={`bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
-                    filterKpi?.channel === 'call' && filterKpi?.metric === 'callsAttempted' 
-                      ? 'border-green-400 ring-2 ring-green-200' 
-                      : 'border-green-100'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="w-7 h-7 rounded-lg bg-white/80 border border-green-100 flex items-center justify-center">
-                      <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                      </svg>
-                    </div>
-                    <span className="text-xs font-semibold text-green-700 bg-white/70 border border-green-100 px-2 py-1 rounded-full">Calls</span>
-                  </div>
-                  <div className="text-2xl font-bold text-gray-900">{kpiMetrics.call?.callsAttempted || 0}</div>
-                  <div className="text-xs text-gray-600 mt-1">Calls Attempted</div>
-                </button>
-
                 {/* Total Calls */}
                 <button
                   onClick={() => openKpiProspectModal({ channel: 'call', metric: 'totalCalls' })}
@@ -2825,6 +2811,27 @@ export default function ProjectDetail() {
                   </div>
                   <div className="text-2xl font-bold text-gray-900">{kpiMetrics.call?.callsMade || 0}</div>
                   <div className="text-xs text-gray-600 mt-1">Total Calls</div>
+                </button>
+
+                {/* Calls Attempted */}
+                <button
+                onClick={() => openKpiProspectModal({ channel: 'call', metric: 'callsAttempted' })}
+                  className={`bg-gradient-to-br from-green-50 to-emerald-50 rounded-lg border shadow-sm p-2.5 transition-all hover:shadow-md cursor-pointer ${
+                    filterKpi?.channel === 'call' && filterKpi?.metric === 'callsAttempted' 
+                      ? 'border-green-400 ring-2 ring-green-200' 
+                      : 'border-green-100'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="w-7 h-7 rounded-lg bg-white/80 border border-green-100 flex items-center justify-center">
+                      <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                      </svg>
+                    </div>
+                    <span className="text-xs font-semibold text-green-700 bg-white/70 border border-green-100 px-2 py-1 rounded-full">Calls</span>
+                  </div>
+                  <div className="text-2xl font-bold text-gray-900">{kpiMetrics.call?.callsAttempted || 0}</div>
+                  <div className="text-xs text-gray-600 mt-1">Calls Attempted</div>
                 </button>
 
                 {/* Calls Connected */}
@@ -3049,7 +3056,7 @@ export default function ProjectDetail() {
 
           {/* Email KPIs */}
           {/* Email KPIs - Only show if coldEmail channel is enabled */}
-          {enabledActivityTypes.includes('email') && selectedPipeline === 'email' && (
+          {enabledActivityTypes.includes('email') && selectedPipeline === 'email' && kpiMetrics && (
             <div>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-9 gap-2">
               {/* Emails Sent */}
