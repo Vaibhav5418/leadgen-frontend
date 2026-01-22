@@ -20,6 +20,14 @@ const getActivityDate = (activity) => {
   return new Date(activity.createdAt);
 };
 
+// Normalize to start-of-day (local) for date-only comparison — avoids timezone issues
+// when e.g. nextActionDate is stored as UTC midnight and "today" should count as current.
+const toDateOnly = (d) => {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+};
+
 // Avoid noisy logs in production
 const devLog = (...args) => {
   try {
@@ -73,6 +81,7 @@ export default function ProjectDetail() {
   const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
   const searchTimeoutRef = useRef(null);
   const hasInitializedSearchEffect = useRef(false);
+  const hasInitializedFilterEffect = useRef(false);
   const [quickFilter, setQuickFilter] = useState(searchParams.get('quickFilter') || '');
   const [filterStatus, setFilterStatus] = useState(searchParams.get('filterStatus') || '');
   const [filterActionDate, setFilterActionDate] = useState(searchParams.get('filterActionDate') || '');
@@ -162,64 +171,51 @@ export default function ProjectDetail() {
     return enabled.length > 0 ? enabled : ['call', 'email', 'linkedin'];
   }, [project?.channels]);
 
-  // Calculate follow-up counts for LinkedIn and Email (backend only provides for calls)
+  // Calculate follow-up counts for LinkedIn and Email (backend provides for calls via KPI).
+  // Use one next action per contact per type (earliest nextActionDate) so each contact is counted at most once.
+  // Bucket by next action date: today, tomorrow, missed (based on nextActionDate).
   const linkedinEmailFollowups = useMemo(() => {
     if (!allProjectActivities || allProjectActivities.length === 0) {
       return { linkedin: { today: 0, tomorrow: 0, missed: 0 }, email: { today: 0, tomorrow: 0, missed: 0 } };
     }
 
-    const now = new Date();
-    const today = new Date(now);
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const dayAfterTomorrow = new Date(tomorrow);
-    dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
+    const todayStart = toDateOnly(new Date());
+    const tomorrowStart = new Date(todayStart);
+    tomorrowStart.setDate(tomorrowStart.getDate() + 1);
+    const dayAfterTomorrowStart = new Date(tomorrowStart);
+    dayAfterTomorrowStart.setDate(dayAfterTomorrowStart.getDate() + 1);
 
-    const linkedinToday = new Set();
-    const linkedinTomorrow = new Set();
-    const linkedinMissed = new Set();
-    const emailToday = new Set();
-    const emailTomorrow = new Set();
-    const emailMissed = new Set();
+    const earliestByContactByType = { linkedin: new Map(), email: new Map() };
 
     allProjectActivities.forEach(activity => {
       if (!activity.nextActionDate || !activity.contactId) return;
-      
-      const d = new Date(activity.nextActionDate);
-      d.setHours(0, 0, 0, 0);
       const contactIdStr = activity.contactId.toString ? activity.contactId.toString() : activity.contactId;
+      const d = toDateOnly(activity.nextActionDate);
 
       if (activity.type === 'linkedin') {
-        if (d >= today && d < tomorrow) {
-          linkedinToday.add(contactIdStr);
-        } else if (d >= tomorrow && d < dayAfterTomorrow) {
-          linkedinTomorrow.add(contactIdStr);
-        } else if (d < today) {
-          linkedinMissed.add(contactIdStr);
-        }
+        const m = earliestByContactByType.linkedin;
+        const existing = m.get(contactIdStr);
+        if (!existing || d < existing) m.set(contactIdStr, d);
       } else if (activity.type === 'email') {
-        if (d >= today && d < tomorrow) {
-          emailToday.add(contactIdStr);
-        } else if (d >= tomorrow && d < dayAfterTomorrow) {
-          emailTomorrow.add(contactIdStr);
-        } else if (d < today) {
-          emailMissed.add(contactIdStr);
-        }
+        const m = earliestByContactByType.email;
+        const existing = m.get(contactIdStr);
+        if (!existing || d < existing) m.set(contactIdStr, d);
       }
     });
 
+    const countBuckets = (m) => {
+      let today = 0, tomorrow = 0, missed = 0;
+      m.forEach((d) => {
+        if (d >= todayStart && d < tomorrowStart) today += 1;
+        else if (d >= tomorrowStart && d < dayAfterTomorrowStart) tomorrow += 1;
+        else if (d < todayStart) missed += 1;
+      });
+      return { today, tomorrow, missed };
+    };
+
     return {
-      linkedin: {
-        today: linkedinToday.size,
-        tomorrow: linkedinTomorrow.size,
-        missed: linkedinMissed.size
-      },
-      email: {
-        today: emailToday.size,
-        tomorrow: emailTomorrow.size,
-        missed: emailMissed.size
-      }
+      linkedin: countBuckets(earliestByContactByType.linkedin),
+      email: countBuckets(earliestByContactByType.email)
     };
   }, [allProjectActivities]);
 
@@ -284,20 +280,20 @@ export default function ProjectDetail() {
         searchParams.get('kpiOpen') === '1';
 
       if (!hasAnyUrlState) {
-        setSearchQuery('');
-        setQuickFilter('');
-        setFilterStatus('');
-        setFilterActionDate('');
-        setFilterActionDateFrom('');
-        setFilterActionDateTo('');
-        setFilterLastInteraction('');
-        setFilterLastInteractionFrom('');
-        setFilterLastInteractionTo('');
-        setFilterImportDate('');
-        setFilterImportDateFrom('');
-        setFilterImportDateTo('');
-        setFilterNoActivity(false);
-        setFilterMatchType('');
+      setSearchQuery('');
+      setQuickFilter('');
+      setFilterStatus('');
+      setFilterActionDate('');
+      setFilterActionDateFrom('');
+      setFilterActionDateTo('');
+      setFilterLastInteraction('');
+      setFilterLastInteractionFrom('');
+      setFilterLastInteractionTo('');
+      setFilterImportDate('');
+      setFilterImportDateFrom('');
+      setFilterImportDateTo('');
+      setFilterNoActivity(false);
+      setFilterMatchType('');
         setFilterKpi(null);
         setKpiProspectModal({ isOpen: false, filter: null });
 
@@ -368,6 +364,26 @@ export default function ProjectDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, searchParams]);
 
+  // True when any filter or search is active — we fetch all contacts and paginate client-side over filtered results
+  // Must be defined before useEffect hooks that use it
+  const hasFiltersOrSearch = useMemo(() => !!(
+    debouncedSearchQuery ||
+    quickFilter ||
+    filterStatus ||
+    filterActionDate ||
+    filterActionDateFrom ||
+    filterActionDateTo ||
+    filterLastInteraction ||
+    filterLastInteractionFrom ||
+    filterLastInteractionTo ||
+    filterImportDate ||
+    filterImportDateFrom ||
+    filterImportDateTo ||
+    filterNoActivity ||
+    filterMatchType ||
+    filterKpi
+  ), [debouncedSearchQuery, quickFilter, filterStatus, filterActionDate, filterActionDateFrom, filterActionDateTo, filterLastInteraction, filterLastInteractionFrom, filterLastInteractionTo, filterImportDate, filterImportDateFrom, filterImportDateTo, filterNoActivity, filterMatchType, filterKpi]);
+
   // When search query changes, fetch matching contacts
   useEffect(() => {
     if (!id) return;
@@ -398,20 +414,36 @@ export default function ProjectDetail() {
     const pageParam = searchParams.get('page');
     const pageNum = pageParam ? parseInt(pageParam, 10) : 1;
     
-    // Only update if page changed and we're not in the middle of a search
-    // Restore page when returning from navigation (e.g., Activity History)
-    if (pageNum !== contactsPage && pageNum >= 1 && !debouncedSearchQuery) {
-      // Use a small delay to ensure any ongoing operations complete
+    if (pageNum !== contactsPage && pageNum >= 1) {
       const timeoutId = setTimeout(() => {
         if (pageNum !== contactsPage) {
           setContactsPage(pageNum);
-          fetchImportedContacts(pageNum);
+          // Only fetch when using API pagination (no filters/search)
+          if (!hasFiltersOrSearch) {
+            fetchImportedContacts(pageNum);
+          }
         }
       }, 50);
       return () => clearTimeout(timeoutId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams.get('page'), id, searchParams]);
+  }, [searchParams.get('page'), id, searchParams, hasFiltersOrSearch]);
+
+  // When filters (non-search) change: refetch all or page 1, reset to page 1, clear page param.
+  // Search is handled by the search effect above to avoid double fetch.
+  useEffect(() => {
+    if (!id) return;
+    if (!hasInitializedFilterEffect.current) {
+      hasInitializedFilterEffect.current = true;
+      return;
+    }
+    setContactsPage(1);
+    const newParams = new URLSearchParams(searchParams);
+    newParams.delete('page');
+    setSearchParams(newParams, { replace: true });
+    fetchImportedContacts(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quickFilter, filterStatus, filterActionDate, filterActionDateFrom, filterActionDateTo, filterLastInteraction, filterLastInteractionFrom, filterLastInteractionTo, filterImportDate, filterImportDateFrom, filterImportDateTo, filterNoActivity, filterMatchType, filterKpi, id]);
 
   const fetchProject = async () => {
     try {
@@ -467,12 +499,13 @@ export default function ProjectDetail() {
     try {
       setLoading(true);
       
-      // If there's a search query, fetch all matching contacts (high limit)
-      // Otherwise, use normal pagination
-      const limit = debouncedSearchQuery ? 10000 : CONTACTS_PER_PAGE;
+      // When filters or search active: fetch all, then paginate over filtered results client-side
+      // Otherwise: normal API pagination
+      const limit = hasFiltersOrSearch ? 10000 : CONTACTS_PER_PAGE;
+      const fetchPage = hasFiltersOrSearch ? 1 : page;
       const searchParam = debouncedSearchQuery ? `&search=${encodeURIComponent(debouncedSearchQuery)}` : '';
       
-      const response = await API.get(`/projects/${id}/project-contacts?page=${page}&limit=${limit}${searchParam}`);
+      const response = await API.get(`/projects/${id}/project-contacts?page=${fetchPage}&limit=${limit}${searchParam}`);
       if (response.data.success) {
         const contactsData = response.data.data || [];
         const pagination = response.data.pagination || {};
@@ -533,20 +566,21 @@ export default function ProjectDetail() {
     }
   };
 
-  // Handle page change - update URL params
+  // Handle page change - update URL params; only fetch when not filtering (API pagination)
   const handlePageChange = useCallback((newPage) => {
-    if (newPage >= 1 && newPage !== contactsPage) {
-      // Update URL params with new page
-      const newParams = new URLSearchParams(searchParams);
-      if (newPage === 1) {
-        newParams.delete('page');
-      } else {
-        newParams.set('page', newPage.toString());
-      }
-      setSearchParams(newParams, { replace: true });
+    if (newPage < 1 || newPage === contactsPage) return;
+    const newParams = new URLSearchParams(searchParams);
+    if (newPage === 1) {
+      newParams.delete('page');
+    } else {
+      newParams.set('page', newPage.toString());
+    }
+    setSearchParams(newParams, { replace: true });
+    setContactsPage(newPage);
+    if (!hasFiltersOrSearch) {
       fetchImportedContacts(newPage);
     }
-  }, [contactsPage, id, searchParams, setSearchParams]);
+  }, [contactsPage, hasFiltersOrSearch, searchParams, setSearchParams]);
 
   // Fetch similar contacts from databank (including suggestions)
   const fetchSimilarContacts = async () => {
@@ -730,11 +764,26 @@ export default function ProjectDetail() {
           }
         }
         
-        // Track next action
-        if (activity.nextActionDate && new Date(activity.nextActionDate) >= now) {
+        // Track next action: prefer earliest future-or-today; if none, use most recent overdue
+        if (activity.nextActionDate) {
+          const actionDate = toDateOnly(activity.nextActionDate);
+          const todayStart = toDateOnly(now);
           const existing = lookups.nextActionByContactId.get(contactIdStr);
-          if (!existing || new Date(activity.nextActionDate) < new Date(existing.nextActionDate)) {
-            lookups.nextActionByContactId.set(contactIdStr, activity);
+          const existingDate = existing ? toDateOnly(existing.nextActionDate) : null;
+          const existingIsOverdue = existingDate != null && existingDate < todayStart;
+
+          if (actionDate >= todayStart) {
+            // Future or today — always prefer over overdue; among future keep earliest
+            if (!existing || existingIsOverdue || existingDate > actionDate) {
+              lookups.nextActionByContactId.set(contactIdStr, activity);
+            }
+          } else {
+            // Overdue — use only when no future/today exists; keep most recent overdue
+            if (!existing) {
+              lookups.nextActionByContactId.set(contactIdStr, activity);
+            } else if (existingIsOverdue && actionDate > existingDate) {
+              lookups.nextActionByContactId.set(contactIdStr, activity);
+            }
           }
         }
         
@@ -1304,6 +1353,11 @@ export default function ProjectDetail() {
           case 'today':
             if (actionDate < today || actionDate >= tomorrow) return false;
             break;
+          case 'tomorrow':
+            const dayAfterTomorrow = new Date(tomorrow);
+            dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
+            if (actionDate < tomorrow || actionDate >= dayAfterTomorrow) return false;
+            break;
           case 'this-week':
             // Calculate week start (Monday) and end (Sunday)
             const dayOfWeek = today.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
@@ -1361,6 +1415,11 @@ export default function ProjectDetail() {
         switch (filterLastInteraction) {
           case 'today':
             if (interactionDate < today || interactionDate >= tomorrow) return false;
+            break;
+          case 'yesterday':
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            if (interactionDate < yesterday || interactionDate >= today) return false;
             break;
           case 'this-week':
             // Calculate week start (Monday) and end (Sunday)
@@ -1679,6 +1738,22 @@ export default function ProjectDetail() {
     });
   }, [contacts, debouncedSearchQuery, quickFilter, filterStatus, filterActionDate, filterActionDateFrom, filterActionDateTo, filterLastInteraction, filterLastInteractionFrom, filterLastInteractionTo, filterImportDate, filterImportDateFrom, filterImportDateTo, filterNoActivity, filterMatchType, filterKpi, allProjectActivities, project, activityLookups, id, sortBy, sortOrder]);
 
+  // When filters/search active: paginate over filtered results (slice). Otherwise use filteredContacts as-is (one API page).
+  const { paginatedFilteredContacts, filteredTotal, filteredTotalPages } = useMemo(() => {
+    const total = filteredContacts.length;
+    const totalPages = Math.max(1, Math.ceil(total / CONTACTS_PER_PAGE));
+    if (hasFiltersOrSearch) {
+      const start = (contactsPage - 1) * CONTACTS_PER_PAGE;
+      const slice = filteredContacts.slice(start, start + CONTACTS_PER_PAGE);
+      return { paginatedFilteredContacts: slice, filteredTotal: total, filteredTotalPages: totalPages };
+    }
+    return {
+      paginatedFilteredContacts: filteredContacts,
+      filteredTotal: contactsTotal,
+      filteredTotalPages: contactsTotalPages
+    };
+  }, [filteredContacts, hasFiltersOrSearch, contactsPage, contactsTotal, contactsTotalPages]);
+
   // State to store all contacts for KPI filtering (not paginated)
   const [allContactsForKpi, setAllContactsForKpi] = useState([]);
   const [loadingAllContactsForKpi, setLoadingAllContactsForKpi] = useState(false);
@@ -1805,6 +1880,31 @@ export default function ProjectDetail() {
             hasMatchingActivity = fallbackLinkedinActivities.some(a => a.connected === true || a.connected === 'Yes');
           } else if (kpiFilter.metric === 'followUps') {
             hasMatchingActivity = fallbackLinkedinActivities.length > 1;
+          } else if (kpiFilter.metric === 'followups' || kpiFilter.metric === 'todayFollowups' || kpiFilter.metric === 'tomorrowFollowups' || kpiFilter.metric === 'missedFollowups') {
+            const now = new Date();
+            const today = new Date(now);
+            today.setHours(0, 0, 0, 0);
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const dayAfterTomorrow = new Date(tomorrow);
+            dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
+
+            hasMatchingActivity = fallbackLinkedinActivities.some(a => {
+              if (!a.nextActionDate) return false;
+              const d = new Date(a.nextActionDate);
+              d.setHours(0, 0, 0, 0);
+              if (kpiFilter.metric === 'followups') {
+                // Show all follow-ups (today, tomorrow, or missed)
+                return true;
+              } else if (kpiFilter.metric === 'todayFollowups') {
+                return d >= today && d < tomorrow;
+              } else if (kpiFilter.metric === 'tomorrowFollowups') {
+                return d >= tomorrow && d < dayAfterTomorrow;
+              } else if (kpiFilter.metric === 'missedFollowups') {
+                return d < today;
+              }
+              return false;
+            });
           } else if (kpiFilter.metric === 'cip') {
             hasMatchingActivity = fallbackLinkedinActivities.some(a => 
               a.status && (a.status === 'CIP' || a.status === 'Conversations in Progress')
@@ -1890,9 +1990,31 @@ export default function ProjectDetail() {
             });
           }
         } else if (kpiFilter.channel === 'email') {
-          if (kpiFilter.metric === 'followups') {
-            // Show all email activities with nextActionDate
-            hasMatchingActivity = fallbackEmailActivities.some(a => a.nextActionDate != null);
+          if (kpiFilter.metric === 'followups' || kpiFilter.metric === 'todayFollowups' || kpiFilter.metric === 'tomorrowFollowups' || kpiFilter.metric === 'missedFollowups') {
+            const now = new Date();
+            const today = new Date(now);
+            today.setHours(0, 0, 0, 0);
+            const tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const dayAfterTomorrow = new Date(tomorrow);
+            dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
+
+            hasMatchingActivity = fallbackEmailActivities.some(a => {
+              if (!a.nextActionDate) return false;
+              const d = new Date(a.nextActionDate);
+              d.setHours(0, 0, 0, 0);
+              if (kpiFilter.metric === 'followups') {
+                // Show all follow-ups (today, tomorrow, or missed)
+                return true;
+              } else if (kpiFilter.metric === 'todayFollowups') {
+                return d >= today && d < tomorrow;
+              } else if (kpiFilter.metric === 'tomorrowFollowups') {
+                return d >= tomorrow && d < dayAfterTomorrow;
+              } else if (kpiFilter.metric === 'missedFollowups') {
+                return d < today;
+              }
+              return false;
+            });
           } else if (kpiFilter.metric === 'emailsSent') {
             hasMatchingActivity = fallbackEmailActivities.length > 0;
           } else if (kpiFilter.metric === 'accepted') {
@@ -2514,18 +2636,18 @@ export default function ProjectDetail() {
             <div className="flex gap-2 min-w-max pb-2">
               {/* LinkedIn Pipeline Button - Only show if linkedInOutreach channel is enabled */}
               {enabledActivityTypes.includes('linkedin') && (
-                <div
-                  onClick={() => setSelectedPipeline('linkedin')}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-medium text-xs whitespace-nowrap transition-all cursor-pointer min-w-[150px] justify-center ${
-                    selectedPipeline === 'linkedin'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
-                  </svg>
-                  <span>LinkedIn Pipeline</span>
+                  <div
+                    onClick={() => setSelectedPipeline('linkedin')}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-medium text-xs whitespace-nowrap transition-all cursor-pointer min-w-[150px] justify-center ${
+                      selectedPipeline === 'linkedin'
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433c-1.144 0-2.063-.926-2.063-2.065 0-1.138.92-2.063 2.063-2.063 1.14 0 2.064.925 2.064 2.063 0 1.139-.925 2.065-2.064 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/>
+                    </svg>
+                    <span>LinkedIn Pipeline</span>
                 </div>
               )}
               {/* Cold Calling Pipeline Button - Only show if coldCalling channel is enabled */}
@@ -2546,18 +2668,18 @@ export default function ProjectDetail() {
               )}
               {/* Email Pipeline Button - Only show if coldEmail channel is enabled */}
               {enabledActivityTypes.includes('email') && (
-                <div
-                  onClick={() => setSelectedPipeline('email')}
-                  className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-medium text-xs whitespace-nowrap transition-all cursor-pointer min-w-[150px] justify-center ${
-                    selectedPipeline === 'email'
-                      ? 'bg-blue-600 text-white shadow-md'
-                      : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                  }`}
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                  <span>Email Pipeline</span>
+                  <div
+                    onClick={() => setSelectedPipeline('email')}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-lg font-medium text-xs whitespace-nowrap transition-all cursor-pointer min-w-[150px] justify-center ${
+                      selectedPipeline === 'email'
+                        ? 'bg-blue-600 text-white shadow-md'
+                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                    <span>Email Pipeline</span>
                 </div>
               )}
             </div>
@@ -3417,6 +3539,7 @@ export default function ProjectDetail() {
             >
               <option value="">Action Date</option>
               <option value="today">Today</option>
+              <option value="tomorrow">Tomorrow</option>
               <option value="this-week">This Week</option>
               <option value="this-month">This Month</option>
               <option value="custom">Custom Range</option>
@@ -3465,6 +3588,7 @@ export default function ProjectDetail() {
             >
               <option value="">Last Interaction</option>
               <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
               <option value="this-week">This Week</option>
               <option value="this-month">This Month</option>
               <option value="custom">Custom Range</option>
@@ -3623,6 +3747,7 @@ export default function ProjectDetail() {
                 Action Date: {filterActionDate === 'custom' && (filterActionDateFrom || filterActionDateTo)
                   ? `${filterActionDateFrom ? formatDate(filterActionDateFrom) : '...'} to ${filterActionDateTo ? formatDate(filterActionDateTo) : '...'}`
                   : filterActionDate === 'today' ? 'Today'
+                  : filterActionDate === 'tomorrow' ? 'Tomorrow'
                   : filterActionDate === 'this-week' ? 'This Week'
                   : filterActionDate === 'this-month' ? 'This Month'
                   : filterActionDate}
@@ -3645,6 +3770,7 @@ export default function ProjectDetail() {
                 Last Interaction: {filterLastInteraction === 'custom' && (filterLastInteractionFrom || filterLastInteractionTo)
                   ? `${filterLastInteractionFrom ? formatDate(filterLastInteractionFrom) : '...'} to ${filterLastInteractionTo ? formatDate(filterLastInteractionTo) : '...'}`
                   : filterLastInteraction === 'today' ? 'Today'
+                  : filterLastInteraction === 'yesterday' ? 'Yesterday'
                   : filterLastInteraction === 'this-week' ? 'This Week'
                   : filterLastInteraction === 'this-month' ? 'This Month'
                   : filterLastInteraction}
@@ -4017,16 +4143,16 @@ export default function ProjectDetail() {
       {/* Prospects Table */}
       {filteredContacts.length > 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-          {/* Pagination - Above Table */}
-          {contactsTotal > 0 && (
+          {/* Pagination - Above Table (based on filtered results when filters/search active) */}
+          {filteredTotal > 0 && (
             <div className="px-6 py-4 border-b border-gray-200 bg-white flex items-center justify-between">
               {/* Left side - Showing count */}
               <div className="text-sm text-gray-700">
                 Showing <span className="font-semibold">{(contactsPage - 1) * CONTACTS_PER_PAGE + 1}</span> to{' '}
                 <span className="font-semibold">
-                  {Math.min(contactsPage * CONTACTS_PER_PAGE, contactsTotal)}
+                  {(contactsPage - 1) * CONTACTS_PER_PAGE + paginatedFilteredContacts.length}
                 </span>{' '}
-                of <span className="font-semibold">{contactsTotal.toLocaleString()}</span> contacts
+                of <span className="font-semibold">{filteredTotal.toLocaleString()}</span> contacts
               </div>
 
               {/* Right side - Pagination buttons */}
@@ -4045,7 +4171,7 @@ export default function ProjectDetail() {
                   const pages = [];
                   const maxVisiblePages = 5;
                   let startPage = Math.max(1, contactsPage - Math.floor(maxVisiblePages / 2));
-                  let endPage = Math.min(contactsTotalPages, startPage + maxVisiblePages - 1);
+                  let endPage = Math.min(filteredTotalPages, startPage + maxVisiblePages - 1);
                   
                   // Adjust start if we're near the end
                   if (endPage - startPage < maxVisiblePages - 1) {
@@ -4090,8 +4216,8 @@ export default function ProjectDetail() {
                   }
 
                   // Last page
-                  if (endPage < contactsTotalPages) {
-                    if (endPage < contactsTotalPages - 1) {
+                  if (endPage < filteredTotalPages) {
+                    if (endPage < filteredTotalPages - 1) {
                       pages.push(
                         <span key="ellipsis2" className="px-2 text-gray-500">
                           ...
@@ -4100,11 +4226,11 @@ export default function ProjectDetail() {
                     }
                     pages.push(
                       <button
-                        key={contactsTotalPages}
-                        onClick={() => handlePageChange(contactsTotalPages)}
+                        key={filteredTotalPages}
+                        onClick={() => handlePageChange(filteredTotalPages)}
                         className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
                       >
-                        {contactsTotalPages}
+                        {filteredTotalPages}
                       </button>
                     );
                   }
@@ -4115,7 +4241,7 @@ export default function ProjectDetail() {
                 {/* Next Button */}
                 <button
                   onClick={() => handlePageChange(contactsPage + 1)}
-                  disabled={contactsPage === contactsTotalPages || loading}
+                  disabled={contactsPage === filteredTotalPages || loading}
                   className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white transition-colors"
                 >
                   Next
@@ -4226,7 +4352,7 @@ export default function ProjectDetail() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredContacts.map((contact) => {
+                {paginatedFilteredContacts.map((contact) => {
                   const contactId = contact._id || contact.name;
                   const isExpanded = expandedContacts.has(contactId);
                   const activities = contactActivities[contactId] || [];
@@ -4267,16 +4393,19 @@ export default function ProjectDetail() {
                     }
                     
                     if (!nextActionActivity && (contactNameLower || contactEmailLower)) {
-                      const now = new Date();
-                      nextActionActivity = allProjectActivities
-                        .filter(a => {
-                          if (!a.nextActionDate || new Date(a.nextActionDate) < now) return false;
-                          // Only use notes matching if contactId is not set in activity
-                          if (a.contactId) return false; // Skip if activity has contactId (should be matched by contactId)
-                          const notesLower = a.conversationNotes?.toLowerCase() || '';
-                          return notesLower.includes(contactNameLower) || notesLower.includes(contactEmailLower);
-                        })
-                        .sort((a, b) => new Date(a.nextActionDate) - new Date(b.nextActionDate))[0];
+                      const todayStart = toDateOnly(new Date());
+                      const candidates = allProjectActivities.filter(a => {
+                        if (!a.nextActionDate) return false;
+                        // Only use notes matching if contactId is not set in activity
+                        if (a.contactId) return false; // Skip if activity has contactId (should be matched by contactId)
+                        const notesLower = a.conversationNotes?.toLowerCase() || '';
+                        return notesLower.includes(contactNameLower) || notesLower.includes(contactEmailLower);
+                      });
+                      const future = candidates.filter(a => toDateOnly(a.nextActionDate) >= todayStart)
+                        .sort((a, b) => new Date(a.nextActionDate) - new Date(b.nextActionDate));
+                      const overdue = candidates.filter(a => toDateOnly(a.nextActionDate) < todayStart)
+                        .sort((a, b) => new Date(b.nextActionDate) - new Date(a.nextActionDate));
+                      nextActionActivity = (future[0] || overdue[0]) || null;
                     }
                     
                     // Fallback for status: find most recent activity with status by name/email matching
@@ -4701,7 +4830,7 @@ export default function ProjectDetail() {
                   {kpiProspectModal.filter?.metric === 'messagesSent' && 'Messages Sent'}
                   {kpiProspectModal.filter?.metric === 'messageReplyRate' && 'Message Reply Rate'}
                   {kpiProspectModal.filter?.metric === 'allProspects' && 'All Prospects'}
-              {kpiProspectModal.filter?.metric === 'callsAttempted' && 'Calls Attempted'}
+                  {kpiProspectModal.filter?.metric === 'callsAttempted' && 'Calls Attempted'}
               {kpiProspectModal.filter?.metric === 'totalCalls' && 'Total Calls'}
                   {kpiProspectModal.filter?.metric === 'callsConnected' && 'Calls Connected'}
                   {kpiProspectModal.filter?.metric === 'decisionMakerReached' && 'Decision Maker Reached'}

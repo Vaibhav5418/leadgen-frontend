@@ -29,21 +29,15 @@ import EmailFunnelDetail from './pages/EmailFunnelDetail';
 // Private Route Component
 const PrivateRoute = ({ children }) => {
   const token = localStorage.getItem('token');
-  return token ? children : <Navigate to="/login" replace />;
-};
-
-// Root redirect component - checks auth and redirects accordingly
-const RootRedirect = () => {
-  const token = localStorage.getItem('token');
-  return token ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />;
+  return token ? children : <Navigate to="/" replace />;
 };
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Root path - redirects to login or dashboard based on auth */}
-        <Route path="/" element={<RootRedirect />} />
+        {/* Root path - Login page (will redirect to dashboard if already logged in) */}
+        <Route path="/" element={<Login />} />
 
         {/* Public Routes */}
         <Route path="/login" element={<Login />} />
