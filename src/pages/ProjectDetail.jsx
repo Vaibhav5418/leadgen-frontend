@@ -1833,11 +1833,13 @@ export default function ProjectDetail() {
   const getKpiFilteredProspects = useCallback((kpiFilter) => {
     if (!kpiFilter) return [];
     
-    // Always use allContactsForKpi if available (it contains all contacts, not just paginated ones)
-    // Only fall back to contacts if allContactsForKpi hasn't been loaded yet
-    const contactsToFilter = allContactsForKpi.length > 0 ? allContactsForKpi : contacts;
-    
-    return contactsToFilter.filter(contact => {
+    try {
+      // Always use allContactsForKpi if available (it contains all contacts, not just paginated ones)
+      // Only fall back to contacts if allContactsForKpi hasn't been loaded yet
+      const contactsToFilter = allContactsForKpi.length > 0 ? allContactsForKpi : contacts;
+      
+      return contactsToFilter.filter(contact => {
+        try {
       const contactIdStr = (contact._id?.toString ? contact._id.toString() : contact._id) || '';
       
       // Use activityLookups for O(1) lookup instead of filtering all activities
@@ -1891,19 +1893,25 @@ export default function ProjectDetail() {
 
             hasMatchingActivity = fallbackLinkedinActivities.some(a => {
               if (!a.nextActionDate) return false;
-              const d = new Date(a.nextActionDate);
-              d.setHours(0, 0, 0, 0);
-              if (kpiFilter.metric === 'followups') {
-                // Show all follow-ups (today, tomorrow, or missed)
-                return true;
-              } else if (kpiFilter.metric === 'todayFollowups') {
-                return d >= today && d < tomorrow;
-              } else if (kpiFilter.metric === 'tomorrowFollowups') {
-                return d >= tomorrow && d < dayAfterTomorrow;
-              } else if (kpiFilter.metric === 'missedFollowups') {
-                return d < today;
+              try {
+                const d = new Date(a.nextActionDate);
+                if (isNaN(d.getTime())) return false; // Invalid date
+                d.setHours(0, 0, 0, 0);
+                if (kpiFilter.metric === 'followups') {
+                  // Show all follow-ups (today, tomorrow, or missed)
+                  return true;
+                } else if (kpiFilter.metric === 'todayFollowups') {
+                  return d >= today && d < tomorrow;
+                } else if (kpiFilter.metric === 'tomorrowFollowups') {
+                  return d >= tomorrow && d < dayAfterTomorrow;
+                } else if (kpiFilter.metric === 'missedFollowups') {
+                  return d < today;
+                }
+                return false;
+              } catch (dateError) {
+                console.error('Error parsing nextActionDate for LinkedIn activity:', dateError, a);
+                return false;
               }
-              return false;
             });
           } else if (kpiFilter.metric === 'cip') {
             hasMatchingActivity = fallbackLinkedinActivities.some(a => 
@@ -1974,19 +1982,25 @@ export default function ProjectDetail() {
 
             hasMatchingActivity = fallbackCallActivities.some(a => {
               if (!a.nextActionDate) return false;
-              const d = new Date(a.nextActionDate);
-              d.setHours(0, 0, 0, 0);
-              if (kpiFilter.metric === 'followups') {
-                // Show all follow-ups (today, tomorrow, or missed)
-                return true;
-              } else if (kpiFilter.metric === 'todayFollowups') {
-                return d >= today && d < tomorrow;
-              } else if (kpiFilter.metric === 'tomorrowFollowups') {
-                return d >= tomorrow && d < dayAfterTomorrow;
-              } else if (kpiFilter.metric === 'missedFollowups') {
-                return d < today;
+              try {
+                const d = new Date(a.nextActionDate);
+                if (isNaN(d.getTime())) return false; // Invalid date
+                d.setHours(0, 0, 0, 0);
+                if (kpiFilter.metric === 'followups') {
+                  // Show all follow-ups (today, tomorrow, or missed)
+                  return true;
+                } else if (kpiFilter.metric === 'todayFollowups') {
+                  return d >= today && d < tomorrow;
+                } else if (kpiFilter.metric === 'tomorrowFollowups') {
+                  return d >= tomorrow && d < dayAfterTomorrow;
+                } else if (kpiFilter.metric === 'missedFollowups') {
+                  return d < today;
+                }
+                return false;
+              } catch (dateError) {
+                console.error('Error parsing nextActionDate for Call activity:', dateError, a);
+                return false;
               }
-              return false;
             });
           }
         } else if (kpiFilter.channel === 'email') {
@@ -2001,19 +2015,25 @@ export default function ProjectDetail() {
 
             hasMatchingActivity = fallbackEmailActivities.some(a => {
               if (!a.nextActionDate) return false;
-              const d = new Date(a.nextActionDate);
-              d.setHours(0, 0, 0, 0);
-              if (kpiFilter.metric === 'followups') {
-                // Show all follow-ups (today, tomorrow, or missed)
-                return true;
-              } else if (kpiFilter.metric === 'todayFollowups') {
-                return d >= today && d < tomorrow;
-              } else if (kpiFilter.metric === 'tomorrowFollowups') {
-                return d >= tomorrow && d < dayAfterTomorrow;
-              } else if (kpiFilter.metric === 'missedFollowups') {
-                return d < today;
+              try {
+                const d = new Date(a.nextActionDate);
+                if (isNaN(d.getTime())) return false; // Invalid date
+                d.setHours(0, 0, 0, 0);
+                if (kpiFilter.metric === 'followups') {
+                  // Show all follow-ups (today, tomorrow, or missed)
+                  return true;
+                } else if (kpiFilter.metric === 'todayFollowups') {
+                  return d >= today && d < tomorrow;
+                } else if (kpiFilter.metric === 'tomorrowFollowups') {
+                  return d >= tomorrow && d < dayAfterTomorrow;
+                } else if (kpiFilter.metric === 'missedFollowups') {
+                  return d < today;
+                }
+                return false;
+              } catch (dateError) {
+                console.error('Error parsing nextActionDate for Email activity:', dateError, a);
+                return false;
               }
-              return false;
             });
           } else if (kpiFilter.metric === 'emailsSent') {
             hasMatchingActivity = fallbackEmailActivities.length > 0;
@@ -2100,19 +2120,25 @@ export default function ProjectDetail() {
 
           hasMatchingActivity = linkedinActivities.some(a => {
             if (!a.nextActionDate) return false;
-            const d = new Date(a.nextActionDate);
-            d.setHours(0, 0, 0, 0);
-            if (kpiFilter.metric === 'followups') {
-              // Show all follow-ups (today, tomorrow, or missed)
-              return true;
-            } else if (kpiFilter.metric === 'todayFollowups') {
-              return d >= today && d < tomorrow;
-            } else if (kpiFilter.metric === 'tomorrowFollowups') {
-              return d >= tomorrow && d < dayAfterTomorrow;
-            } else if (kpiFilter.metric === 'missedFollowups') {
-              return d < today;
+            try {
+              const d = new Date(a.nextActionDate);
+              if (isNaN(d.getTime())) return false; // Invalid date
+              d.setHours(0, 0, 0, 0);
+              if (kpiFilter.metric === 'followups') {
+                // Show all follow-ups (today, tomorrow, or missed)
+                return true;
+              } else if (kpiFilter.metric === 'todayFollowups') {
+                return d >= today && d < tomorrow;
+              } else if (kpiFilter.metric === 'tomorrowFollowups') {
+                return d >= tomorrow && d < dayAfterTomorrow;
+              } else if (kpiFilter.metric === 'missedFollowups') {
+                return d < today;
+              }
+              return false;
+            } catch (dateError) {
+              console.error('Error parsing nextActionDate for LinkedIn activity:', dateError, a);
+              return false;
             }
-            return false;
           });
         }
         // Legacy metrics (for backward compatibility)
@@ -2181,19 +2207,25 @@ export default function ProjectDetail() {
 
           hasMatchingActivity = callActivities.some(a => {
             if (!a.nextActionDate) return false;
-            const d = new Date(a.nextActionDate);
-            d.setHours(0, 0, 0, 0);
-            if (kpiFilter.metric === 'followups') {
-              // Show all follow-ups (today, tomorrow, or missed)
-              return true;
-            } else if (kpiFilter.metric === 'todayFollowups') {
-              return d >= today && d < tomorrow;
-            } else if (kpiFilter.metric === 'tomorrowFollowups') {
-              return d >= tomorrow && d < dayAfterTomorrow;
-            } else if (kpiFilter.metric === 'missedFollowups') {
-              return d < today;
+            try {
+              const d = new Date(a.nextActionDate);
+              if (isNaN(d.getTime())) return false; // Invalid date
+              d.setHours(0, 0, 0, 0);
+              if (kpiFilter.metric === 'followups') {
+                // Show all follow-ups (today, tomorrow, or missed)
+                return true;
+              } else if (kpiFilter.metric === 'todayFollowups') {
+                return d >= today && d < tomorrow;
+              } else if (kpiFilter.metric === 'tomorrowFollowups') {
+                return d >= tomorrow && d < dayAfterTomorrow;
+              } else if (kpiFilter.metric === 'missedFollowups') {
+                return d < today;
+              }
+              return false;
+            } catch (dateError) {
+              console.error('Error parsing nextActionDate for Call activity:', dateError, a);
+              return false;
             }
-            return false;
           });
         } else if (kpiFilter.metric === 'callsMade') {
           // Legacy support
@@ -2228,19 +2260,25 @@ export default function ProjectDetail() {
 
           hasMatchingActivity = emailActivities.some(a => {
             if (!a.nextActionDate) return false;
-            const d = new Date(a.nextActionDate);
-            d.setHours(0, 0, 0, 0);
-            if (kpiFilter.metric === 'followups') {
-              // Show all follow-ups (today, tomorrow, or missed)
-              return true;
-            } else if (kpiFilter.metric === 'todayFollowups') {
-              return d >= today && d < tomorrow;
-            } else if (kpiFilter.metric === 'tomorrowFollowups') {
-              return d >= tomorrow && d < dayAfterTomorrow;
-            } else if (kpiFilter.metric === 'missedFollowups') {
-              return d < today;
+            try {
+              const d = new Date(a.nextActionDate);
+              if (isNaN(d.getTime())) return false; // Invalid date
+              d.setHours(0, 0, 0, 0);
+              if (kpiFilter.metric === 'followups') {
+                // Show all follow-ups (today, tomorrow, or missed)
+                return true;
+              } else if (kpiFilter.metric === 'todayFollowups') {
+                return d >= today && d < tomorrow;
+              } else if (kpiFilter.metric === 'tomorrowFollowups') {
+                return d >= tomorrow && d < dayAfterTomorrow;
+              } else if (kpiFilter.metric === 'missedFollowups') {
+                return d < today;
+              }
+              return false;
+            } catch (dateError) {
+              console.error('Error parsing nextActionDate for Email activity:', dateError, a);
+              return false;
             }
-            return false;
           });
         } else if (kpiFilter.metric === 'emailsSent') {
           // Backend counts all email activities
@@ -2281,16 +2319,29 @@ export default function ProjectDetail() {
       }
       
       return hasMatchingActivity;
-    });
+        } catch (contactError) {
+          console.error('Error filtering contact for KPI:', contactError, contact);
+          return false; // Exclude this contact if there's an error
+        }
+      });
+    } catch (error) {
+      console.error('Error in getKpiFilteredProspects:', error, kpiFilter);
+      return []; // Return empty array on error
+    }
   }, [allContactsForKpi, contacts, activityLookups, allProjectActivities, id]);
 
   // Fetch all contacts when KPI modal opens
   useEffect(() => {
     if (kpiProspectModal.isOpen && kpiProspectModal.filter) {
       // Refresh activities to ensure we have all of them for accurate filtering
-      fetchAllProjectActivities().then(() => {
-        fetchAllContactsForKpi();
-      });
+      fetchAllProjectActivities()
+        .then(() => {
+          return fetchAllContactsForKpi();
+        })
+        .catch((error) => {
+          console.error('Error fetching data for KPI modal:', error);
+          // Don't close the modal on error, just log it
+        });
     } else if (!kpiProspectModal.isOpen) {
       // Clear data when modal closes to free memory
       setAllContactsForKpi([]);
@@ -4818,6 +4869,9 @@ export default function ProjectDetail() {
                   {kpiProspectModal.filter?.metric === 'connectionSent' && 'Connection Sent'}
                   {kpiProspectModal.filter?.metric === 'accepted' && 'Accepted'}
                   {(kpiProspectModal.filter?.metric === 'followUps' || kpiProspectModal.filter?.metric === 'followups') && 'Follow-ups'}
+                  {kpiProspectModal.filter?.metric === 'todayFollowups' && 'Today\'s Follow-ups'}
+                  {kpiProspectModal.filter?.metric === 'tomorrowFollowups' && 'Tomorrow\'s Follow-ups'}
+                  {kpiProspectModal.filter?.metric === 'missedFollowups' && 'Missed Follow-ups'}
                   {kpiProspectModal.filter?.metric === 'cip' && 'CIP'}
                   {kpiProspectModal.filter?.metric === 'meetingProposed' && 'Meeting Proposed'}
                   {kpiProspectModal.filter?.metric === 'scheduled' && 'Scheduled'}
@@ -4857,11 +4911,19 @@ export default function ProjectDetail() {
                   {kpiProspectModal.filter?.metric === 'emailReplyRate' && 'Email Reply Rate'}
                   {kpiProspectModal.filter?.metric === 'meetingsBooked' && 'Meetings Booked'}
                 </p>
-                {!loadingAllContactsForKpi && kpiProspectModal.filter && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Showing all {getKpiFilteredProspects(kpiProspectModal.filter).length} prospects
-                  </p>
-                )}
+                {!loadingAllContactsForKpi && kpiProspectModal.filter && (() => {
+                  try {
+                    const count = getKpiFilteredProspects(kpiProspectModal.filter).length;
+                    return (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Showing all {count} prospects
+                      </p>
+                    );
+                  } catch (error) {
+                    console.error('Error getting prospect count:', error);
+                    return null;
+                  }
+                })()}
               </div>
               <button
                 onClick={closeKpiProspectModal}
@@ -4884,7 +4946,20 @@ export default function ProjectDetail() {
                   <p className="text-sm font-medium">Loading prospects...</p>
                 </div>
               ) : (() => {
-                const filteredProspects = getKpiFilteredProspects(kpiProspectModal.filter);
+                let filteredProspects = [];
+                try {
+                  filteredProspects = getKpiFilteredProspects(kpiProspectModal.filter);
+                } catch (filterError) {
+                  console.error('Error filtering prospects for KPI modal:', filterError);
+                  return (
+                    <div className="text-center py-12 text-gray-500">
+                      <svg className="w-16 h-16 mx-auto mb-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <p className="text-sm font-medium">Error loading prospects. Please try again.</p>
+                    </div>
+                  );
+                }
                 
                 if (filteredProspects.length === 0) {
                   return (
