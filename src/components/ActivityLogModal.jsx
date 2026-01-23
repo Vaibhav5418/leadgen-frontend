@@ -30,6 +30,8 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
   const [linkedInAccounts, setLinkedInAccounts] = useState([]);
   const [newAccountName, setNewAccountName] = useState('');
   const [showAddAccount, setShowAddAccount] = useState(false);
+  const [generatingEmail, setGeneratingEmail] = useState(false);
+  const [generatingLinkedIn, setGeneratingLinkedIn] = useState(false);
   const hasInitializedRef = useRef(false);
 
   // Load LinkedIn accounts from localStorage on component mount
@@ -492,6 +494,72 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
     }
   };
 
+  const handleGenerateEmail = async () => {
+    if (!contactId || !projectId) {
+      setErrors({ submit: 'Contact ID and Project ID are required to generate email' });
+      return;
+    }
+
+    setGeneratingEmail(true);
+    setErrors({});
+    try {
+      const response = await API.post('/ai/generate-email', {
+        contactId,
+        projectId,
+        baseTemplate: formData.template || null
+      });
+
+      if (response.data.success) {
+        // Set the generated email content to the template field
+        setFormData(prev => ({
+          ...prev,
+          template: response.data.data.emailContent
+        }));
+      } else {
+        setErrors({ submit: response.data.error || 'Failed to generate email' });
+      }
+    } catch (error) {
+      console.error('Error generating email:', error);
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to generate personalized email';
+      setErrors({ submit: errorMessage });
+    } finally {
+      setGeneratingEmail(false);
+    }
+  };
+
+  const handleGenerateLinkedIn = async () => {
+    if (!contactId || !projectId) {
+      setErrors({ submit: 'Contact ID and Project ID are required to generate LinkedIn message' });
+      return;
+    }
+
+    setGeneratingLinkedIn(true);
+    setErrors({});
+    try {
+      const response = await API.post('/ai/generate-linkedin', {
+        contactId,
+        projectId,
+        baseTemplate: formData.template || null
+      });
+
+      if (response.data.success) {
+        // Set the generated LinkedIn message content to the template field
+        setFormData(prev => ({
+          ...prev,
+          template: response.data.data.linkedInMessage
+        }));
+      } else {
+        setErrors({ submit: response.data.error || 'Failed to generate LinkedIn message' });
+      }
+    } catch (error) {
+      console.error('Error generating LinkedIn message:', error);
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to generate personalized LinkedIn message';
+      setErrors({ submit: errorMessage });
+    } finally {
+      setGeneratingLinkedIn(false);
+    }
+  };
+
 
   return (
     <div 
@@ -609,7 +677,7 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                       <td className="px-4 py-3 text-xs font-semibold text-gray-900 bg-yellow-50 border border-gray-300 align-top">1st Email</td>
                       <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
                         <div className="space-y-2">
-                          <p>Hi {{Name}},</p>
+                          <p>Hi {'{{Name}}'},</p>
                           <p>I work closely with people involved in residential projects and leasing, and I enjoy staying connected with those who are close to the day-to-day side of property work.</p>
                           <p>At Terabits, we focus on making everyday property operations a little easier by keeping rentals, billing, and maintenance in one place.</p>
                           <p>Happy to connect.</p>
@@ -617,7 +685,7 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
                         <div className="space-y-2">
-                          <p>Hi {{Name}},</p>
+                          <p>Hi {'{{Name}}'},</p>
                           <p>I usually stay in touch with people working close to residential projects and leasing. I've found those conversations tend to be the most honest and practical.</p>
                           <p>I'm part of the Terabits team, where we focus on making everyday property operations easier to manage.</p>
                           <p>Nice to connect.</p>
@@ -626,14 +694,14 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                       <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
                         <div className="space-y-2">
                           <p className="font-semibold">Subject: Exchanging notes on leasing & residential work</p>
-                          <p>Hi {{Name}},</p>
+                          <p>Hi {'{{Name}}'},</p>
                           <p>I usually stay in touch with people working on residential projects and leasing. I've found these conversations to be the most practical.</p>
                           <p>When it comes to daily management, where do you usually find the most friction or "extra work" in your current process?</p>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
                         <div className="space-y-2">
-                          <p>Hi {{Name}},</p>
+                          <p>Hi {'{{Name}}'},</p>
                           <p>I tend to reach out to people in residential leasing because the conversations are usually more practical.</p>
                           <p>I'm curious—when it comes to your daily management, where do things usually get stuck or feel like a "headache" for your team?</p>
                           <p>Nice to connect,</p>
@@ -644,7 +712,7 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                       <td className="px-4 py-3 text-xs font-semibold text-gray-900 bg-yellow-50 border border-gray-300 align-top">2nd Email</td>
                       <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
                         <div className="space-y-2">
-                          <p>Hi {{Name}},</p>
+                          <p>Hi {'{{Name}}'},</p>
                           <p>Just wanted to follow up on my last note.</p>
                           <p>We usually speak with property teams who want a bit more clarity in their daily workflows without changing how they already operate.</p>
                           <p>Always good to stay in touch.</p>
@@ -652,7 +720,7 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
                         <div className="space-y-2">
-                          <p>Hi {{Name}},</p>
+                          <p>Hi {'{{Name}}'},</p>
                           <p>Just sharing a short follow-up.</p>
                           <p>Most of our discussions with property teams revolve around simplifying rentals, maintenance, and billing without adding extra complexity to daily work.</p>
                           <p>Happy to stay in touch.</p>
@@ -660,14 +728,14 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
                         <div className="space-y-2">
-                          <p>Hi {{Name}},</p>
+                          <p>Hi {'{{Name}}'},</p>
                           <p>Most of our discussions with property teams revolve around simplifying rentals, maintenance, and billing.</p>
                           <p>This is where Terabits usually steps in—we focus on making those everyday operations feel less like a chore so you can focus on the bigger picture.</p>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
                         <div className="space-y-2">
-                          <p>Hi {{Name}},</p>
+                          <p>Hi {'{{Name}}'},</p>
                           <p>That's usually where we come in. At Terabits, we focus on making those messy parts—like rentals, maintenance, and billing—feel a lot more manageable.</p>
                           <p>We try to keep the tech simple so it actually helps the team instead of adding more work to their day.</p>
                           <p>Happy to stay in touch,</p>
@@ -678,28 +746,28 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                       <td className="px-4 py-3 text-xs font-semibold text-gray-900 bg-yellow-50 border border-gray-300 align-top">3rd Email</td>
                       <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
                         <div className="space-y-2">
-                          <p>Hi {{Name}},</p>
+                          <p>Hi {'{{Name}}'},</p>
                           <p>One thing we often notice is that small improvements in visibility can make day-to-day property work feel much more manageable.</p>
                           <p>Thought I'd share that with you.</p>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
                         <div className="space-y-2">
-                          <p>Hi {{Name}},</p>
+                          <p>Hi {'{{Name}}'},</p>
                           <p>One thing I often hear is that even small clarity in systems can make a big difference in day-to-day property operations.</p>
                           <p>Thought I'd share that with you.</p>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
                         <div className="space-y-2">
-                          <p>Hi {{Name}},</p>
+                          <p>Hi {'{{Name}}'},</p>
                           <p>One thing I often hear is that small clarity in systems makes a big difference.</p>
                           <p>Specifically, we help by automating the repetitive stuff—like tracking maintenance requests or streamlining billing workflows—without adding extra complexity to your day-to-day work.</p>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
                         <div className="space-y-2">
-                          <p>Hi {{Name}},</p>
+                          <p>Hi {'{{Name}}'},</p>
                           <p>One thing I've noticed is that just adding a bit of clarity to maintenance tracking or billing can save a lot of hours.</p>
                           <p>We mostly help by automating those repetitive tasks so they just happen in the background. It's a small change that usually makes the day-to-day much smoother.</p>
                           <p>Thought I'd share that.</p>
@@ -710,7 +778,7 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                       <td className="px-4 py-3 text-xs font-semibold text-gray-900 bg-yellow-50 border border-gray-300 align-top">4th Email</td>
                       <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
                         <div className="space-y-2">
-                          <p>Hi {{Name}},</p>
+                          <p>Hi {'{{Name}}'},</p>
                           <p>I'll leave it here for now.</p>
                           <p>If at any point it feels useful to exchange notes around property operations or workflows, I'm always happy to connect.</p>
                           <p>Wishing you a great week ahead.</p>
@@ -718,14 +786,14 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
                         <div className="space-y-2">
-                          <p>Hi {{Name}},</p>
+                          <p>Hi {'{{Name}}'},</p>
                           <p>I won't take more of your time.</p>
                           <p>If at any point it feels useful to exchange notes around property operations or workflows, I'm always happy to connect.</p>
                         </div>
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
                         <div className="space-y-2">
-                          <p>Hi {{Name}},</p>
+                          <p>Hi {'{{Name}}'},</p>
                           <p>I won't take more of your time.</p>
                           <p>If at any point it feels useful to exchange notes around property operations or workflows, I'm always happy to connect.</p>
                           <p>Take care.</p>
@@ -733,7 +801,7 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-700 border border-gray-300 align-top">
                         <div className="space-y-2">
-                          <p>Hi {{Name}},</p>
+                          <p>Hi {'{{Name}}'},</p>
                           <p>I'll leave it here as I don't want to crowd your inbox.</p>
                           <p>If you ever want to swap notes on how to make property workflows easier, I'm always happy to chat.</p>
                           <p>Wishing you the best,</p>
@@ -1035,6 +1103,100 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                 Use a pre-defined template for consistency
               </p>
             </div>
+            )}
+
+            {/* Email Content Generation - Only for Email Activity */}
+            {type === 'email' && (
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-semibold text-gray-700">
+                    Email Content
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleGenerateEmail}
+                    disabled={generatingEmail || !contactId || !projectId}
+                    className="px-3 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-purple-600 to-purple-700 rounded-lg hover:from-purple-700 hover:to-purple-800 transition-all duration-200 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
+                  >
+                    {generatingEmail ? (
+                      <>
+                        <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        Generate Personalized Email
+                      </>
+                    )}
+                  </button>
+                </div>
+                <textarea
+                  value={formData.template}
+                  onChange={(e) => handleChange('template', e.target.value)}
+                  rows={8}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200 resize-y font-sans hover:border-gray-400"
+                  placeholder="Click 'Generate Personalized Email' to create an AI-powered email based on the contact's information, or type your email content here..."
+                />
+                <p className="mt-2 text-xs text-gray-500 flex items-center gap-1">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  AI will personalize this email using the contact's name, title, company, industry, location, keywords, website, and LinkedIn profile
+                </p>
+              </div>
+            )}
+
+            {/* LinkedIn Message Content Generation - Only for LinkedIn Activity */}
+            {type === 'linkedin' && (
+              <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-xs font-semibold text-gray-700">
+                    LinkedIn Message Content
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleGenerateLinkedIn}
+                    disabled={generatingLinkedIn || !contactId || !projectId}
+                    className="px-3 py-1.5 text-xs font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-700 rounded-lg hover:from-blue-700 hover:to-indigo-800 transition-all duration-200 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
+                  >
+                    {generatingLinkedIn ? (
+                      <>
+                        <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Generating...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                        </svg>
+                        Generate Personalized Message
+                      </>
+                    )}
+                  </button>
+                </div>
+                <textarea
+                  value={formData.template}
+                  onChange={(e) => handleChange('template', e.target.value)}
+                  rows={4}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-y font-sans hover:border-gray-400"
+                  placeholder="Click 'Generate Personalized Message' to create a short, concise AI-powered LinkedIn message (50-100 words), or type your message content here..."
+                />
+                <p className="mt-2 text-xs text-gray-500 flex items-center gap-1">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  AI will generate a short, concise LinkedIn message (50-100 words) using the contact's name, title, company, industry, and key details. Brevity is important - people on LinkedIn are busy.
+                </p>
+              </div>
             )}
 
             {/* LinkedIn Account Name Field (Only for LinkedIn Activity) */}

@@ -77,11 +77,14 @@ export default function ProjectDetail() {
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '');
-  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  // Initialize search query from URL params
+  const initialSearch = searchParams.get('search') || '';
+  const [searchQuery, setSearchQuery] = useState(initialSearch);
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState(initialSearch);
   const searchTimeoutRef = useRef(null);
   const hasInitializedSearchEffect = useRef(false);
   const hasInitializedFilterEffect = useRef(false);
+  const isPageChangeInProgress = useRef(false);
   const [quickFilter, setQuickFilter] = useState(searchParams.get('quickFilter') || '');
   const [filterStatus, setFilterStatus] = useState(searchParams.get('filterStatus') || '');
   const [filterActionDate, setFilterActionDate] = useState(searchParams.get('filterActionDate') || '');
@@ -243,14 +246,146 @@ export default function ProjectDetail() {
     };
   }, [showStatusFilter]);
 
+  // Track if we're returning from Activity History to clear search
+  const returningFromActivityHistoryRef = useRef(false);
+
   // Debounce search query for better performance
   // Initialize debounced search query from URL params on mount and when URL changes
-  // This ensures search filter works when returning from Activity History
+  // Note: Search is cleared when returning from Activity History to show all prospects
   useEffect(() => {
     const searchParam = searchParams.get('search') || '';
+    const returnToParam = searchParams.get('returnTo');
+    const hasReturnTo = !!returnToParam;
+    
+    // If returning from Activity History, restore filters from returnTo URL including search query
+    if (hasReturnTo) {
+      returningFromActivityHistoryRef.current = true;
+      // Clear any pending debounce timeout
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+        searchTimeoutRef.current = null;
+      }
+      
+      // Extract filter params from returnTo URL
+      try {
+        const returnToUrl = decodeURIComponent(returnToParam);
+        const returnToUrlObj = new URL(returnToUrl, window.location.origin);
+        const returnToParams = new URLSearchParams(returnToUrlObj.search);
+        
+        // Restore search query from returnTo URL
+        const restoredSearch = returnToParams.get('search') || '';
+        
+        // Restore filter states from returnTo URL params
+        const restoredQuickFilter = returnToParams.get('quickFilter') || '';
+        const restoredFilterStatus = returnToParams.get('filterStatus') || '';
+        const restoredFilterActionDate = returnToParams.get('filterActionDate') || '';
+        const restoredFilterActionDateFrom = returnToParams.get('filterActionDateFrom') || '';
+        const restoredFilterActionDateTo = returnToParams.get('filterActionDateTo') || '';
+        const restoredFilterLastInteraction = returnToParams.get('filterLastInteraction') || '';
+        const restoredFilterLastInteractionFrom = returnToParams.get('filterLastInteractionFrom') || '';
+        const restoredFilterLastInteractionTo = returnToParams.get('filterLastInteractionTo') || '';
+        const restoredFilterImportDate = returnToParams.get('filterImportDate') || '';
+        const restoredFilterImportDateFrom = returnToParams.get('filterImportDateFrom') || '';
+        const restoredFilterImportDateTo = returnToParams.get('filterImportDateTo') || '';
+        const restoredFilterNoActivity = returnToParams.get('filterNoActivity') === 'true';
+        const restoredFilterMatchType = returnToParams.get('filterMatchType') || '';
+        const restoredPage = returnToParams.get('page') || '1';
+        const restoredKpiChannel = returnToParams.get('kpiChannel');
+        const restoredKpiMetric = returnToParams.get('kpiMetric');
+        const restoredKpiOpen = returnToParams.get('kpiOpen') === '1';
+        
+        // Restore ContactFilter params (filterKeywords, filterCity, etc.)
+        const restoredFilterKeywords = returnToParams.get('filterKeywords') || '';
+        const restoredFilterCity = returnToParams.get('filterCity') || '';
+        const restoredFilterState = returnToParams.get('filterState') || '';
+        const restoredFilterCountry = returnToParams.get('filterCountry') || '';
+        const restoredFilterHasLinkedIn = returnToParams.get('filterHasLinkedIn') || '';
+        const restoredFilterHasEmail = returnToParams.get('filterHasEmail') || '';
+        const restoredFilterHasPhone = returnToParams.get('filterHasPhone') || '';
+        
+        // Build new URL params with restored filters FIRST (before updating state)
+        // This ensures URL params are set before any useEffect runs that might check them
+        const newParams = new URLSearchParams();
+        if (restoredSearch) newParams.set('search', restoredSearch);
+        if (restoredQuickFilter) newParams.set('quickFilter', restoredQuickFilter);
+        if (restoredFilterStatus) newParams.set('filterStatus', restoredFilterStatus);
+        if (restoredFilterActionDate) newParams.set('filterActionDate', restoredFilterActionDate);
+        if (restoredFilterActionDateFrom) newParams.set('filterActionDateFrom', restoredFilterActionDateFrom);
+        if (restoredFilterActionDateTo) newParams.set('filterActionDateTo', restoredFilterActionDateTo);
+        if (restoredFilterLastInteraction) newParams.set('filterLastInteraction', restoredFilterLastInteraction);
+        if (restoredFilterLastInteractionFrom) newParams.set('filterLastInteractionFrom', restoredFilterLastInteractionFrom);
+        if (restoredFilterLastInteractionTo) newParams.set('filterLastInteractionTo', restoredFilterLastInteractionTo);
+        if (restoredFilterImportDate) newParams.set('filterImportDate', restoredFilterImportDate);
+        if (restoredFilterImportDateFrom) newParams.set('filterImportDateFrom', restoredFilterImportDateFrom);
+        if (restoredFilterImportDateTo) newParams.set('filterImportDateTo', restoredFilterImportDateTo);
+        if (restoredFilterNoActivity) newParams.set('filterNoActivity', 'true');
+        if (restoredFilterMatchType) newParams.set('filterMatchType', restoredFilterMatchType);
+        if (restoredPage) newParams.set('page', restoredPage);
+        if (restoredKpiChannel) newParams.set('kpiChannel', restoredKpiChannel);
+        if (restoredKpiMetric) newParams.set('kpiMetric', restoredKpiMetric);
+        if (restoredKpiOpen) newParams.set('kpiOpen', '1');
+        
+        // Restore ContactFilter params
+        if (restoredFilterKeywords) newParams.set('filterKeywords', restoredFilterKeywords);
+        if (restoredFilterCity) newParams.set('filterCity', restoredFilterCity);
+        if (restoredFilterState) newParams.set('filterState', restoredFilterState);
+        if (restoredFilterCountry) newParams.set('filterCountry', restoredFilterCountry);
+        if (restoredFilterHasLinkedIn) newParams.set('filterHasLinkedIn', restoredFilterHasLinkedIn);
+        if (restoredFilterHasEmail) newParams.set('filterHasEmail', restoredFilterHasEmail);
+        if (restoredFilterHasPhone) newParams.set('filterHasPhone', restoredFilterHasPhone);
+        
+        // Update URL with restored filters FIRST - this prevents other useEffects from resetting
+        setSearchParams(newParams, { replace: true });
+        
+        // Then update filter states - this will trigger the sync useEffect but URL is already set
+        setSearchQuery(restoredSearch);
+        setDebouncedSearchQuery(restoredSearch);
+        setQuickFilter(restoredQuickFilter);
+        setFilterStatus(restoredFilterStatus);
+        setFilterActionDate(restoredFilterActionDate);
+        setFilterActionDateFrom(restoredFilterActionDateFrom);
+        setFilterActionDateTo(restoredFilterActionDateTo);
+        setFilterLastInteraction(restoredFilterLastInteraction);
+        setFilterLastInteractionFrom(restoredFilterLastInteractionFrom);
+        setFilterLastInteractionTo(restoredFilterLastInteractionTo);
+        setFilterImportDate(restoredFilterImportDate);
+        setFilterImportDateFrom(restoredFilterImportDateFrom);
+        setFilterImportDateTo(restoredFilterImportDateTo);
+        setFilterNoActivity(restoredFilterNoActivity);
+        setFilterMatchType(restoredFilterMatchType);
+        
+        // Restore page number
+        const pageNum = parseInt(restoredPage, 10);
+        if (pageNum >= 1 && pageNum !== contactsPage) {
+          setContactsPage(pageNum);
+        }
+        
+        // Restore KPI filter if present
+        if (restoredKpiChannel && restoredKpiMetric) {
+          setFilterKpi({ channel: restoredKpiChannel, metric: restoredKpiMetric });
+          if (restoredKpiOpen) {
+            setKpiProspectModal({ isOpen: true, filter: { channel: restoredKpiChannel, metric: restoredKpiMetric } });
+          }
+        }
+      } catch (error) {
+        console.error('Error parsing returnTo URL:', error);
+        // If parsing fails, just remove returnTo param
+        const newParams = new URLSearchParams(searchParams);
+        newParams.delete('returnTo');
+        setSearchParams(newParams, { replace: true });
+      }
+      return;
+    }
+    
+    // If we just returned from Activity History (ref is true), don't clear search anymore
+    if (returningFromActivityHistoryRef.current) {
+      // Reset the ref after processing
+      returningFromActivityHistoryRef.current = false;
+      return;
+    }
+    
     // Only update if it's different to avoid unnecessary re-renders
     // Update both searchQuery and debouncedSearchQuery immediately when URL changes
-    // (e.g., when returning from Activity History)
     if (searchParam !== searchQuery) {
       // Clear any pending debounce timeout to avoid conflicts
       if (searchTimeoutRef.current) {
@@ -262,7 +397,7 @@ export default function ProjectDetail() {
       setDebouncedSearchQuery(searchParam);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]); // Run when searchParams changes (e.g., when returning from Activity History)
+  }, [searchParams]); // Run when searchParams changes
 
   useEffect(() => {
     // Skip debounce if searchQuery matches the URL param (means it was set from URL, not user typing)
@@ -290,12 +425,28 @@ export default function ProjectDetail() {
     if (id) {
       // Only reset filters when landing fresh. If returning from Activity History (returnTo)
       // or restoring a KPI view (kpiChannel/kpiMetric), keep state.
+      // Also check if we just restored filters (returningFromActivityHistoryRef is true)
       const hasAnyUrlState =
         !!searchParams.get('returnTo') ||
         !!searchParams.get('page') ||
         !!searchParams.get('kpiChannel') ||
         !!searchParams.get('kpiMetric') ||
-        searchParams.get('kpiOpen') === '1';
+        searchParams.get('kpiOpen') === '1' ||
+        !!searchParams.get('quickFilter') ||
+        !!searchParams.get('filterStatus') ||
+        !!searchParams.get('filterActionDate') ||
+        !!searchParams.get('filterLastInteraction') ||
+        !!searchParams.get('filterImportDate') ||
+        !!searchParams.get('filterNoActivity') ||
+        !!searchParams.get('filterMatchType') ||
+        !!searchParams.get('filterKeywords') ||
+        !!searchParams.get('filterCity') ||
+        !!searchParams.get('filterState') ||
+        !!searchParams.get('filterCountry') ||
+        !!searchParams.get('filterHasLinkedIn') ||
+        !!searchParams.get('filterHasEmail') ||
+        !!searchParams.get('filterHasPhone') ||
+        returningFromActivityHistoryRef.current;
 
       if (!hasAnyUrlState) {
       setSearchQuery('');
@@ -412,6 +563,12 @@ export default function ProjectDetail() {
       return;
     }
 
+    // Only reset page if search query actually has a value (not empty)
+    // This prevents resetting page when navigating between pages without search
+    if (!debouncedSearchQuery || debouncedSearchQuery.trim() === '') {
+      return;
+    }
+
     // Reset to page 1 when search actually changes
     setContactsPage(1);
 
@@ -426,42 +583,68 @@ export default function ProjectDetail() {
   }, [debouncedSearchQuery, id]);
 
   // Restore page from URL params when URL changes (e.g., returning from navigation)
+  // This should NOT interfere with handlePageChange - it only runs when URL changes externally
   useEffect(() => {
     if (!id) return;
+    
+    // Skip if handlePageChange is currently updating the page
+    if (isPageChangeInProgress.current) {
+      return;
+    }
     
     const pageParam = searchParams.get('page');
     const pageNum = pageParam ? parseInt(pageParam, 10) : 1;
     
-    if (pageNum !== contactsPage && pageNum >= 1) {
+    // Only update if page number is valid and different from current
+    if (pageNum >= 1 && pageNum !== contactsPage) {
+      // Use a delay to avoid conflicts with handlePageChange
       const timeoutId = setTimeout(() => {
-        if (pageNum !== contactsPage) {
+        // Double-check we're not in the middle of a page change and URL still matches
+        if (isPageChangeInProgress.current) {
+          return;
+        }
+        
+        const currentPageParam = searchParams.get('page');
+        const currentPageNum = currentPageParam ? parseInt(currentPageParam, 10) : 1;
+        const currentContactsPage = contactsPage;
+        
+        // Only update if URL and state are still out of sync (external navigation)
+        if (currentPageNum === pageNum && currentPageNum !== currentContactsPage) {
           setContactsPage(pageNum);
           // Only fetch when using API pagination (no filters/search)
           if (!hasFiltersOrSearch) {
             fetchImportedContacts(pageNum);
           }
         }
-      }, 50);
+      }, 200);
       return () => clearTimeout(timeoutId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams.get('page'), id, searchParams, hasFiltersOrSearch]);
+  }, [searchParams.get('page'), id, hasFiltersOrSearch]);
 
   // When filters (non-search) change: refetch all or page 1, reset to page 1, clear page param.
-  // Also refetch when debouncedSearchQuery changes (e.g., when returning from Activity History with search param)
+  // Note: Search query changes are handled separately in the search effect above
   useEffect(() => {
     if (!id) return;
     if (!hasInitializedFilterEffect.current) {
       hasInitializedFilterEffect.current = true;
       return;
     }
-    setContactsPage(1);
-    const newParams = new URLSearchParams(searchParams);
-    newParams.delete('page');
-    setSearchParams(newParams, { replace: true });
-    fetchImportedContacts(1);
+    // Only reset page if there are actual filters (not just empty search)
+    // This prevents the effect from running when only pagination changes
+    const hasAnyFilter = quickFilter || filterStatus || filterActionDate || filterActionDateFrom || filterActionDateTo ||
+      filterLastInteraction || filterLastInteractionFrom || filterLastInteractionTo ||
+      filterImportDate || filterImportDateFrom || filterImportDateTo || filterNoActivity || filterMatchType || filterKpi;
+    
+    if (hasAnyFilter) {
+      setContactsPage(1);
+      const newParams = new URLSearchParams(searchParams);
+      newParams.delete('page');
+      setSearchParams(newParams, { replace: true });
+      fetchImportedContacts(1);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quickFilter, filterStatus, filterActionDate, filterActionDateFrom, filterActionDateTo, filterLastInteraction, filterLastInteractionFrom, filterLastInteractionTo, filterImportDate, filterImportDateFrom, filterImportDateTo, filterNoActivity, filterMatchType, filterKpi, debouncedSearchQuery, id]);
+  }, [quickFilter, filterStatus, filterActionDate, filterActionDateFrom, filterActionDateTo, filterLastInteraction, filterLastInteractionFrom, filterLastInteractionTo, filterImportDate, filterImportDateFrom, filterImportDateTo, filterNoActivity, filterMatchType, filterKpi, id]);
 
   const fetchProject = async () => {
     try {
@@ -587,6 +770,14 @@ export default function ProjectDetail() {
   // Handle page change - update URL params; only fetch when not filtering (API pagination)
   const handlePageChange = useCallback((newPage) => {
     if (newPage < 1 || newPage === contactsPage) return;
+    
+    // Mark that we're changing the page programmatically
+    isPageChangeInProgress.current = true;
+    
+    // Update state first to prevent page restoration effect from interfering
+    setContactsPage(newPage);
+    
+    // Update URL
     const newParams = new URLSearchParams(searchParams);
     if (newPage === 1) {
       newParams.delete('page');
@@ -594,10 +785,17 @@ export default function ProjectDetail() {
       newParams.set('page', newPage.toString());
     }
     setSearchParams(newParams, { replace: true });
-    setContactsPage(newPage);
+    
+    // Fetch immediately when not filtering (don't wait for URL effect)
     if (!hasFiltersOrSearch) {
       fetchImportedContacts(newPage);
     }
+    
+    // Clear the flag after a short delay
+    setTimeout(() => {
+      isPageChangeInProgress.current = false;
+    }, 200);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contactsPage, hasFiltersOrSearch, searchParams, setSearchParams]);
 
   // Fetch similar contacts from databank (including suggestions)
@@ -668,30 +866,87 @@ export default function ProjectDetail() {
   const hasICP = hasTargetIndustries || hasTargetJobTitles || hasGeographies || hasKeywords || hasMeaningfulCompanySize;
 
   // Sync filter states to URL params
+  // IMPORTANT: Preserve page parameter when syncing filters to avoid resetting pagination
   useEffect(() => {
-    const params = new URLSearchParams();
+    const params = new URLSearchParams(searchParams); // Start with existing params to preserve page
     
-    // Only add params that have values
-    if (searchQuery) params.set('search', searchQuery);
-    if (quickFilter) params.set('quickFilter', quickFilter);
-    if (filterStatus) params.set('filterStatus', filterStatus);
-    if (filterActionDate) params.set('filterActionDate', filterActionDate);
-    if (filterActionDateFrom) params.set('filterActionDateFrom', filterActionDateFrom);
-    if (filterActionDateTo) params.set('filterActionDateTo', filterActionDateTo);
-    if (filterLastInteraction) params.set('filterLastInteraction', filterLastInteraction);
-    if (filterLastInteractionFrom) params.set('filterLastInteractionFrom', filterLastInteractionFrom);
-    if (filterLastInteractionTo) params.set('filterLastInteractionTo', filterLastInteractionTo);
-    if (filterImportDate) params.set('filterImportDate', filterImportDate);
-    if (filterImportDateFrom) params.set('filterImportDateFrom', filterImportDateFrom);
-    if (filterImportDateTo) params.set('filterImportDateTo', filterImportDateTo);
-    if (filterNoActivity) params.set('filterNoActivity', 'true');
-    if (filterMatchType) params.set('filterMatchType', filterMatchType);
+    // Only update filter params, don't touch page param
+    if (searchQuery) {
+      params.set('search', searchQuery);
+    } else {
+      params.delete('search');
+    }
+    if (quickFilter) {
+      params.set('quickFilter', quickFilter);
+    } else {
+      params.delete('quickFilter');
+    }
+    if (filterStatus) {
+      params.set('filterStatus', filterStatus);
+    } else {
+      params.delete('filterStatus');
+    }
+    if (filterActionDate) {
+      params.set('filterActionDate', filterActionDate);
+    } else {
+      params.delete('filterActionDate');
+    }
+    if (filterActionDateFrom) {
+      params.set('filterActionDateFrom', filterActionDateFrom);
+    } else {
+      params.delete('filterActionDateFrom');
+    }
+    if (filterActionDateTo) {
+      params.set('filterActionDateTo', filterActionDateTo);
+    } else {
+      params.delete('filterActionDateTo');
+    }
+    if (filterLastInteraction) {
+      params.set('filterLastInteraction', filterLastInteraction);
+    } else {
+      params.delete('filterLastInteraction');
+    }
+    if (filterLastInteractionFrom) {
+      params.set('filterLastInteractionFrom', filterLastInteractionFrom);
+    } else {
+      params.delete('filterLastInteractionFrom');
+    }
+    if (filterLastInteractionTo) {
+      params.set('filterLastInteractionTo', filterLastInteractionTo);
+    } else {
+      params.delete('filterLastInteractionTo');
+    }
+    if (filterImportDate) {
+      params.set('filterImportDate', filterImportDate);
+    } else {
+      params.delete('filterImportDate');
+    }
+    if (filterImportDateFrom) {
+      params.set('filterImportDateFrom', filterImportDateFrom);
+    } else {
+      params.delete('filterImportDateFrom');
+    }
+    if (filterImportDateTo) {
+      params.set('filterImportDateTo', filterImportDateTo);
+    } else {
+      params.delete('filterImportDateTo');
+    }
+    if (filterNoActivity) {
+      params.set('filterNoActivity', 'true');
+    } else {
+      params.delete('filterNoActivity');
+    }
+    if (filterMatchType) {
+      params.set('filterMatchType', filterMatchType);
+    } else {
+      params.delete('filterMatchType');
+    }
     
-    // Update URL without causing a navigation
+    // Update URL without causing a navigation - page param is preserved
     setSearchParams(params, { replace: true });
   }, [searchQuery, quickFilter, filterStatus, filterActionDate, filterActionDateFrom, filterActionDateTo, 
       filterLastInteraction, filterLastInteractionFrom, filterLastInteractionTo, 
-      filterImportDate, filterImportDateFrom, filterImportDateTo, filterNoActivity, filterMatchType, setSearchParams]);
+      filterImportDate, filterImportDateFrom, filterImportDateTo, filterNoActivity, filterMatchType, searchParams, setSearchParams]);
 
   // Disable suggestions if ICP is removed while suggestions are enabled
   useEffect(() => {
@@ -947,15 +1202,12 @@ export default function ProjectDetail() {
     
     // Get the most recent activity for this contact
     let lastActivity = null;
-    let detectedType = type; // Default to the passed type
+    // Always use the explicitly passed type - don't override with last activity type
+    // This ensures clicking Email icon opens Email modal, LinkedIn icon opens LinkedIn modal, etc.
+    const detectedType = type;
     
     if (contactIdValue) {
       lastActivity = activityLookups.lastActivityByContactId.get(contactIdValue) || null;
-      
-      // If we have a last activity, use its type instead of the passed type
-      if (lastActivity && lastActivity.type) {
-        detectedType = lastActivity.type;
-      }
     }
     
     setActivityModal({
@@ -1765,8 +2017,11 @@ export default function ProjectDetail() {
       const slice = filteredContacts.slice(start, start + CONTACTS_PER_PAGE);
       return { paginatedFilteredContacts: slice, filteredTotal: total, filteredTotalPages: totalPages };
     }
+    // When not filtering, still limit to CONTACTS_PER_PAGE to ensure consistent display
+    // This handles cases where API might return more than requested
+    const limitedContacts = filteredContacts.slice(0, CONTACTS_PER_PAGE);
     return {
-      paginatedFilteredContacts: filteredContacts,
+      paginatedFilteredContacts: limitedContacts,
       filteredTotal: contactsTotal,
       filteredTotalPages: contactsTotalPages
     };
@@ -4671,9 +4926,14 @@ export default function ProjectDetail() {
                     
                     // Only navigate if contact is from databank and has a valid ID
                     if (isFromDatabank && contactIdValue) {
-                      // Build return URL with current filter params
-                      const currentParams = new URLSearchParams();
-                      if (searchQuery) currentParams.set('search', searchQuery);
+                      // Build return URL with current filter params (including search query)
+                      // Use current searchParams to get ALL filter params, including ContactFilter params
+                      const currentParams = new URLSearchParams(searchParams);
+                      // Remove returnTo param but keep search query
+                      currentParams.delete('returnTo');
+                      // Always include current page in return URL (even if page 1)
+                      currentParams.set('page', contactsPage.toString());
+                      // Ensure all current filter states are included
                       if (quickFilter) currentParams.set('quickFilter', quickFilter);
                       if (filterStatus) currentParams.set('filterStatus', filterStatus);
                       if (filterActionDate) currentParams.set('filterActionDate', filterActionDate);
@@ -4687,14 +4947,13 @@ export default function ProjectDetail() {
                       if (filterImportDateTo) currentParams.set('filterImportDateTo', filterImportDateTo);
                       if (filterNoActivity) currentParams.set('filterNoActivity', 'true');
                       if (filterMatchType) currentParams.set('filterMatchType', filterMatchType);
-                      // Always include current page in return URL (even if page 1)
-                      currentParams.set('page', contactsPage.toString());
                       // Include KPI filter parameters if KPI modal is open
                       if (filterKpi) {
                         currentParams.set('kpiChannel', filterKpi.channel);
                         currentParams.set('kpiMetric', filterKpi.metric);
                         currentParams.set('kpiOpen', '1');
                       }
+                      // ContactFilter params are already in searchParams, so they'll be included automatically
                       
                       const returnUrl = `/projects/${id}${currentParams.toString() ? '?' + currentParams.toString() : ''}`;
                       // Navigate to contact activity history page with preserved filters
@@ -4822,14 +5081,41 @@ export default function ProjectDetail() {
                             })() : (
                               <div className="text-xs text-gray-400">No email</div>
                             )}
-                            {contact.firstPhone ? (
-                              <div className="text-xs text-gray-500 flex items-center gap-1">
-                                <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                                </svg>
-                                {contact.firstPhone}
-                              </div>
-                            ) : (
+                            {contact.firstPhone ? (() => {
+                              // Parse phone numbers - they might be comma-separated or in other formats
+                              const phoneStr = contact.firstPhone.toString().trim();
+                              // Split by comma and filter out empty strings
+                              const phones = phoneStr.split(',').map(p => p.trim()).filter(p => p && p !== '');
+                              
+                              if (phones.length === 0) {
+                                return <div className="text-xs text-gray-400">No phone</div>;
+                              }
+                              
+                              if (phones.length === 1) {
+                                return (
+                                  <div className="text-xs text-gray-500 flex items-center gap-1">
+                                    <svg className="w-3 h-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                                    </svg>
+                                    {phones[0]}
+                                  </div>
+                                );
+                              }
+                              
+                              // Multiple phone numbers - show all of them
+                              return (
+                                <div className="text-xs text-gray-500 space-y-0.5">
+                                  {phones.map((phone, index) => (
+                                    <div key={index} className="flex items-center gap-1">
+                                      <svg className="w-3 h-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                                      </svg>
+                                      <span className="break-all">{phone}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })() : (
                               <div className="text-xs text-gray-400">No phone</div>
                             )}
                             {contact.personLinkedinUrl || contact.companyLinkedinUrl ? (
@@ -5179,18 +5465,37 @@ export default function ProjectDetail() {
                             
                             // Only navigate if contact is from databank and has a valid ID
                             if (isFromDatabank && contactIdStr) {
-                              // Build return URL to go back to the project detail page with current page and KPI filters
-                              const currentParams = new URLSearchParams();
+                              // Build return URL with current filter params (including search query)
+                              // Use current searchParams to get ALL filter params, including ContactFilter params
+                              const currentParams = new URLSearchParams(searchParams);
+                              // Remove returnTo param but keep search query
+                              currentParams.delete('returnTo');
                               // Always include current page in return URL (even if page 1)
                               currentParams.set('page', contactsPage.toString());
+                              // Ensure all current filter states are included
+                              if (quickFilter) currentParams.set('quickFilter', quickFilter);
+                              if (filterStatus) currentParams.set('filterStatus', filterStatus);
+                              if (filterActionDate) currentParams.set('filterActionDate', filterActionDate);
+                              if (filterActionDateFrom) currentParams.set('filterActionDateFrom', filterActionDateFrom);
+                              if (filterActionDateTo) currentParams.set('filterActionDateTo', filterActionDateTo);
+                              if (filterLastInteraction) currentParams.set('filterLastInteraction', filterLastInteraction);
+                              if (filterLastInteractionFrom) currentParams.set('filterLastInteractionFrom', filterLastInteractionFrom);
+                              if (filterLastInteractionTo) currentParams.set('filterLastInteractionTo', filterLastInteractionTo);
+                              if (filterImportDate) currentParams.set('filterImportDate', filterImportDate);
+                              if (filterImportDateFrom) currentParams.set('filterImportDateFrom', filterImportDateFrom);
+                              if (filterImportDateTo) currentParams.set('filterImportDateTo', filterImportDateTo);
+                              if (filterNoActivity) currentParams.set('filterNoActivity', 'true');
+                              if (filterMatchType) currentParams.set('filterMatchType', filterMatchType);
                               // Include KPI filter parameters if KPI modal is open
                               if (filterKpi) {
                                 currentParams.set('kpiChannel', filterKpi.channel);
                                 currentParams.set('kpiMetric', filterKpi.metric);
                                 currentParams.set('kpiOpen', '1');
                               }
+                              // ContactFilter params are already in searchParams, so they'll be included automatically
+                              
                               const returnUrl = `/projects/${id}${currentParams.toString() ? '?' + currentParams.toString() : ''}`;
-                              // Navigate to contact activity history page
+                              // Navigate to contact activity history page with preserved filters
                               navigate(`/contacts/${contactIdStr}/activities?projectId=${id}&returnTo=${encodeURIComponent(returnUrl)}`);
                             }
                           };
