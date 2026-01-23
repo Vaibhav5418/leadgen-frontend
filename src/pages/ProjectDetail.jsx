@@ -244,16 +244,34 @@ export default function ProjectDetail() {
   }, [showStatusFilter]);
 
   // Debounce search query for better performance
-  // Initialize debounced search query from URL params on mount
+  // Initialize debounced search query from URL params on mount and when URL changes
+  // This ensures search filter works when returning from Activity History
   useEffect(() => {
     const searchParam = searchParams.get('search') || '';
-    if (searchParam) {
+    // Only update if it's different to avoid unnecessary re-renders
+    // Update both searchQuery and debouncedSearchQuery immediately when URL changes
+    // (e.g., when returning from Activity History)
+    if (searchParam !== searchQuery) {
+      // Clear any pending debounce timeout to avoid conflicts
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+        searchTimeoutRef.current = null;
+      }
+      setSearchQuery(searchParam);
+      // Set debouncedSearchQuery immediately (skip debounce) when coming from URL
       setDebouncedSearchQuery(searchParam);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run on mount
+  }, [searchParams]); // Run when searchParams changes (e.g., when returning from Activity History)
 
   useEffect(() => {
+    // Skip debounce if searchQuery matches the URL param (means it was set from URL, not user typing)
+    const urlSearchParam = searchParams.get('search') || '';
+    if (searchQuery === urlSearchParam && searchQuery === debouncedSearchQuery) {
+      // Already in sync, no need to debounce
+      return;
+    }
+    
     if (searchTimeoutRef.current) {
       clearTimeout(searchTimeoutRef.current);
     }
@@ -266,7 +284,7 @@ export default function ProjectDetail() {
         clearTimeout(searchTimeoutRef.current);
       }
     };
-  }, [searchQuery]);
+  }, [searchQuery, searchParams, debouncedSearchQuery]);
 
   useEffect(() => {
     if (id) {
@@ -430,7 +448,7 @@ export default function ProjectDetail() {
   }, [searchParams.get('page'), id, searchParams, hasFiltersOrSearch]);
 
   // When filters (non-search) change: refetch all or page 1, reset to page 1, clear page param.
-  // Search is handled by the search effect above to avoid double fetch.
+  // Also refetch when debouncedSearchQuery changes (e.g., when returning from Activity History with search param)
   useEffect(() => {
     if (!id) return;
     if (!hasInitializedFilterEffect.current) {
@@ -443,7 +461,7 @@ export default function ProjectDetail() {
     setSearchParams(newParams, { replace: true });
     fetchImportedContacts(1);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quickFilter, filterStatus, filterActionDate, filterActionDateFrom, filterActionDateTo, filterLastInteraction, filterLastInteractionFrom, filterLastInteractionTo, filterImportDate, filterImportDateFrom, filterImportDateTo, filterNoActivity, filterMatchType, filterKpi, id]);
+  }, [quickFilter, filterStatus, filterActionDate, filterActionDateFrom, filterActionDateTo, filterLastInteraction, filterLastInteractionFrom, filterLastInteractionTo, filterImportDate, filterImportDateFrom, filterImportDateTo, filterNoActivity, filterMatchType, filterKpi, debouncedSearchQuery, id]);
 
   const fetchProject = async () => {
     try {
