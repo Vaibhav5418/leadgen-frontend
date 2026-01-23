@@ -1909,28 +1909,48 @@ export default function ProjectDetail() {
             const dayAfterTomorrow = new Date(tomorrow);
             dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
 
-            hasMatchingActivity = fallbackLinkedinActivities.some(a => {
-              if (!a.nextActionDate) return false;
+            if (kpiFilter.metric === 'missedFollowups') {
+              // For missed follow-ups, check only the most recent activity's nextActionDate
+              if (fallbackLinkedinActivities.length === 0) return false;
+              // Sort by date (most recent first)
+              const sortedActivities = [...fallbackLinkedinActivities].sort((a, b) => {
+                const dateA = getActivityDate(a);
+                const dateB = getActivityDate(b);
+                return dateB - dateA; // Most recent first
+              });
+              const mostRecentActivity = sortedActivities[0];
+              if (!mostRecentActivity || !mostRecentActivity.nextActionDate) return false;
               try {
-                const d = new Date(a.nextActionDate);
+                const d = new Date(mostRecentActivity.nextActionDate);
                 if (isNaN(d.getTime())) return false; // Invalid date
                 d.setHours(0, 0, 0, 0);
-                if (kpiFilter.metric === 'followups') {
-                  // Show all follow-ups (today, tomorrow, or missed)
-                  return true;
-                } else if (kpiFilter.metric === 'todayFollowups') {
-                  return d >= today && d < tomorrow;
-                } else if (kpiFilter.metric === 'tomorrowFollowups') {
-                  return d >= tomorrow && d < dayAfterTomorrow;
-                } else if (kpiFilter.metric === 'missedFollowups') {
-                  return d < today;
-                }
-                return false;
+                hasMatchingActivity = d < today;
               } catch (dateError) {
-                console.error('Error parsing nextActionDate for LinkedIn activity:', dateError, a);
+                console.error('Error parsing nextActionDate for LinkedIn activity:', dateError, mostRecentActivity);
                 return false;
               }
-            });
+            } else {
+              hasMatchingActivity = fallbackLinkedinActivities.some(a => {
+                if (!a.nextActionDate) return false;
+                try {
+                  const d = new Date(a.nextActionDate);
+                  if (isNaN(d.getTime())) return false; // Invalid date
+                  d.setHours(0, 0, 0, 0);
+                  if (kpiFilter.metric === 'followups') {
+                    // Show all follow-ups (today, tomorrow, or missed)
+                    return true;
+                  } else if (kpiFilter.metric === 'todayFollowups') {
+                    return d >= today && d < tomorrow;
+                  } else if (kpiFilter.metric === 'tomorrowFollowups') {
+                    return d >= tomorrow && d < dayAfterTomorrow;
+                  }
+                  return false;
+                } catch (dateError) {
+                  console.error('Error parsing nextActionDate for LinkedIn activity:', dateError, a);
+                  return false;
+                }
+              });
+            }
           } else if (kpiFilter.metric === 'cip') {
             hasMatchingActivity = fallbackLinkedinActivities.some(a => 
               a.status && (a.status === 'CIP' || a.status === 'Conversations in Progress')
@@ -1998,28 +2018,48 @@ export default function ProjectDetail() {
             const dayAfterTomorrow = new Date(tomorrow);
             dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
 
-            hasMatchingActivity = fallbackCallActivities.some(a => {
-              if (!a.nextActionDate) return false;
+            if (kpiFilter.metric === 'missedFollowups') {
+              // For missed follow-ups, check only the most recent activity's nextActionDate
+              if (fallbackCallActivities.length === 0) return false;
+              // Sort by date (most recent first)
+              const sortedActivities = [...fallbackCallActivities].sort((a, b) => {
+                const dateA = getActivityDate(a);
+                const dateB = getActivityDate(b);
+                return dateB - dateA; // Most recent first
+              });
+              const mostRecentActivity = sortedActivities[0];
+              if (!mostRecentActivity || !mostRecentActivity.nextActionDate) return false;
               try {
-                const d = new Date(a.nextActionDate);
+                const d = new Date(mostRecentActivity.nextActionDate);
                 if (isNaN(d.getTime())) return false; // Invalid date
                 d.setHours(0, 0, 0, 0);
-                if (kpiFilter.metric === 'followups') {
-                  // Show all follow-ups (today, tomorrow, or missed)
-                  return true;
-                } else if (kpiFilter.metric === 'todayFollowups') {
-                  return d >= today && d < tomorrow;
-                } else if (kpiFilter.metric === 'tomorrowFollowups') {
-                  return d >= tomorrow && d < dayAfterTomorrow;
-                } else if (kpiFilter.metric === 'missedFollowups') {
-                  return d < today;
-                }
-                return false;
+                hasMatchingActivity = d < today;
               } catch (dateError) {
-                console.error('Error parsing nextActionDate for Call activity:', dateError, a);
+                console.error('Error parsing nextActionDate for Call activity:', dateError, mostRecentActivity);
                 return false;
               }
-            });
+            } else {
+              hasMatchingActivity = fallbackCallActivities.some(a => {
+                if (!a.nextActionDate) return false;
+                try {
+                  const d = new Date(a.nextActionDate);
+                  if (isNaN(d.getTime())) return false; // Invalid date
+                  d.setHours(0, 0, 0, 0);
+                  if (kpiFilter.metric === 'followups') {
+                    // Show all follow-ups (today, tomorrow, or missed)
+                    return true;
+                  } else if (kpiFilter.metric === 'todayFollowups') {
+                    return d >= today && d < tomorrow;
+                  } else if (kpiFilter.metric === 'tomorrowFollowups') {
+                    return d >= tomorrow && d < dayAfterTomorrow;
+                  }
+                  return false;
+                } catch (dateError) {
+                  console.error('Error parsing nextActionDate for Call activity:', dateError, a);
+                  return false;
+                }
+              });
+            }
           }
         } else if (kpiFilter.channel === 'email') {
           if (kpiFilter.metric === 'followups' || kpiFilter.metric === 'todayFollowups' || kpiFilter.metric === 'tomorrowFollowups' || kpiFilter.metric === 'missedFollowups') {
@@ -2031,28 +2071,48 @@ export default function ProjectDetail() {
             const dayAfterTomorrow = new Date(tomorrow);
             dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
 
-            hasMatchingActivity = fallbackEmailActivities.some(a => {
-              if (!a.nextActionDate) return false;
+            if (kpiFilter.metric === 'missedFollowups') {
+              // For missed follow-ups, check only the most recent activity's nextActionDate
+              if (fallbackEmailActivities.length === 0) return false;
+              // Sort by date (most recent first)
+              const sortedActivities = [...fallbackEmailActivities].sort((a, b) => {
+                const dateA = getActivityDate(a);
+                const dateB = getActivityDate(b);
+                return dateB - dateA; // Most recent first
+              });
+              const mostRecentActivity = sortedActivities[0];
+              if (!mostRecentActivity || !mostRecentActivity.nextActionDate) return false;
               try {
-                const d = new Date(a.nextActionDate);
+                const d = new Date(mostRecentActivity.nextActionDate);
                 if (isNaN(d.getTime())) return false; // Invalid date
                 d.setHours(0, 0, 0, 0);
-                if (kpiFilter.metric === 'followups') {
-                  // Show all follow-ups (today, tomorrow, or missed)
-                  return true;
-                } else if (kpiFilter.metric === 'todayFollowups') {
-                  return d >= today && d < tomorrow;
-                } else if (kpiFilter.metric === 'tomorrowFollowups') {
-                  return d >= tomorrow && d < dayAfterTomorrow;
-                } else if (kpiFilter.metric === 'missedFollowups') {
-                  return d < today;
-                }
-                return false;
+                hasMatchingActivity = d < today;
               } catch (dateError) {
-                console.error('Error parsing nextActionDate for Email activity:', dateError, a);
+                console.error('Error parsing nextActionDate for Email activity:', dateError, mostRecentActivity);
                 return false;
               }
-            });
+            } else {
+              hasMatchingActivity = fallbackEmailActivities.some(a => {
+                if (!a.nextActionDate) return false;
+                try {
+                  const d = new Date(a.nextActionDate);
+                  if (isNaN(d.getTime())) return false; // Invalid date
+                  d.setHours(0, 0, 0, 0);
+                  if (kpiFilter.metric === 'followups') {
+                    // Show all follow-ups (today, tomorrow, or missed)
+                    return true;
+                  } else if (kpiFilter.metric === 'todayFollowups') {
+                    return d >= today && d < tomorrow;
+                  } else if (kpiFilter.metric === 'tomorrowFollowups') {
+                    return d >= tomorrow && d < dayAfterTomorrow;
+                  }
+                  return false;
+                } catch (dateError) {
+                  console.error('Error parsing nextActionDate for Email activity:', dateError, a);
+                  return false;
+                }
+              });
+            }
           } else if (kpiFilter.metric === 'emailsSent') {
             hasMatchingActivity = fallbackEmailActivities.length > 0;
           } else if (kpiFilter.metric === 'accepted') {
@@ -2136,28 +2196,57 @@ export default function ProjectDetail() {
           const dayAfterTomorrow = new Date(tomorrow);
           dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
 
-          hasMatchingActivity = linkedinActivities.some(a => {
-            if (!a.nextActionDate) return false;
-            try {
-              const d = new Date(a.nextActionDate);
-              if (isNaN(d.getTime())) return false; // Invalid date
-              d.setHours(0, 0, 0, 0);
-              if (kpiFilter.metric === 'followups') {
-                // Show all follow-ups (today, tomorrow, or missed)
-                return true;
-              } else if (kpiFilter.metric === 'todayFollowups') {
-                return d >= today && d < tomorrow;
-              } else if (kpiFilter.metric === 'tomorrowFollowups') {
-                return d >= tomorrow && d < dayAfterTomorrow;
-              } else if (kpiFilter.metric === 'missedFollowups') {
-                return d < today;
+          if (kpiFilter.metric === 'missedFollowups') {
+            // For missed follow-ups, check only the most recent activity's nextActionDate
+            if (linkedinActivities.length === 0) {
+              hasMatchingActivity = false;
+            } else {
+              // Sort by date (most recent first)
+              const sortedActivities = [...linkedinActivities].sort((a, b) => {
+                const dateA = getActivityDate(a);
+                const dateB = getActivityDate(b);
+                return dateB - dateA; // Most recent first
+              });
+              const mostRecentActivity = sortedActivities[0];
+              if (!mostRecentActivity || !mostRecentActivity.nextActionDate) {
+                hasMatchingActivity = false;
+              } else {
+                try {
+                  const d = new Date(mostRecentActivity.nextActionDate);
+                  if (isNaN(d.getTime())) {
+                    hasMatchingActivity = false;
+                  } else {
+                    d.setHours(0, 0, 0, 0);
+                    hasMatchingActivity = d < today;
+                  }
+                } catch (dateError) {
+                  console.error('Error parsing nextActionDate for LinkedIn activity:', dateError, mostRecentActivity);
+                  hasMatchingActivity = false;
+                }
               }
-              return false;
-            } catch (dateError) {
-              console.error('Error parsing nextActionDate for LinkedIn activity:', dateError, a);
-              return false;
             }
-          });
+          } else {
+            hasMatchingActivity = linkedinActivities.some(a => {
+              if (!a.nextActionDate) return false;
+              try {
+                const d = new Date(a.nextActionDate);
+                if (isNaN(d.getTime())) return false; // Invalid date
+                d.setHours(0, 0, 0, 0);
+                if (kpiFilter.metric === 'followups') {
+                  // Show all follow-ups (today, tomorrow, or missed)
+                  return true;
+                } else if (kpiFilter.metric === 'todayFollowups') {
+                  return d >= today && d < tomorrow;
+                } else if (kpiFilter.metric === 'tomorrowFollowups') {
+                  return d >= tomorrow && d < dayAfterTomorrow;
+                }
+                return false;
+              } catch (dateError) {
+                console.error('Error parsing nextActionDate for LinkedIn activity:', dateError, a);
+                return false;
+              }
+            });
+          }
         }
         // Legacy metrics (for backward compatibility)
         else if (kpiFilter.metric === 'connectionRequestsSent') {
@@ -2223,28 +2312,57 @@ export default function ProjectDetail() {
           const dayAfterTomorrow = new Date(tomorrow);
           dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
 
-          hasMatchingActivity = callActivities.some(a => {
-            if (!a.nextActionDate) return false;
-            try {
-              const d = new Date(a.nextActionDate);
-              if (isNaN(d.getTime())) return false; // Invalid date
-              d.setHours(0, 0, 0, 0);
-              if (kpiFilter.metric === 'followups') {
-                // Show all follow-ups (today, tomorrow, or missed)
-                return true;
-              } else if (kpiFilter.metric === 'todayFollowups') {
-                return d >= today && d < tomorrow;
-              } else if (kpiFilter.metric === 'tomorrowFollowups') {
-                return d >= tomorrow && d < dayAfterTomorrow;
-              } else if (kpiFilter.metric === 'missedFollowups') {
-                return d < today;
+          if (kpiFilter.metric === 'missedFollowups') {
+            // For missed follow-ups, check only the most recent activity's nextActionDate
+            if (callActivities.length === 0) {
+              hasMatchingActivity = false;
+            } else {
+              // Sort by date (most recent first)
+              const sortedActivities = [...callActivities].sort((a, b) => {
+                const dateA = getActivityDate(a);
+                const dateB = getActivityDate(b);
+                return dateB - dateA; // Most recent first
+              });
+              const mostRecentActivity = sortedActivities[0];
+              if (!mostRecentActivity || !mostRecentActivity.nextActionDate) {
+                hasMatchingActivity = false;
+              } else {
+                try {
+                  const d = new Date(mostRecentActivity.nextActionDate);
+                  if (isNaN(d.getTime())) {
+                    hasMatchingActivity = false;
+                  } else {
+                    d.setHours(0, 0, 0, 0);
+                    hasMatchingActivity = d < today;
+                  }
+                } catch (dateError) {
+                  console.error('Error parsing nextActionDate for Call activity:', dateError, mostRecentActivity);
+                  hasMatchingActivity = false;
+                }
               }
-              return false;
-            } catch (dateError) {
-              console.error('Error parsing nextActionDate for Call activity:', dateError, a);
-              return false;
             }
-          });
+          } else {
+            hasMatchingActivity = callActivities.some(a => {
+              if (!a.nextActionDate) return false;
+              try {
+                const d = new Date(a.nextActionDate);
+                if (isNaN(d.getTime())) return false; // Invalid date
+                d.setHours(0, 0, 0, 0);
+                if (kpiFilter.metric === 'followups') {
+                  // Show all follow-ups (today, tomorrow, or missed)
+                  return true;
+                } else if (kpiFilter.metric === 'todayFollowups') {
+                  return d >= today && d < tomorrow;
+                } else if (kpiFilter.metric === 'tomorrowFollowups') {
+                  return d >= tomorrow && d < dayAfterTomorrow;
+                }
+                return false;
+              } catch (dateError) {
+                console.error('Error parsing nextActionDate for Call activity:', dateError, a);
+                return false;
+              }
+            });
+          }
         } else if (kpiFilter.metric === 'callsMade') {
           // Legacy support
           hasMatchingActivity = callActivities.length > 0;
@@ -2276,28 +2394,57 @@ export default function ProjectDetail() {
           const dayAfterTomorrow = new Date(tomorrow);
           dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 1);
 
-          hasMatchingActivity = emailActivities.some(a => {
-            if (!a.nextActionDate) return false;
-            try {
-              const d = new Date(a.nextActionDate);
-              if (isNaN(d.getTime())) return false; // Invalid date
-              d.setHours(0, 0, 0, 0);
-              if (kpiFilter.metric === 'followups') {
-                // Show all follow-ups (today, tomorrow, or missed)
-                return true;
-              } else if (kpiFilter.metric === 'todayFollowups') {
-                return d >= today && d < tomorrow;
-              } else if (kpiFilter.metric === 'tomorrowFollowups') {
-                return d >= tomorrow && d < dayAfterTomorrow;
-              } else if (kpiFilter.metric === 'missedFollowups') {
-                return d < today;
+          if (kpiFilter.metric === 'missedFollowups') {
+            // For missed follow-ups, check only the most recent activity's nextActionDate
+            if (emailActivities.length === 0) {
+              hasMatchingActivity = false;
+            } else {
+              // Sort by date (most recent first)
+              const sortedActivities = [...emailActivities].sort((a, b) => {
+                const dateA = getActivityDate(a);
+                const dateB = getActivityDate(b);
+                return dateB - dateA; // Most recent first
+              });
+              const mostRecentActivity = sortedActivities[0];
+              if (!mostRecentActivity || !mostRecentActivity.nextActionDate) {
+                hasMatchingActivity = false;
+              } else {
+                try {
+                  const d = new Date(mostRecentActivity.nextActionDate);
+                  if (isNaN(d.getTime())) {
+                    hasMatchingActivity = false;
+                  } else {
+                    d.setHours(0, 0, 0, 0);
+                    hasMatchingActivity = d < today;
+                  }
+                } catch (dateError) {
+                  console.error('Error parsing nextActionDate for Email activity:', dateError, mostRecentActivity);
+                  hasMatchingActivity = false;
+                }
               }
-              return false;
-            } catch (dateError) {
-              console.error('Error parsing nextActionDate for Email activity:', dateError, a);
-              return false;
             }
-          });
+          } else {
+            hasMatchingActivity = emailActivities.some(a => {
+              if (!a.nextActionDate) return false;
+              try {
+                const d = new Date(a.nextActionDate);
+                if (isNaN(d.getTime())) return false; // Invalid date
+                d.setHours(0, 0, 0, 0);
+                if (kpiFilter.metric === 'followups') {
+                  // Show all follow-ups (today, tomorrow, or missed)
+                  return true;
+                } else if (kpiFilter.metric === 'todayFollowups') {
+                  return d >= today && d < tomorrow;
+                } else if (kpiFilter.metric === 'tomorrowFollowups') {
+                  return d >= tomorrow && d < dayAfterTomorrow;
+                }
+                return false;
+              } catch (dateError) {
+                console.error('Error parsing nextActionDate for Email activity:', dateError, a);
+                return false;
+              }
+            });
+          }
         } else if (kpiFilter.metric === 'emailsSent') {
           // Backend counts all email activities
           hasMatchingActivity = emailActivities.length > 0;
