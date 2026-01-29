@@ -483,15 +483,30 @@ export default function ProjectDetail() {
 
       // Always refresh in background to keep data up to date
       fetchProject().then(() => {
-        // Get page from URL params or default to 1
+        // Get page from URL params, then optional localStorage, then default 1
         const pageFromUrl = searchParams.get('page');
-        const initialPage = pageFromUrl ? parseInt(pageFromUrl, 10) : 1;
-        
-        // Update contactsPage state to match URL
+        let initialPage = pageFromUrl ? parseInt(pageFromUrl, 10) : 1;
+        try {
+          if (!pageFromUrl && id) {
+            const stored = localStorage.getItem(`prospectManagementPage_${id}`);
+            if (stored) {
+              const p = parseInt(stored, 10);
+              if (p >= 1) {
+                initialPage = p;
+                setContactsPage(p);
+                setSearchParams(prev => {
+                  const next = new URLSearchParams(prev);
+                  next.set('page', p.toString());
+                  return next;
+                }, { replace: true });
+              }
+            }
+          }
+        } catch (_) {}
         if (initialPage !== contactsPage) {
           setContactsPage(initialPage);
         }
-        
+
         // Fetch contacts, activities, and KPI metrics in parallel for better performance
         Promise.all([
         fetchAllProjectActivities().catch(err => {
@@ -785,12 +800,15 @@ export default function ProjectDetail() {
       newParams.set('page', newPage.toString());
     }
     setSearchParams(newParams, { replace: true });
-    
+    try {
+      if (id) localStorage.setItem(`prospectManagementPage_${id}`, newPage.toString());
+    } catch (_) {}
+
     // Fetch immediately when not filtering (don't wait for URL effect)
     if (!hasFiltersOrSearch) {
       fetchImportedContacts(newPage);
     }
-    
+
     // Clear the flag after a short delay
     setTimeout(() => {
       isPageChangeInProgress.current = false;
@@ -952,7 +970,7 @@ export default function ProjectDetail() {
   useEffect(() => {
     if (showProspectSuggestions && !hasICP) {
       setShowProspectSuggestions(false);
-      fetchImportedContacts().catch(err => {
+      fetchImportedContacts(contactsPage).catch(err => {
         console.error('Error fetching imported contacts:', err);
       });
     }
@@ -981,8 +999,8 @@ export default function ProjectDetail() {
         }
       }
     } else {
-      // Show only imported contacts
-      await fetchImportedContacts();
+      // Show only imported contacts (preserve current page)
+      await fetchImportedContacts(contactsPage);
     }
   };
 
@@ -1224,7 +1242,7 @@ export default function ProjectDetail() {
     });
   };
 
-  const handleCloseActivityModal = async (shouldNavigateBack = false) => {
+  const handleCloseActivityModal = async (wasSaved = false) => {
     setActivityModal({
       isOpen: false,
       type: null,
@@ -1237,18 +1255,15 @@ export default function ProjectDetail() {
       linkedInProfileUrl: null,
       lastActivity: null
     });
-    // Refresh all project activities first (this will update the status display automatically)
-    // Wait for activities to be fetched before refreshing contacts
+    // Only refetch when user saved; avoid refetch on cancel so pagination state is preserved
+    if (!wasSaved) return;
     await fetchAllProjectActivities();
-    // Small delay to ensure activities state is updated
     await new Promise(resolve => setTimeout(resolve, 100));
-    // Refresh contacts to get updated stage from ProjectContact
     if (showProspectSuggestions) {
       await fetchSimilarContacts();
     } else {
-      await fetchImportedContacts();
+      fetchImportedContacts(contactsPage);
     }
-    // Refresh activities for expanded contacts
     expandedContacts.forEach(contactId => {
       const contact = contacts.find(c => (c._id || c.name) === contactId);
       if (contact) {
@@ -1257,25 +1272,20 @@ export default function ProjectDetail() {
     });
   };
 
-  const handleCloseBulkActivityModal = async () => {
+  const handleCloseBulkActivityModal = async (wasSaved = false) => {
     setBulkActivityModal({
       isOpen: false,
       type: null
     });
-    // Clear selection after bulk logging
     setSelectedContacts(new Set());
-    // Refresh all project activities first (this will update the status display automatically)
-    // Wait for activities to be fetched before refreshing contacts
+    if (!wasSaved) return;
     await fetchAllProjectActivities();
-    // Small delay to ensure activities state is updated
     await new Promise(resolve => setTimeout(resolve, 100));
-    // Refresh contacts to get updated stage from ProjectContact
     if (showProspectSuggestions) {
       await fetchSimilarContacts();
     } else {
-      await fetchImportedContacts();
+      fetchImportedContacts(contactsPage);
     }
-    // Refresh activities for expanded contacts
     expandedContacts.forEach(contactId => {
       const contact = contacts.find(c => (c._id || c.name) === contactId);
       if (contact) {
@@ -2975,11 +2985,11 @@ export default function ProjectDetail() {
         // Only refresh in background after a delay, but filter out deleted contacts
         setTimeout(async () => {
           try {
-            // Refresh contacts from server
+            // Refresh contacts from server (stay on same page)
             if (showProspectSuggestions) {
               await fetchSimilarContacts();
             } else {
-              await fetchImportedContacts();
+              await fetchImportedContacts(contactsPage);
             }
             
             // After refresh, ensure deleted contacts are still removed (in case they came back)

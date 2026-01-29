@@ -316,10 +316,9 @@ export default function BulkActivityLogModal({ isOpen, onClose, type, selectedCo
         linkedinDate: ''
       });
       
-      // Show success message
+      // Show success message; pass true so parent refetches (and preserves page)
       setTimeout(() => {
-        onClose();
-        // Refresh activities will be handled by parent component
+        onClose(true);
       }, 1000);
     } catch (error) {
       console.error('Error in bulk activity logging:', error);
@@ -352,7 +351,7 @@ export default function BulkActivityLogModal({ isOpen, onClose, type, selectedCo
       });
       setErrors({});
       setSavingField({ phone: false, email: false, linkedin: false });
-      onClose();
+      onClose(false);
     }
   };
 
