@@ -305,16 +305,36 @@ export default function MasterDashboard() {
     }]
   };
 
-  const coldCallConnectData = {
-    labels: ['Connected', 'Not Connected'],
+  // Call Status Distribution (same as Prospect Analytics - breakdown by status for donut chart)
+  const callStatusBreakdown = data?.coldCall?.callStatusBreakdown || {};
+  const callStatusLabels = Object.keys(callStatusBreakdown).filter(
+    (status) => callStatusBreakdown[status] > 0 && callStatusBreakdown[status] !== undefined
+  );
+  const callStatusData = callStatusLabels.map((status) => callStatusBreakdown[status]);
+  const callStatusColors = {
+    'Interested': '#10B981',
+    'Not Interested': '#EF4444',
+    'Ring': '#F59E0B',
+    'Busy': '#F97316',
+    'Call Back': '#3B82F6',
+    'Hang Up': '#EF4444',
+    'Switch Off': '#6B7280',
+    'Future': '#8B5CF6',
+    'Details Shared': '#06B6D4',
+    'Demo Booked': '#10B981',
+    'Invalid': '#9CA3AF',
+    'Existing': '#6366F1',
+    'Demo Completed': '#059669',
+    'No Status': '#D1D5DB'
+  };
+  const callStatusBackgroundColors = callStatusLabels.map((status) => callStatusColors[status] || '#9CA3AF');
+  const coldCallStatusDistributionData = {
+    labels: callStatusLabels,
     datasets: [{
-      label: 'Call Connections',
-      data: [
-        coldCall?.connected || 0,
-        Math.max(0, (coldCall?.callsMade || 0) - (coldCall?.connected || 0))
-      ].map(val => typeof val === 'number' && isFinite(val) ? val : 0),
-      backgroundColor: ['#10B981', '#EF4444'],
-      borderWidth: 2
+      label: 'Call Status',
+      data: callStatusData,
+      backgroundColor: callStatusBackgroundColors,
+      borderWidth: 0
     }]
   };
 
@@ -1546,44 +1566,56 @@ export default function MasterDashboard() {
                 </Suspense>
               </div>
 
-              {/* Cold Call Connect Rate Chart */}
+              {/* Call Status Distribution (same as Prospect Analytics) */}
               <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
-                <h3 className="text-lg font-semibold text-gray-900 mb-6">Call Connection Rate</h3>
+                <h3 className="text-lg font-semibold text-gray-900 mb-6">Call Status Distribution</h3>
                 <Suspense fallback={<div className="h-64 flex items-center justify-center">Loading chart...</div>}>
                   <div className="h-64 flex items-center justify-center">
-                    <Doughnut
-                      data={coldCallConnectData}
-                      options={{
-                        responsive: true,
-                        maintainAspectRatio: true,
-                        aspectRatio: 1.5,
-                        cutout: '60%',
-                        plugins: {
-                          legend: { 
-                            position: 'bottom',
-                            labels: {
-                              padding: 15,
-                              font: {
-                                size: 12,
-                                weight: '500'
-                              },
-                              usePointStyle: true
-                            }
-                          },
-                          tooltip: {
-                            callbacks: {
-                              label: (context) => {
-                                const label = context.label || '';
-                                const value = context.parsed || 0;
-                                const total = (coldCall?.callsMade || 0);
-                                const percentage = total > 0 ? ((value / total) * 100) : 0;
-                                return `${label}: ${value.toLocaleString()} (${percentage.toFixed(1)}%)`;
+                    {callStatusLabels.length > 0 ? (
+                      <Doughnut
+                        data={coldCallStatusDistributionData}
+                        options={{
+                          responsive: true,
+                          maintainAspectRatio: false,
+                          cutout: '60%',
+                          plugins: {
+                            legend: {
+                              position: 'bottom',
+                              labels: {
+                                padding: 15,
+                                font: {
+                                  size: 12,
+                                  weight: '500'
+                                },
+                                usePointStyle: true,
+                                pointStyle: 'circle',
+                                color: '#374151'
+                              }
+                            },
+                            tooltip: {
+                              backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                              padding: 12,
+                              callbacks: {
+                                label: (context) => {
+                                  const label = context.label || '';
+                                  const value = context.parsed || 0;
+                                  const total = callStatusData.reduce((sum, val) => sum + val, 0);
+                                  const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                                  return `${label}: ${value.toLocaleString()} (${percentage}%)`;
+                                }
                               }
                             }
                           }
-                        }
-                      }}
-                    />
+                        }}
+                      />
+                    ) : (coldCall?.callsMade || 0) > 0 ? (
+                      <div className="text-gray-500 text-sm text-center">
+                        <p>No call status data available</p>
+                        <p className="text-xs mt-2">Calls have been made but status information is missing</p>
+                      </div>
+                    ) : (
+                      <div className="text-gray-500 text-sm">No calls made yet</div>
+                    )}
                   </div>
                 </Suspense>
               </div>

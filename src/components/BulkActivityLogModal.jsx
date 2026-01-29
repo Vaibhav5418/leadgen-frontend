@@ -285,6 +285,18 @@ export default function BulkActivityLogModal({ isOpen, onClose, type, selectedCo
         }
       }
 
+      // Dispatch custom event to notify other components (like Employee Performance) that activities were saved
+      if (successCount > 0) {
+        window.dispatchEvent(new CustomEvent('activitySaved', {
+          detail: {
+            type: type,
+            projectId: projectId,
+            bulk: true,
+            count: successCount
+          }
+        }));
+      }
+
       // Reset form and close modal
       setFormData({
         template: '',

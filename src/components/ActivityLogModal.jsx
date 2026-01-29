@@ -3,7 +3,9 @@ import API from '../api/axios';
 
 export default function ActivityLogModal({ isOpen, onClose, type, contactName, companyName, projectId, contactId, phoneNumber, email, linkedInProfileUrl, activityId, editMode = false, lastActivity = null }) {
   const [formData, setFormData] = useState({
-    template: '',
+    subject: '',
+    templateOption: '',
+    message: '',
     outcome: '',
     conversationNotes: '',
     nextAction: '',
@@ -22,6 +24,7 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
     linkedinDate: ''
   });
   const [errors, setErrors] = useState({});
+  const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const [savingField, setSavingField] = useState({ phone: false, email: false, linkedin: false });
@@ -32,6 +35,7 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [generatingEmail, setGeneratingEmail] = useState(false);
   const [generatingLinkedIn, setGeneratingLinkedIn] = useState(false);
+  const [sendingEmailToSheet, setSendingEmailToSheet] = useState(false);
   const hasInitializedRef = useRef(false);
 
   // Load LinkedIn accounts from localStorage on component mount
@@ -66,7 +70,9 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
       if (response.data.success) {
         const activity = response.data.data;
         setFormData({
-          template: activity.template || '',
+          subject: activity.subject || '',
+          templateOption: '',
+          message: activity.template || '',
           outcome: activity.outcome || '',
           conversationNotes: activity.conversationNotes || '',
           nextAction: activity.nextAction || '',
@@ -135,7 +141,9 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
         // Pre-fill form with the most recent activity data
         const activity = lastActivity;
         setFormData({
-          template: activity.template || '',
+          subject: activity.subject || '',
+          templateOption: '',
+          message: activity.template || '',
           outcome: activity.outcome || '',
           conversationNotes: activity.conversationNotes || '',
           nextAction: activity.nextAction || '',
@@ -185,6 +193,7 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
           phoneNumber: phoneNumber || '',
           email: email || '',
           linkedInUrl: linkedInProfileUrl || '',
+          message: (type === 'email' && (!prev.message || prev.message.trim() === '')) ? getEmailSkeleton() : prev.message,
           callDate: type === 'call' ? today : '', // Set current date by default for call activities
           emailDate: type === 'email' ? today : '', // Set current date by default for email activities
           linkedinDate: type === 'linkedin' ? today : '' // Set current date by default for LinkedIn activities
@@ -301,6 +310,11 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
     }
   };
 
+  const getEmailSkeleton = () => {
+    const name = (contactName || '').trim() || 'there';
+    return `Hi ${name},\n\n\nRegards,\n[Your Name]`;
+  };
+
   const validate = () => {
     const newErrors = {};
 
@@ -353,7 +367,8 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
       if (editMode && activityId) {
         // Update existing activity
         response = await API.put(`/activities/${activityId}`, {
-          template: formData.template,
+          subject: formData.subject,
+          template: formData.message,
           conversationNotes: notesWithContact,
           nextAction: formData.nextAction,
           nextActionDate: formData.nextActionDate,
@@ -376,7 +391,8 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
         projectId,
           contactId: contactId || null,
         type,
-        template: formData.template,
+        subject: formData.subject,
+        template: formData.message,
           outcome: null, // Outcome is not used for any activity types
         conversationNotes: notesWithContact,
         nextAction: formData.nextAction,
@@ -409,9 +425,20 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
       }
 
       if (response.data.success) {
+        // Dispatch custom event to notify other components (like Employee Performance) that an activity was saved
+        window.dispatchEvent(new CustomEvent('activitySaved', {
+          detail: {
+            type: type,
+            projectId: projectId,
+            contactId: contactId
+          }
+        }));
+
         // Reset form and close modal
         setFormData({
-          template: '',
+          subject: '',
+          templateOption: '',
+          message: '',
           outcome: '',
           conversationNotes: '',
           nextAction: '',
@@ -445,7 +472,9 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
 
   const handleClose = () => {
     setFormData({
-      template: '',
+      subject: '',
+      templateOption: '',
+      message: '',
       outcome: '',
       conversationNotes: '',
       nextAction: '',
@@ -464,6 +493,7 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
           linkedinDate: ''
     });
     setErrors({});
+    setSuccessMessage('');
     setSavedValues({ phone: null, email: null, linkedin: null });
     setSavingField({ phone: false, email: false, linkedin: false });
     setShowVariations(false);
@@ -502,18 +532,21 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
 
     setGeneratingEmail(true);
     setErrors({});
+    setSuccessMessage('');
     try {
       const response = await API.post('/ai/generate-email', {
         contactId,
         projectId,
-        baseTemplate: formData.template || null
+        baseTemplate: formData.message || null,
+        templateType: formData.templateOption && formData.templateOption !== 'no-template' ? formData.templateOption : null
       });
 
       if (response.data.success) {
-        // Set the generated email content to the template field
+        // Set the generated email content to the message field
         setFormData(prev => ({
           ...prev,
-          template: response.data.data.emailContent
+          subject: response.data.data.emailSubject || prev.subject || '',
+          message: response.data.data.emailBody || response.data.data.emailContent
         }));
       } else {
         setErrors({ submit: response.data.error || 'Failed to generate email' });
@@ -535,18 +568,19 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
 
     setGeneratingLinkedIn(true);
     setErrors({});
+    setSuccessMessage('');
     try {
       const response = await API.post('/ai/generate-linkedin', {
         contactId,
         projectId,
-        baseTemplate: formData.template || null
+        baseTemplate: formData.message || null
       });
 
       if (response.data.success) {
-        // Set the generated LinkedIn message content to the template field
+        // Set the generated LinkedIn message content to the message field
         setFormData(prev => ({
           ...prev,
-          template: response.data.data.linkedInMessage
+          message: response.data.data.linkedInMessage
         }));
       } else {
         setErrors({ submit: response.data.error || 'Failed to generate LinkedIn message' });
@@ -557,6 +591,40 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
       setErrors({ submit: errorMessage });
     } finally {
       setGeneratingLinkedIn(false);
+    }
+  };
+
+  const handleSendEmailToGoogleSheet = async () => {
+    const to = (formData.email || email || '').trim();
+    if (!to) {
+      setErrors({ submit: 'Prospect email (To) is required to send to Google Sheet' });
+      return;
+    }
+
+    setSendingEmailToSheet(true);
+    setErrors({});
+    setSuccessMessage('');
+    try {
+      const response = await API.post('/integrations/google-sheets/email', {
+        projectId,
+        contactId,
+        to,
+        subject: formData.subject || '',
+        body: formData.message || ''
+      });
+
+      if (!response.data.success) {
+        setErrors({ submit: response.data.error || 'Failed to send email to Google Sheet' });
+        return;
+      }
+
+      setSuccessMessage('Saved to Google Sheet successfully.');
+    } catch (error) {
+      console.error('Error sending email to Google Sheet:', error);
+      const errorMessage = error.response?.data?.error || error.message || 'Failed to send to Google Sheet';
+      setErrors({ submit: errorMessage });
+    } finally {
+      setSendingEmailToSheet(false);
     }
   };
 
@@ -1076,8 +1144,8 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                   )}
                 </div>
               <select
-                value={formData.template}
-                onChange={(e) => handleChange('template', e.target.value)}
+                value={formData.templateOption}
+                onChange={(e) => handleChange('templateOption', e.target.value)}
                 className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 bg-white hover:border-gray-400"
               >
                 <option value="">Select an option</option>
@@ -1136,9 +1204,21 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                     )}
                   </button>
                 </div>
+                <div className="mb-3">
+                  <label className="block text-xs font-semibold text-gray-700 mb-2">
+                    Email Subject <span className="text-gray-400 text-xs font-normal">(Optional)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.subject}
+                    onChange={(e) => handleChange('subject', e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200 bg-white hover:border-gray-400"
+                    placeholder="e.g., Quick question about your workflow"
+                  />
+                </div>
                 <textarea
-                  value={formData.template}
-                  onChange={(e) => handleChange('template', e.target.value)}
+                  value={formData.message}
+                  onChange={(e) => handleChange('message', e.target.value)}
                   rows={8}
                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200 resize-y font-sans hover:border-gray-400"
                   placeholder="Click 'Generate Personalized Email' to create an AI-powered email based on the contact's information, or type your email content here..."
@@ -1184,8 +1264,8 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
                   </button>
                 </div>
                 <textarea
-                  value={formData.template}
-                  onChange={(e) => handleChange('template', e.target.value)}
+                  value={formData.message}
+                  onChange={(e) => handleChange('message', e.target.value)}
                   rows={4}
                   className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all duration-200 resize-y font-sans hover:border-gray-400"
                   placeholder="Click 'Generate Personalized Message' to create a short, concise AI-powered LinkedIn message (50-100 words), or type your message content here..."
@@ -1578,6 +1658,18 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
               </div>
             )}
 
+            {/* Success Message */}
+            {successMessage && (
+              <div className="bg-emerald-50 border-2 border-emerald-200 rounded-xl p-3">
+                <div className="flex items-center gap-2">
+                  <svg className="w-4 h-4 text-emerald-700 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <p className="text-xs font-medium text-emerald-800">{successMessage}</p>
+                </div>
+              </div>
+            )}
+
             {/* Footer Buttons */}
             <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-200">
               <button
@@ -1587,6 +1679,33 @@ export default function ActivityLogModal({ isOpen, onClose, type, contactName, c
               >
                 Cancel
               </button>
+              {type === 'email' && (
+                <button
+                  type="button"
+                  onClick={handleSendEmailToGoogleSheet}
+                  disabled={sendingEmailToSheet}
+                  className="px-4 py-2 text-xs font-semibold text-white bg-gradient-to-r from-emerald-600 to-green-700 rounded-lg hover:from-emerald-700 hover:to-green-800 transition-all duration-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm hover:shadow-md"
+                  title="Append To/Subject/Body to Google Sheet"
+                >
+                  {sendingEmailToSheet ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Sending...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M22 2L11 13" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M22 2l-7 20-4-9-9-4 20-7z" />
+                      </svg>
+                      Send
+                    </>
+                  )}
+                </button>
+              )}
               <button
                 type="submit"
                 disabled={loading}

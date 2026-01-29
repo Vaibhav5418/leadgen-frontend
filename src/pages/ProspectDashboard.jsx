@@ -300,7 +300,8 @@ export default function ProspectDashboard() {
         return;
       }
 
-      const response = await API.get(`/activities/project/${selectedProject}`);
+      // Use a higher limit so "latest activity" calculations don't miss data
+      const response = await API.get(`/activities/project/${selectedProject}?limit=5000`);
       
       if (response.data.success) {
         let activities = response.data.data || [];
@@ -320,81 +321,80 @@ export default function ProspectDashboard() {
         let filteredActivities = [];
 
         if (funnelType === 'call') {
+          // Always work from the most recent call activity per contact (unique prospects)
+          const callActs = activities.filter(a => a.type === 'call');
+          const latestCallByContact = new Map();
+          callActs.forEach(a => {
+            const cid = a.contactId?.toString();
+            if (!cid) return;
+            const d = getActivityDate(a);
+            const existing = latestCallByContact.get(cid);
+            if (!existing || d > existing._activityDate) {
+              latestCallByContact.set(cid, { ...a, _activityDate: d });
+            }
+          });
+          const latestCallActivities = Array.from(latestCallByContact.values());
+
+          // If backend provided exact stage contact ids, use them to guarantee popup count == funnel count
+          const backendStageIds = funnelData?.stageContactIds?.[stage];
+          if (Array.isArray(backendStageIds)) {
+            const idSet = new Set(backendStageIds.map(id => (id?.toString ? id.toString() : String(id))));
+            filteredActivities = Array.from(idSet)
+              .map((cid) => latestCallByContact.get(cid) || { type: 'call', contactId: cid, createdAt: null, callDate: null, callStatus: null })
+              .filter(Boolean);
+          } else {
           switch (stage) {
             // New 10-stage structure
             case 'callsAttempted':
             case 'callSent': // Legacy support
-              filteredActivities = activities.filter(a => a.type === 'call' && a.callDate);
+              filteredActivities = latestCallActivities.filter(a => a.callDate || a.callStatus);
               break;
             case 'callsConnected':
             case 'accepted': // Legacy support
               const connectedStatuses = ['Interested', 'Not Interested', 'Call Back', 'Future', 'Details Shared', 'Demo Booked', 'Demo Completed', 'Existing'];
-              filteredActivities = activities.filter(a => 
-                a.type === 'call' && 
-                a.callStatus && connectedStatuses.includes(a.callStatus)
-              );
+              filteredActivities = latestCallActivities.filter(a => a.callStatus && connectedStatuses.includes(a.callStatus));
               break;
             case 'decisionMakerReached':
               const decisionMakerStatuses = ['Interested', 'Details Shared', 'Demo Booked', 'Demo Completed'];
-              filteredActivities = activities.filter(a => 
-                a.type === 'call' && 
-                a.callStatus && decisionMakerStatuses.includes(a.callStatus)
-              );
+              filteredActivities = latestCallActivities.filter(a => a.callStatus && decisionMakerStatuses.includes(a.callStatus));
               break;
             case 'interested':
-              filteredActivities = activities.filter(a => 
-                a.type === 'call' && a.callStatus === 'Interested'
-              );
+              filteredActivities = latestCallActivities.filter(a => a.callStatus === 'Interested');
               break;
             case 'detailsShared':
-              filteredActivities = activities.filter(a => 
-                a.type === 'call' && a.callStatus === 'Details Shared'
-              );
+              filteredActivities = latestCallActivities.filter(a => a.callStatus === 'Details Shared');
               break;
             case 'demoBooked':
             case 'scheduled': // Legacy support
-              filteredActivities = activities.filter(a => 
-                a.type === 'call' && a.callStatus === 'Demo Booked'
-              );
+              filteredActivities = latestCallActivities.filter(a => a.callStatus === 'Demo Booked');
               break;
             case 'demoCompleted':
             case 'completed': // Legacy support
-              filteredActivities = activities.filter(a => 
-                a.type === 'call' && a.callStatus === 'Demo Completed'
-              );
+              filteredActivities = latestCallActivities.filter(a => a.callStatus === 'Demo Completed');
               break;
             case 'sql':
-              filteredActivities = activities.filter(a => 
-                a.type === 'call' && 
-                (a.callStatus === 'Demo Completed' || 
-                 (a.callStatus === 'Interested' && a.conversationNotes && a.conversationNotes.length > 50) ||
-                 a.status === 'SQL')
+              filteredActivities = latestCallActivities.filter(a =>
+                a.callStatus === 'Demo Completed' ||
+                (a.callStatus === 'Interested' && a.conversationNotes && a.conversationNotes.length > 50) ||
+                a.status === 'SQL'
               );
               break;
             // Legacy stages (for backward compatibility)
             case 'followups':
+              // show latest activity for contacts with >1 call activities
               const callCounts = {};
-              activities.filter(a => a.type === 'call' && a.callDate).forEach(a => {
+              callActs.forEach(a => {
                 const contactId = a.contactId?.toString();
-                if (contactId) {
-                  callCounts[contactId] = (callCounts[contactId] || 0) + 1;
-                }
+                if (contactId) callCounts[contactId] = (callCounts[contactId] || 0) + 1;
               });
-              const followupContactIds = Object.keys(callCounts).filter(id => callCounts[id] > 1);
-              filteredActivities = activities.filter(a => 
-                a.type === 'call' && 
-                followupContactIds.includes(a.contactId?.toString())
-              );
+              const followupContactIds = new Set(Object.keys(callCounts).filter(id => callCounts[id] > 1));
+              filteredActivities = latestCallActivities.filter(a => followupContactIds.has(a.contactId?.toString()));
               break;
             case 'cip':
-              filteredActivities = activities.filter(a => 
-                a.type === 'call' && 
-                ['Interested', 'Call Back', 'Future'].includes(a.callStatus)
-              );
+              filteredActivities = latestCallActivities.filter(a => ['Interested', 'Call Back', 'Future'].includes(a.callStatus));
               break;
             case 'meetingProposed':
-              filteredActivities = activities.filter(a => 
-                a.type === 'call' && 
+              filteredActivities = latestCallActivities.filter(a =>
                 a.nextAction && (
                   a.nextAction.toLowerCase().includes('meeting') ||
                   a.nextAction.toLowerCase().includes('demo') ||
@@ -403,112 +403,118 @@ export default function ProspectDashboard() {
               );
               break;
           }
+          }
         } else if (funnelType === 'email') {
-          switch (stage) {
-            case 'emailSent':
-              filteredActivities = activities.filter(a => a.type === 'email' && a.emailDate);
-              break;
-            case 'accepted':
-              filteredActivities = activities.filter(a => 
-                a.type === 'email' && 
-                ['Interested', 'Meeting Proposed', 'Meeting Scheduled'].includes(a.status)
-              );
-              break;
-            case 'followups':
-              const emailCounts = {};
-              activities.filter(a => a.type === 'email' && a.emailDate).forEach(a => {
-                const contactId = a.contactId?.toString();
-                if (contactId) {
-                  emailCounts[contactId] = (emailCounts[contactId] || 0) + 1;
-                }
-              });
-              const emailFollowupContactIds = Object.keys(emailCounts).filter(id => emailCounts[id] > 1);
-              filteredActivities = activities.filter(a => 
-                a.type === 'email' && 
-                emailFollowupContactIds.includes(a.contactId?.toString())
-              );
-              break;
-            case 'cip':
-              filteredActivities = activities.filter(a => 
-                a.type === 'email' && a.status === 'CIP'
-              );
-              break;
-            case 'meetingProposed':
-              filteredActivities = activities.filter(a => 
-                a.type === 'email' && a.status === 'Meeting Proposed'
-              );
-              break;
-            case 'scheduled':
-              filteredActivities = activities.filter(a => 
-                a.type === 'email' && a.status === 'Meeting Scheduled'
-              );
-              break;
-            case 'completed':
-              filteredActivities = activities.filter(a => 
-                a.type === 'email' && a.status === 'Meeting Completed'
-              );
-              break;
-            case 'sql':
-              filteredActivities = activities.filter(a => 
-                a.type === 'email' && 
-                ['SQL', 'Meeting Completed'].includes(a.status)
-              );
-              break;
+          const emailActs = activities.filter(a => a.type === 'email');
+          const latestEmailByContact = new Map();
+          emailActs.forEach(a => {
+            const cid = a.contactId?.toString();
+            if (!cid) return;
+            const d = getActivityDate(a);
+            const existing = latestEmailByContact.get(cid);
+            if (!existing || d > existing._activityDate) {
+              latestEmailByContact.set(cid, { ...a, _activityDate: d });
+            }
+          });
+          const latestEmailActivities = Array.from(latestEmailByContact.values());
+
+          const backendStageIds = funnelData?.stageContactIds?.[stage];
+          if (Array.isArray(backendStageIds)) {
+            const idSet = new Set(backendStageIds.map(id => (id?.toString ? id.toString() : String(id))));
+            filteredActivities = Array.from(idSet)
+              .map((cid) => latestEmailByContact.get(cid) || { type: 'email', contactId: cid, createdAt: null, emailDate: null, status: null })
+              .filter(Boolean);
+          } else {
+            switch (stage) {
+              case 'emailSent':
+                filteredActivities = latestEmailActivities.filter(a => a.emailDate);
+                break;
+              case 'accepted':
+                filteredActivities = latestEmailActivities.filter(a =>
+                  ['Interested', 'Meeting Proposed', 'Meeting Scheduled'].includes(a.status)
+                );
+                break;
+              case 'followups': {
+                const emailCounts = {};
+                emailActs.filter(a => a.emailDate).forEach(a => {
+                  const contactId = a.contactId?.toString();
+                  if (contactId) emailCounts[contactId] = (emailCounts[contactId] || 0) + 1;
+                });
+                const emailFollowupContactIds = new Set(Object.keys(emailCounts).filter(id => emailCounts[id] > 1));
+                filteredActivities = latestEmailActivities.filter(a => emailFollowupContactIds.has(a.contactId?.toString()));
+                break;
+              }
+              case 'cip':
+                filteredActivities = latestEmailActivities.filter(a => a.status === 'CIP');
+                break;
+              case 'meetingProposed':
+                filteredActivities = latestEmailActivities.filter(a => a.status === 'Meeting Proposed');
+                break;
+              case 'scheduled':
+                filteredActivities = latestEmailActivities.filter(a => a.status === 'Meeting Scheduled');
+                break;
+              case 'completed':
+                filteredActivities = latestEmailActivities.filter(a => a.status === 'Meeting Completed');
+                break;
+              case 'sql':
+                filteredActivities = latestEmailActivities.filter(a => ['SQL', 'Meeting Completed'].includes(a.status));
+                break;
+            }
           }
         } else if (funnelType === 'linkedin') {
-          switch (stage) {
-            case 'connectionSent':
-              filteredActivities = activities.filter(a => 
-                a.type === 'linkedin' && 
-                (a.lnRequestSent === 'Yes' || a.lnRequestSent === true)
-              );
-              break;
-            case 'accepted':
-              filteredActivities = activities.filter(a => 
-                a.type === 'linkedin' && 
-                (a.connected === 'Yes' || a.connected === true)
-              );
-              break;
-            case 'followups':
-              const linkedinCounts = {};
-              activities.filter(a => a.type === 'linkedin').forEach(a => {
-                const contactId = a.contactId?.toString();
-                if (contactId) {
-                  linkedinCounts[contactId] = (linkedinCounts[contactId] || 0) + 1;
-                }
-              });
-              const linkedinFollowupContactIds = Object.keys(linkedinCounts).filter(id => linkedinCounts[id] > 1);
-              filteredActivities = activities.filter(a => 
-                a.type === 'linkedin' && 
-                linkedinFollowupContactIds.includes(a.contactId?.toString())
-              );
-              break;
-            case 'cip':
-              filteredActivities = activities.filter(a => 
-                a.type === 'linkedin' && a.status === 'CIP'
-              );
-              break;
-            case 'meetingProposed':
-              filteredActivities = activities.filter(a => 
-                a.type === 'linkedin' && a.status === 'Meeting Proposed'
-              );
-              break;
-            case 'scheduled':
-              filteredActivities = activities.filter(a => 
-                a.type === 'linkedin' && a.status === 'Meeting Scheduled'
-              );
-              break;
-            case 'completed':
-              filteredActivities = activities.filter(a => 
-                a.type === 'linkedin' && a.status === 'Meeting Completed'
-              );
-              break;
-            case 'sql':
-              filteredActivities = activities.filter(a => 
-                a.type === 'linkedin' && 
-                ['SQL', 'Meeting Completed'].includes(a.status)
-              );
-              break;
+          const linkedinActs = activities.filter(a => a.type === 'linkedin');
+          const latestLinkedinByContact = new Map();
+          linkedinActs.forEach(a => {
+            const cid = a.contactId?.toString();
+            if (!cid) return;
+            const d = getActivityDate(a);
+            const existing = latestLinkedinByContact.get(cid);
+            if (!existing || d > existing._activityDate) {
+              latestLinkedinByContact.set(cid, { ...a, _activityDate: d });
+            }
+          });
+          const latestLinkedinActivities = Array.from(latestLinkedinByContact.values());
+
+          const backendStageIds = funnelData?.stageContactIds?.[stage];
+          if (Array.isArray(backendStageIds)) {
+            const idSet = new Set(backendStageIds.map(id => (id?.toString ? id.toString() : String(id))));
+            filteredActivities = Array.from(idSet)
+              .map((cid) => latestLinkedinByContact.get(cid) || { type: 'linkedin', contactId: cid, createdAt: null, status: null })
+              .filter(Boolean);
+          } else {
+            switch (stage) {
+              case 'connectionSent':
+                filteredActivities = latestLinkedinActivities.filter(a => (a.lnRequestSent === 'Yes' || a.lnRequestSent === true));
+                break;
+              case 'accepted':
+                filteredActivities = latestLinkedinActivities.filter(a => (a.connected === 'Yes' || a.connected === true));
+                break;
+              case 'followups': {
+                const linkedinCounts = {};
+                linkedinActs.forEach(a => {
+                  const contactId = a.contactId?.toString();
+                  if (contactId) linkedinCounts[contactId] = (linkedinCounts[contactId] || 0) + 1;
+                });
+                const linkedinFollowupContactIds = new Set(Object.keys(linkedinCounts).filter(id => linkedinCounts[id] > 1));
+                filteredActivities = latestLinkedinActivities.filter(a => linkedinFollowupContactIds.has(a.contactId?.toString()));
+                break;
+              }
+              case 'cip':
+                filteredActivities = latestLinkedinActivities.filter(a => a.status === 'CIP');
+                break;
+              case 'meetingProposed':
+                filteredActivities = latestLinkedinActivities.filter(a => a.status === 'Meeting Proposed');
+                break;
+              case 'scheduled':
+                filteredActivities = latestLinkedinActivities.filter(a => a.status === 'Meeting Scheduled');
+                break;
+              case 'completed':
+                filteredActivities = latestLinkedinActivities.filter(a => a.status === 'Meeting Completed');
+                break;
+              case 'sql':
+                filteredActivities = latestLinkedinActivities.filter(a => ['SQL', 'Meeting Completed'].includes(a.status));
+                break;
+            }
           }
         }
 

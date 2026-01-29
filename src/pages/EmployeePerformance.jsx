@@ -67,6 +67,28 @@ export default function EmployeePerformance() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeFilter]);
 
+  // Listen for activity saved events to automatically refresh data
+  useEffect(() => {
+    const handleActivitySaved = () => {
+      // Invalidate cache for all time filters to ensure fresh data
+      Object.keys(employeePerformanceCache).forEach(key => {
+        delete employeePerformanceCache[key];
+      });
+      
+      // Refresh the current view
+      fetchEmployeePerformance();
+    };
+
+    // Listen for the custom event
+    window.addEventListener('activitySaved', handleActivitySaved);
+
+    // Cleanup listener on unmount
+    return () => {
+      window.removeEventListener('activitySaved', handleActivitySaved);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeFilter]);
+
   const fetchEmployeePerformance = async () => {
     try {
       setLoading(true);
@@ -141,7 +163,8 @@ export default function EmployeePerformance() {
           }
         ]
       },
-      topPerformers: data.employees
+      // IMPORTANT: do not mutate `data.employees` (it's React state)
+      topPerformers: [...data.employees]
         .sort((a, b) => b.totalActivities - a.totalActivities)
         .slice(0, 5)
     };

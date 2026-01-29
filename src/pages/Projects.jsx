@@ -54,19 +54,17 @@ export default function Projects() {
         
         setProjects(filteredProjects);
         
-        // Calculate basic stats
+        // Update only stats that we derive from projects list. Do not overwrite
+        // analytics-derived stats (totalActivities, meetingRate, sqlCount, avgActivitiesPerProspect)
+        // or they will reset to 0 when fetchProjects completes after fetchAnalytics.
         const totalProspects = allProjects.reduce((sum, p) => sum + (p.totalProspects || 0), 0);
-        // Calculate active projects count
         const activeProjectsCount = allProjects.filter(p => p.status === 'active').length;
-        setStats({
+        setStats(prev => ({
+          ...prev,
           total: allProjects.length,
-          totalProspects: totalProspects,
-          totalActivities: 0, // Will be updated from analytics
-          activeProjects: activeProjectsCount,
-          meetingRate: 0, // Will be updated from analytics
-          sqlCount: 0, // Will be updated from analytics
-          avgActivitiesPerProspect: 0 // Will be updated from analytics
-        });
+          totalProspects,
+          activeProjects: activeProjectsCount
+        }));
       }
     } catch (err) {
       console.error('Error fetching projects:', err);

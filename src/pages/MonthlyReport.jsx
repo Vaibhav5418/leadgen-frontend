@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import API from '../api/axios';
 import * as XLSX from 'xlsx-js-style';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 export default function MonthlyReport() {
   const { id } = useParams();
@@ -14,6 +16,7 @@ export default function MonthlyReport() {
   const [reportData, setReportData] = useState({});
   const [viewMode, setViewMode] = useState('day'); // 'day' or 'month'
   const [error, setError] = useState(null);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const [prospectModal, setProspectModal] = useState({
     isOpen: false,
     metric: null, // e.g., 'interested', 'busy', 'detailsShared'
@@ -23,6 +26,7 @@ export default function MonthlyReport() {
   });
   const [allContactsForModal, setAllContactsForModal] = useState([]);
   const [loadingProspects, setLoadingProspects] = useState(false);
+  const exportMenuRef = React.useRef(null);
 
   // Simple in-memory cache for monthly report data (per browser tab)
   // Keyed by projectId so reopening the report is much faster.
@@ -55,6 +59,30 @@ export default function MonthlyReport() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // Close export menu on outside click / Esc
+  useEffect(() => {
+    if (!exportMenuOpen) return;
+
+    const onMouseDown = (e) => {
+      const el = exportMenuRef.current;
+      if (!el) return;
+      if (e.target instanceof Node && !el.contains(e.target)) {
+        setExportMenuOpen(false);
+      }
+    };
+
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setExportMenuOpen(false);
+    };
+
+    document.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [exportMenuOpen]);
 
   const fetchData = async () => {
     try {
@@ -258,6 +286,62 @@ export default function MonthlyReport() {
     return groupedPeriods.flatMap(group => group.periods);
   }, [groupedPeriods]);
 
+  // ContactIds that belong to this project (used to keep table + modal consistent).
+  const projectContactIdSet = useMemo(() => {
+    const s = new Set();
+    (contacts || []).forEach((c) => {
+      const idStr =
+        (c?._id?.toString ? c._id.toString() : c?._id) ||
+        (c?.contactId?.toString ? c.contactId.toString() : c?.contactId) ||
+        (c?.contact?._id?.toString ? c.contact._id.toString() : c?.contact?._id);
+      if (idStr) s.add(String(idStr));
+    });
+    return s;
+  }, [contacts]);
+
+  // First call period per contact (used to classify fresh vs follow-up).
+  // Important: "fresh/follow-up" classification is based on the *latest* call activity in a period,
+  // but we still need each contact's first-call period to handle legacy calls with missing callNumber.
+  const firstCallPeriodByContact = useMemo(() => {
+    const earliestAny = new Map(); // contactId -> { time:number, period:string }
+    const earliestExplicit = new Map(); // contactId -> { time:number, period:string }
+
+    activities.forEach(a => {
+      if (a.type !== 'call') return;
+      if (!a.contactId) return;
+
+      const contactIdStr = a.contactId.toString ? a.contactId.toString() : a.contactId;
+      if (!contactIdStr) return;
+      if (projectContactIdSet.size > 0 && !projectContactIdSet.has(String(contactIdStr))) return;
+
+      // Group period by callDate (if present), but compute "earliest" by createdAt if possible
+      const periodDate = a.callDate ? new Date(a.callDate) : (a.createdAt ? new Date(a.createdAt) : null);
+      if (!periodDate || isNaN(periodDate.getTime())) return;
+      const period = viewMode === 'day' ? getDayKey(periodDate) : getMonthKey(periodDate);
+
+      const createdAtDate = a.createdAt ? new Date(a.createdAt) : null;
+      const time = createdAtDate && !isNaN(createdAtDate.getTime()) ? createdAtDate.getTime() : periodDate.getTime();
+
+      if (a.callNumber === '1st call') {
+        const cur = earliestExplicit.get(contactIdStr);
+        if (!cur || time < cur.time) earliestExplicit.set(contactIdStr, { time, period });
+      } else {
+        const cur = earliestAny.get(contactIdStr);
+        if (!cur || time < cur.time) earliestAny.set(contactIdStr, { time, period });
+      }
+    });
+
+    const out = new Map();
+    const contactIds = new Set([...earliestAny.keys(), ...earliestExplicit.keys()]);
+    contactIds.forEach(idStr => {
+      const explicit = earliestExplicit.get(idStr);
+      const any = earliestAny.get(idStr);
+      out.set(idStr, (explicit || any)?.period || null);
+    });
+
+    return out;
+  }, [activities, viewMode, getDayKey, getMonthKey, projectContactIdSet]);
+
   // Optimized calculation with useMemo
   const calculateReportData = useCallback(() => {
     if (activities.length === 0 && contacts.length === 0) {
@@ -328,80 +412,86 @@ export default function MonthlyReport() {
 
       // Calculate Cold Calling metrics
       if (enabledChannels.call && callActivities.length > 0) {
-        const contactFirstCalls = new Map();
-        const contactActivitiesByPeriod = {};
+        // Unique prospect counts based on each prospect's MOST RECENT call activity in the period.
+        // This guarantees the table numbers match the modal list (which is prospect-based).
+        //
+        // Rule:
+        // - For each period + contact, pick the latest call activity (by createdAt; fallback callDate).
+        // - Total Calls: count unique contacts with a call in that period.
+        // - Fresh Calls: latest call is "1st call" OR (no callNumber AND the contact's first-call period equals this period).
+        // - Follow Ups: latest call is not Fresh.
+        // - Status buckets (Interested/Ring/etc): use the latest callStatus in that period.
+        const latestCallByPeriod = {}; // period -> Map<contactId, activity>
 
-        callActivities.forEach(activity => {
-          const date = activity.callDate ? new Date(activity.callDate) : new Date(activity.createdAt);
-          if (!date || isNaN(date.getTime())) return;
+        const getPeriodForCall = (a) => {
+          const periodDate = a.callDate ? new Date(a.callDate) : (a.createdAt ? new Date(a.createdAt) : null);
+          if (!periodDate || isNaN(periodDate.getTime())) return null;
+          return viewMode === 'day' ? getDayKey(periodDate) : getMonthKey(periodDate);
+        };
 
-          const period = viewMode === 'day' ? getDayKey(date) : getMonthKey(date);
-          if (!data[period]) return;
+        const getRecencyTime = (a) => {
+          const created = a.createdAt ? new Date(a.createdAt) : null;
+          if (created && !isNaN(created.getTime())) return created.getTime();
+          const d = a.callDate ? new Date(a.callDate) : null;
+          return d && !isNaN(d.getTime()) ? d.getTime() : 0;
+        };
 
-          const contactId = activity.contactId?.toString() || 'unknown';
+        callActivities.forEach((activity) => {
+          const period = getPeriodForCall(activity);
+          if (!period || !data[period]) return;
 
-          if (activity.callNumber === '1st call' && !contactFirstCalls.has(contactId)) {
-            contactFirstCalls.set(contactId, period);
+          const contactId =
+            activity.contactId?.toString ? activity.contactId.toString() : activity.contactId;
+          if (!contactId) return;
+          if (projectContactIdSet.size > 0 && !projectContactIdSet.has(String(contactId))) return;
+
+          if (!latestCallByPeriod[period]) latestCallByPeriod[period] = new Map();
+          const existing = latestCallByPeriod[period].get(contactId);
+          if (!existing || getRecencyTime(activity) > getRecencyTime(existing)) {
+            latestCallByPeriod[period].set(contactId, activity);
           }
-
-          if (!contactActivitiesByPeriod[period]) {
-            contactActivitiesByPeriod[period] = {};
-          }
-          if (!contactActivitiesByPeriod[period][contactId]) {
-            contactActivitiesByPeriod[period][contactId] = [];
-          }
-          contactActivitiesByPeriod[period][contactId].push(activity);
         });
 
-        callActivities.forEach(activity => {
-          const date = activity.callDate ? new Date(activity.callDate) : new Date(activity.createdAt);
-          if (!date || isNaN(date.getTime())) return;
+        Object.keys(data).forEach((period) => {
+          const map = latestCallByPeriod[period];
+          if (!map || map.size === 0) return;
 
-          const period = viewMode === 'day' ? getDayKey(date) : getMonthKey(date);
-          if (!data[period]) return;
+          let totalProspectsCalled = 0;
+          let freshProspects = 0;
+          let followUpProspects = 0;
 
-          if (activity.callStatus) {
-            switch (activity.callStatus) {
-              case 'Interested': data[period].interested++; break;
-              case 'Not Interested': data[period].notInterested++; break;
-              case 'Ring': data[period].ring++; break;
-              case 'Busy': data[period].busy++; break;
-              case 'Hang Up': data[period].hangUp++; break;
-              case 'Call Back': data[period].callBack++; break;
-              case 'Switch Off': data[period].switchOff++; break;
-              case 'Details Shared': data[period].detailsShared++; break;
-              case 'Future': data[period].future++; break;
-              case 'Invalid': data[period].invalid++; break;
-              case 'Demo Booked': data[period].demoBooked++; break;
-            }
-          }
+          map.forEach((latest, contactId) => {
+            totalProspectsCalled++;
 
-          data[period].totalCalls++;
-        });
+            const firstCallPeriod = firstCallPeriodByContact.get(contactId);
+            const isFresh =
+              latest.callNumber === '1st call' || (!latest.callNumber && firstCallPeriod === period);
 
-        // Calculate Fresh Calls and Follow Ups
-        Object.keys(contactActivitiesByPeriod).forEach(period => {
-          const periodData = contactActivitiesByPeriod[period];
-          let freshCalls = 0;
-          let followUps = 0;
+            if (isFresh) freshProspects++;
+            else followUpProspects++;
 
-          Object.keys(periodData).forEach(contactId => {
-            const contactActs = periodData[contactId];
-            const firstCallPeriod = contactFirstCalls.get(contactId);
-
-            contactActs.forEach(activity => {
-              if (activity.callNumber === '1st call' || (firstCallPeriod === period && !activity.callNumber)) {
-                freshCalls++;
-              } else {
-                followUps++;
+            // Status buckets are based on latest callStatus in the period
+            const s = latest.callStatus;
+            if (s) {
+              switch (s) {
+                case 'Interested': data[period].interested++; break;
+                case 'Not Interested': data[period].notInterested++; break;
+                case 'Ring': data[period].ring++; break;
+                case 'Busy': data[period].busy++; break;
+                case 'Hang Up': data[period].hangUp++; break;
+                case 'Call Back': data[period].callBack++; break;
+                case 'Switch Off': data[period].switchOff++; break;
+                case 'Details Shared': data[period].detailsShared++; break;
+                case 'Future': data[period].future++; break;
+                case 'Invalid': data[period].invalid++; break;
+                case 'Demo Booked': data[period].demoBooked++; break;
               }
-            });
+            }
           });
 
-          if (data[period]) {
-            data[period].freshCalls = freshCalls;
-            data[period].followUps = followUps;
-          }
+          data[period].totalCalls = totalProspectsCalled;
+          data[period].freshCalls = freshProspects;
+          data[period].followUps = followUpProspects;
         });
       }
 
@@ -528,7 +618,7 @@ export default function MonthlyReport() {
 
     const timeoutId = setTimeout(calculate, 0);
     return () => clearTimeout(timeoutId);
-  }, [activities, contacts, viewMode, enabledChannels, allPeriods, getDayKey, getMonthKey]);
+  }, [activities, contacts, viewMode, enabledChannels, allPeriods, getDayKey, getMonthKey, firstCallPeriodByContact, projectContactIdSet]);
 
   useEffect(() => {
     calculateReportData();
@@ -752,29 +842,59 @@ export default function MonthlyReport() {
       
       // Check if activity matches the metric
       if (channel === 'call') {
+        const getRecencyTime = (a) => {
+          const created = a.createdAt ? new Date(a.createdAt) : null;
+          if (created && !isNaN(created.getTime())) return created.getTime();
+          const d = a.callDate ? new Date(a.callDate) : null;
+          return d && !isNaN(d.getTime()) ? d.getTime() : 0;
+        };
+
+        const latestCall = channelActivities.reduce((latest, a) => {
+          if (!latest) return a;
+          return getRecencyTime(a) > getRecencyTime(latest) ? a : latest;
+        }, null);
+
         switch (metric) {
+          case 'totalCalls':
+            return !!latestCall;
+          case 'freshCalls': {
+            const firstCallPeriod = firstCallPeriodByContact.get(contactIdStr);
+            if (!latestCall) return false;
+            return (
+              latestCall.callNumber === '1st call' ||
+              (!latestCall.callNumber && firstCallPeriod === period)
+            );
+          }
+          case 'followUps': {
+            const firstCallPeriod = firstCallPeriodByContact.get(contactIdStr);
+            if (!latestCall) return false;
+            const isFresh =
+              latestCall.callNumber === '1st call' ||
+              (!latestCall.callNumber && firstCallPeriod === period);
+            return !isFresh;
+          }
           case 'interested':
-            return channelActivities.some(a => a.callStatus === 'Interested');
+            return latestCall?.callStatus === 'Interested';
           case 'notInterested':
-            return channelActivities.some(a => a.callStatus === 'Not Interested');
+            return latestCall?.callStatus === 'Not Interested';
           case 'ring':
-            return channelActivities.some(a => a.callStatus === 'Ring');
+            return latestCall?.callStatus === 'Ring';
           case 'busy':
-            return channelActivities.some(a => a.callStatus === 'Busy');
+            return latestCall?.callStatus === 'Busy';
           case 'hangUp':
-            return channelActivities.some(a => a.callStatus === 'Hang Up');
+            return latestCall?.callStatus === 'Hang Up';
           case 'callBack':
-            return channelActivities.some(a => a.callStatus === 'Call Back');
+            return latestCall?.callStatus === 'Call Back';
           case 'switchOff':
-            return channelActivities.some(a => a.callStatus === 'Switch Off');
+            return latestCall?.callStatus === 'Switch Off';
           case 'detailsShared':
-            return channelActivities.some(a => a.callStatus === 'Details Shared');
+            return latestCall?.callStatus === 'Details Shared';
           case 'future':
-            return channelActivities.some(a => a.callStatus === 'Future');
+            return latestCall?.callStatus === 'Future';
           case 'invalid':
-            return channelActivities.some(a => a.callStatus === 'Invalid');
+            return latestCall?.callStatus === 'Invalid';
           case 'demoBooked':
-            return channelActivities.some(a => a.callStatus === 'Demo Booked');
+            return latestCall?.callStatus === 'Demo Booked';
           case 'dataAllocated':
             // For data allocated, check if contact was created in this period
             if (contact.createdAt) {
@@ -858,7 +978,7 @@ export default function MonthlyReport() {
       
       return false;
     });
-  }, [allContactsForModal, contacts, activitiesIndex, activities, viewMode, getDayKey, getMonthKey]);
+  }, [allContactsForModal, contacts, activitiesIndex, activities, viewMode, getDayKey, getMonthKey, firstCallPeriodByContact]);
 
   // Fetch all contacts when modal opens - use existing contacts if available
   useEffect(() => {
@@ -1345,6 +1465,205 @@ export default function MonthlyReport() {
     }
   }, [allPeriods, reportData, groupedPeriods, groupedMetrics, viewMode, project]);
 
+  const exportToPdf = useCallback(() => {
+    if (allPeriods.length === 0 || !reportData) {
+      alert('No data available to export');
+      return;
+    }
+
+    try {
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+
+      const marginX = 40;
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const maxY = pageHeight - 40;
+
+      const enabledChannelsCount = Object.values(enabledChannels).filter(Boolean).length;
+      const sections = Object.keys(groupedMetrics);
+
+      const getValueForMetric = (metric, period) => {
+        if (metric.isFormula) {
+          return `(${reportData[period]?.freshCalls || 0} + ${reportData[period]?.followUps || 0})`;
+        }
+        if (metric.key === 'responseRate') {
+          return `${reportData[period]?.[metric.key] || 0}%`;
+        }
+        return reportData[period]?.[metric.key] || 0;
+      };
+
+      const addTitleBlock = () => {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(16);
+        doc.text(`Monthly Report - ${project?.companyName || 'Report'}`, marginX, 40);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.text(
+          `${viewMode === 'day' ? 'Day' : 'Month'} View - Exported on ${new Date().toLocaleDateString()}`,
+          marginX,
+          58
+        );
+      };
+
+      const ensureSpaceForText = (currentY, needed = 24) => {
+        if (currentY + needed > maxY) {
+          doc.addPage();
+          addTitleBlock();
+          return 80;
+        }
+        return currentY;
+      };
+
+      const invokeAutoTable = (options) => {
+        if (typeof doc.autoTable === 'function') return doc.autoTable(options);
+        return autoTable(doc, options);
+      };
+
+      const runTable = ({ startY, periods, monthLabel, onlySection }) => {
+        // Title above table (month label)
+        if (monthLabel) {
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(12);
+          doc.text(monthLabel, marginX, startY);
+        }
+        const tableStartY = monthLabel ? startY + 10 : startY;
+
+        const head = [['Key Results', ...periods]];
+        const body = [];
+
+        const pushMetricRowsForSection = (sectionName, includeSectionHeaderRow) => {
+          if (includeSectionHeaderRow) {
+            body.push([
+              {
+                content: sectionName,
+                colSpan: periods.length + 1,
+                styles: {
+                  fillColor: [255, 224, 130],
+                  textColor: [31, 41, 55],
+                  fontStyle: 'bold',
+                  halign: 'left'
+                }
+              }
+            ]);
+          }
+
+          (groupedMetrics[sectionName] || []).forEach((metric) => {
+            const row = [
+              {
+                content: metric.label,
+                styles: { fontStyle: metric.bold ? 'bold' : 'normal', halign: 'left' }
+              }
+            ];
+
+            periods.forEach((p) => {
+              const v = getValueForMetric(metric, p);
+              row.push({ content: String(v), styles: { halign: 'center' } });
+            });
+
+            if (metric.highlight) {
+              row.forEach((cell) => {
+                cell.styles = {
+                  ...(cell.styles || {}),
+                  fillColor: metric.highlightDark ? [200, 230, 201] : [232, 245, 233]
+                };
+              });
+            }
+
+            body.push(row);
+          });
+        };
+
+        if (enabledChannelsCount > 1 && onlySection) {
+          // Multi-channel: one section per table
+          pushMetricRowsForSection(onlySection, false);
+        } else {
+          // Single channel: section separators inside one table
+          sections.forEach((sectionName) => pushMetricRowsForSection(sectionName, true));
+        }
+
+        invokeAutoTable({
+          startY: tableStartY,
+          head,
+          body,
+          theme: 'grid',
+          margin: { left: marginX, right: marginX },
+          styles: {
+            font: 'helvetica',
+            fontSize: periods.length > 8 ? 7 : 8,
+            cellPadding: 3,
+            textColor: [55, 65, 81],
+            overflow: 'linebreak'
+          },
+          headStyles: {
+            fillColor: [219, 234, 254],
+            textColor: [17, 24, 39],
+            fontStyle: 'bold',
+            halign: 'center'
+          }
+        });
+
+        return doc.lastAutoTable?.finalY ? doc.lastAutoTable.finalY + 18 : tableStartY + 120;
+      };
+
+      addTitleBlock();
+      let cursorY = 80;
+
+      // Keep PDFs readable by splitting columns per month-group and chunking if needed
+      const maxCols = viewMode === 'day' ? 6 : 8;
+
+      groupedPeriods.forEach((group) => {
+        if (!group?.periods?.length) return;
+
+        const monthLabel = viewMode === 'day' ? (group.month || group.monthKey) : (group.monthKey || group.month);
+
+        for (let i = 0; i < group.periods.length; i += maxCols) {
+          const periodChunk = group.periods.slice(i, i + maxCols);
+
+          cursorY = ensureSpaceForText(cursorY, 40);
+
+          if (enabledChannelsCount > 1) {
+            sections.forEach((sectionName, idx) => {
+              cursorY = ensureSpaceForText(cursorY, 40);
+              cursorY = runTable({
+                startY: cursorY,
+                periods: periodChunk,
+                monthLabel: idx === 0 ? monthLabel : null,
+                onlySection: sectionName
+              });
+            });
+          } else {
+            cursorY = runTable({
+              startY: cursorY,
+              periods: periodChunk,
+              monthLabel,
+              onlySection: null
+            });
+          }
+
+          if (cursorY > maxY - 60) {
+            doc.addPage();
+            addTitleBlock();
+            cursorY = 80;
+          }
+        }
+
+        // Divider between groups
+        cursorY = ensureSpaceForText(cursorY, 18);
+        doc.setDrawColor(229, 231, 235);
+        doc.line(marginX, cursorY, pageWidth - marginX, cursorY);
+        cursorY += 14;
+      });
+
+      const viewModeText = viewMode === 'day' ? 'Day' : 'Month';
+      const filename = `${project?.companyName || 'Report'}_${viewModeText}_View_${new Date().toISOString().split('T')[0]}.pdf`;
+      doc.save(filename);
+    } catch (e) {
+      console.error('PDF export failed:', e);
+      alert('Failed to export PDF. Please try again.');
+    }
+  }, [allPeriods, reportData, groupedPeriods, groupedMetrics, viewMode, project, enabledChannels]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 flex items-center justify-center">
@@ -1470,16 +1789,49 @@ export default function MonthlyReport() {
               </div>
               
               {/* Export Button */}
-              <button
-                onClick={exportToExcel}
-                disabled={allPeriods.length === 0 || calculating}
-                className="px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors duration-200 font-semibold text-sm flex items-center gap-2 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                Export Excel
-              </button>
+              <div className="relative" ref={exportMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setExportMenuOpen(v => !v)}
+                  disabled={allPeriods.length === 0 || calculating}
+                  className="px-5 py-2.5 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors duration-200 font-semibold text-sm flex items-center gap-2 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  Export
+                  <svg className={`w-4 h-4 transition-transform ${exportMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+
+                {exportMenuOpen && !(allPeriods.length === 0 || calculating) && (
+                  <div className="absolute right-0 mt-2 w-44 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden z-50">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExportMenuOpen(false);
+                        exportToExcel();
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-sm font-medium text-gray-800 hover:bg-gray-50 flex items-center gap-2"
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full bg-green-500"></span>
+                      Export as Excel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExportMenuOpen(false);
+                        exportToPdf();
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-sm font-medium text-gray-800 hover:bg-gray-50 flex items-center gap-2"
+                    >
+                      <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+                      Export as PDF
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -1811,34 +2163,30 @@ export default function MonthlyReport() {
                         {filteredProspectsForModal.map((contact) => {
                           const contactIdStr = (contact._id?.toString ? contact._id.toString() : contact._id) || '';
                           
-                          // Find the matching activity for this period using index (much faster)
+                          // Find the MOST RECENT activity for this period (matches unique/latest logic)
                           const periodActivities = activitiesIndex.byPeriodAndContact.get(prospectModal.period)?.get(contactIdStr) || [];
-                          const matchingActivity = periodActivities.find(a => {
-                            // Filter by channel
-                            if (prospectModal.channel === 'call' && a.type !== 'call') return false;
-                            if (prospectModal.channel === 'linkedin' && a.type !== 'linkedin') return false;
-                            if (prospectModal.channel === 'email' && a.type !== 'email') return false;
-                            
-                            // Check if it matches the metric
-                            if (prospectModal.channel === 'call') {
-                              const statusMap = {
-                                'interested': 'Interested',
-                                'notInterested': 'Not Interested',
-                                'ring': 'Ring',
-                                'busy': 'Busy',
-                                'hangUp': 'Hang Up',
-                                'callBack': 'Call Back',
-                                'switchOff': 'Switch Off',
-                                'detailsShared': 'Details Shared',
-                                'future': 'Future',
-                                'invalid': 'Invalid',
-                                'demoBooked': 'Demo Booked'
-                              };
-                              return a.callStatus === statusMap[prospectModal.metric];
-                            }
-                            // For LinkedIn and Email, return first matching activity
+                          
+                          const getRecencyTime = (a) => {
+                            const created = a?.createdAt ? new Date(a.createdAt) : null;
+                            if (created && !isNaN(created.getTime())) return created.getTime();
+                            const d = a?.callDate ? new Date(a.callDate)
+                              : a?.emailDate ? new Date(a.emailDate)
+                              : a?.linkedinDate ? new Date(a.linkedinDate)
+                              : null;
+                            return d && !isNaN(d.getTime()) ? d.getTime() : 0;
+                          };
+                          
+                          const channelPeriodActivities = periodActivities.filter(a => {
+                            if (prospectModal.channel === 'call') return a.type === 'call';
+                            if (prospectModal.channel === 'linkedin') return a.type === 'linkedin';
+                            if (prospectModal.channel === 'email') return a.type === 'email';
                             return true;
-                          }) || periodActivities[0]; // Fallback to first activity if no exact match
+                          });
+
+                          const matchingActivity = channelPeriodActivities.reduce((latest, a) => {
+                            if (!latest) return a;
+                            return getRecencyTime(a) > getRecencyTime(latest) ? a : latest;
+                          }, null) || channelPeriodActivities[0] || periodActivities[0];
                           
                           const activityDate = matchingActivity 
                             ? (matchingActivity.callDate ? new Date(matchingActivity.callDate) : 
